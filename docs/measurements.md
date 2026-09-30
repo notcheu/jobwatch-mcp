@@ -87,3 +87,11 @@ Chrome 154.0.8037.92 container on an `--internal` Docker network (no published p
 - Fingerprint signals on a blank page: `navigator.webdriver=false`, UA without `HeadlessChrome`, `window.chrome` present, 5 plugins, screen 1366x800, TZ `Europe/Paris`, no `playwright`/`__pw` globals. `navigator.languages` is `["en-US","en"]`: set the container locale/`--lang` to match the real browser (G8).
 - `Browser.close` over CDP: Chrome exits, container stops with exit code 0 (G5 confirmed).
 - Finding for the router: Playwright needs a writable temp dir, so the router container needs a `/tmp` tmpfs (already in `deploy/compose.yml`).
+
+## S4: LinkedIn login and first session check (2026-10-01, `spikes/host/s4-linkedin.sh`)
+Logged in once through noVNC (login mode), Chrome stopped gracefully, then one `check` cycle (fresh start, one load of `/feed/`):
+- **Session restored after a restart:** `STATE: ok`, final path `/feed/`, no login form. `li_at` is a **persistent** cookie (`expires` set, not a session cookie), so it survives restarts independently of session restore; `JSESSIONID` is a session cookie. The three-restart test (`persist`) is still to run.
+- **Markers on `/feed/` (V14 input):** no login form, `nav` present, links to `/jobs/` and `/mynetwork/` present, `<html lang="en">`, title `Feed | LinkedIn`.
+- **Fingerprint on the real site (V7):** `navigator.webdriver=false`, not headless, 5 plugins, `window.chrome` present, no Playwright globals. `navigator.languages` is `["en-US","en"]` even with `--lang=fr-FR`: that flag sets the UI locale, not `navigator.languages`. To align (G8), compare with the real browser (`navigator.languages` in the everyday Chrome) and set `LANGUAGE`/`intl.accept_languages` in the profile if they differ. The LinkedIn account UI is English (`lang="en"`).
+- **Load time:** `domcontentloaded` in 10.3 s (host under swap pressure).
+- **Memory: peak 985 MB of the 1100 MB cap (90 %) on the feed page.** This is far above the 487-625 MB on public pages and leaves no margin. `/feed/` is among the heaviest LinkedIn pages (video, infinite scroll) and is not what the adapter will load; S5 must measure the actual search-results and job-detail pages, and pick a lighter page for `session_status`. Until then V4 is at risk for logged-in LinkedIn.
