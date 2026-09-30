@@ -17,7 +17,7 @@ One image, used by every browser-backed platform. It contains **no adapter code*
 FROM debian:bookworm-slim
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl gnupg tini xvfb socat tzdata fonts-liberation \
+      ca-certificates curl gnupg xvfb socat tzdata fonts-liberation \
       x11vnc novnc websockify procps \
  && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google.gpg \
  && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
@@ -28,12 +28,13 @@ RUN useradd -m -u 1000 chrome && mkdir /profile && chown chrome:chrome /profile
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 USER chrome
 ENV DISPLAY=:99 TZ=Europe/Paris MODE=run SCREEN=1366x800x24
-ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
+# tini is not needed in the image: the runtime starts the container with --init.
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 ```
 Pin the Chrome major version per image tag (`jobwatch-browser:<chrome-major>-<n>`) and rebuild deliberately: site behaviour and fingerprints depend on it. Keep the image small: `--no-install-recommends`, no dev tools, one layer for apt.
 
 ## entrypoint.sh (behaviour)
-1. Start `Xvfb :99 -screen 0 $SCREEN -nolisten tcp &`; wait until the display answers.
+1. `mkdir -p /tmp/.X11-unix && chmod 1777` it (non-root Xvfb cannot create it on a fresh tmpfs), then start `Xvfb :99 -screen 0 $SCREEN -nolisten tcp &`; wait until the display answers.
 2. Remove stale `/profile/SingletonLock`, `SingletonCookie`, `SingletonSocket` (left by a killed Chrome).
 3. If `MODE=login`: start `x11vnc -display :99 -localhost -nopw -forever` and `websockify --web /usr/share/novnc 6080 localhost:5900` (published only on the host's loopback / private overlay, see `10-deployment.md`).
 4. Start Chrome (flags below) with `--user-data-dir=/profile`, DevTools on `127.0.0.1:9223`.

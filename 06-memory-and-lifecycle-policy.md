@@ -33,7 +33,7 @@ docker run --rm --name jw-<platform> --init \
   --oom-score-adj 500                           # die before the rest of the machine
   --pids-limit 512 --shm-size 256m --cpus 1.5
   --cap-drop ALL --security-opt no-new-privileges
-  --read-only --tmpfs /tmp:rw,size=256m --tmpfs /run:rw,size=16m
+  --read-only --tmpfs /tmp:rw,size=256m --tmpfs /run:rw,size=16m --tmpfs /home/chrome:rw,size=64m,uid=1000,gid=1000   # Chrome needs a writable HOME; tmpfs counts toward the memory cap
   -v <profiles>/<platform>:/profile:rw
   --network jobwatch-browsers ...
   --label jobwatch.managed=true --label jobwatch.platform=<platform>

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eu
+mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix 2>/dev/null || true
 Xvfb :99 -screen 0 "${SCREEN}" -nolisten tcp &
 for _ in $(seq 1 50); do [ -e /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
 rm -f /profile/SingletonLock /profile/SingletonCookie /profile/SingletonSocket
