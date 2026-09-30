@@ -1226,10 +1226,11 @@
       "names": [
         "unshare",
         "setns",
-        "clone"
+        "clone",
+        "chroot"
       ],
       "action": "SCMP_ACT_ALLOW",
-      "comment": "jobwatch: Chrome's sandbox needs to create user/pid/net namespaces without CAP_SYS_ADMIN. clone3 stays ENOSYS (Chrome falls back to clone)."
+      "comment": "jobwatch: Chrome's namespace sandbox creates user/pid/net namespaces and chroots itself without CAP_SYS_ADMIN/CAP_SYS_CHROOT. clone3 stays ENOSYS (Chrome falls back to clone)."
     }
   ]
 }
