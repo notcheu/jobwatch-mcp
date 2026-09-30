@@ -7,6 +7,8 @@
 # Run as mcpuser against the rootless daemon. You type your credentials yourself in the noVNC window; nothing here sees them.
 # The profile lives in the Docker volume jw-profile-linkedin (outside the repo). Never commit, copy or share it.
 set -euo pipefail
+# Local, gitignored settings (e.g. ACCEPT_LANGS='fr-FR,en-GB,...' copied from navigator.languages of your everyday Chrome).
+[ -f "$(dirname "$0")/.env.local" ] && . "$(dirname "$0")/.env.local"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SECCOMP=${SECCOMP:-$ROOT/spikes/chrome/chrome-seccomp.json}; NODE_VERSION=${NODE_VERSION:-26}
 CHROME_LANG=${CHROME_LANG:-fr-FR}; MEM_MAX=${MEM_MAX:-1100m}
@@ -28,7 +30,7 @@ start_browser() { # $1 = mode, rest = extra docker args
   docker run -d --name "$BR" --init --network "$NET" --memory "$MEM_MAX" --memory-swap "$MEM_MAX" --pids-limit 512 --shm-size 256m --cpus 1.5 \
     --cap-drop ALL --security-opt no-new-privileges --security-opt "seccomp=$SECCOMP" --read-only \
     --tmpfs /tmp:rw,size=256m --tmpfs /run:rw,size=16m --tmpfs /home/chrome:rw,size=64m,uid=1000,gid=1000 \
-    -v "$PROFILE":/profile -e MODE="$mode" -e CHROME_LANG="$CHROME_LANG" "$@" jw-spike-chrome >/dev/null
+    -v "$PROFILE":/profile -e MODE="$mode" -e CHROME_LANG="$CHROME_LANG" ${ACCEPT_LANGS:+-e ACCEPT_LANGS="$ACCEPT_LANGS"} "$@" jw-spike-chrome >/dev/null
 }
 browser_ip() { docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$BR"; }
 stop_graceful() { docker stop -t 25 "$BR" >/dev/null 2>&1 || true; echo "browser stopped, exit code $(docker inspect -f '{{.State.ExitCode}}' "$BR" 2>/dev/null || echo '?')"; }

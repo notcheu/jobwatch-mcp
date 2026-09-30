@@ -6,6 +6,12 @@ Xvfb :99 -screen 0 "${SCREEN}" -nolisten tcp &
 for _ in $(seq 1 50); do [ -e /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
 rm -f /profile/SingletonLock /profile/SingletonCookie /profile/SingletonSocket
 
+# navigator.languages comes from the profile preference intl.accept_languages, not from --lang (G8).
+mkdir -p /profile/Default
+[ -s /profile/Default/Preferences ] || echo '{}' > /profile/Default/Preferences
+jq --arg l "${ACCEPT_LANGS}" '.intl.accept_languages = $l' /profile/Default/Preferences > /profile/Default/Preferences.tmp \
+  && mv /profile/Default/Preferences.tmp /profile/Default/Preferences
+
 EXTRA=()
 [ "${NO_SANDBOX:-0}" = "1" ] && EXTRA+=(--no-sandbox)
 [ "${MODE}" = "run" ] && EXTRA+=(--restore-last-session)   # keep session cookies across restarts (G4)
