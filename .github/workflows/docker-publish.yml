@@ -42,7 +42,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64        # VERIFY against `uname -m` on the Ubuntu host (spike S3)
+          platforms: linux/amd64        # confirmed: host is x86_64 (docs/measurements.md)
           push: true
           tags: ${{ secrets.REGISTRY_URL }}/jobwatch-router:latest
           cache-from: type=gha

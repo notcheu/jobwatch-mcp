@@ -18,8 +18,8 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 |---|---|---|---|---|
 | V1 | Custom OAuth connectors are usable from scheduled routines and survive token refresh unattended | `02`, `12` | S1 | open |
 | V2 | R0Wi/mcp-gateway or babs/mcp-auth-proxy can restrict login to a single identity and work with Claude's DCR/PKCE flow | `01` D7 | S2 | open |
-| V3 | Google Chrome stable is available for the host architecture | `05` | S3 | open |
-| V4 | One headful Chrome container fits in ≈1 GB on LinkedIn pages | `06` | S3 | open |
+| V3 | Google Chrome stable is available for the host architecture | `05` | S3 | **confirmed** (host is x86_64, `docs/measurements.md`) |
+| V4 | One headful Chrome container fits in ≈1 GB on LinkedIn pages | `06` | S3 | open, **at risk**: host has 3.8 GB total, 1.3 GB available, swap 78 % used |
 | V5 | Session cookies persist across graceful restarts with `--restore-last-session` | `05` G4 | S4 | open |
 | V6 | Chrome on the pinned version honours `--remote-debugging-port` with a custom user-data-dir; DevTools reachable via socat and container IP | `05` G1/G2 | S6 | open |
 | V7 | Fingerprint self-check passes with Playwright `connect_over_cdp` | `05` G3 | S4 | open |
