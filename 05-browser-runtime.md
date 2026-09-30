@@ -36,7 +36,7 @@ Pin the Chrome major version per image tag (`jobwatch-browser:<chrome-major>-<n>
 ## entrypoint.sh (behaviour)
 1. `mkdir -p /tmp/.X11-unix && chmod 1777` it (non-root Xvfb cannot create it on a fresh tmpfs), then start `Xvfb :99 -screen 0 $SCREEN -nolisten tcp &`; wait until the display answers.
 2. Remove stale `/profile/SingletonLock`, `SingletonCookie`, `SingletonSocket` (left by a killed Chrome).
-3. If `MODE=login`: start `x11vnc -display :99 -localhost -nopw -forever` and `websockify --web /usr/share/novnc 6080 localhost:5900` (published only on the host's loopback / private overlay, see `10-deployment.md`).
+3. If `MODE=login`: start `x11vnc -display :99 -localhost -forever -passwd "$VNC_PASSWORD"` (a password is mandatory; the container port is published only on the host's `127.0.0.1` and reached through an SSH tunnel) and `websockify --web /usr/share/novnc 6080 localhost:5900` (published only on the host's loopback / private overlay, see `10-deployment.md`).
 4. Start Chrome (flags below) with `--user-data-dir=/profile`, DevTools on `127.0.0.1:9223`.
 5. Start `socat TCP-LISTEN:9222,fork,reuseaddr TCP:127.0.0.1:9223` so the router can reach DevTools from another container (G2).
 6. Trap SIGTERM: ask Chrome to quit gracefully (kill -TERM chrome, wait up to 8 s), then exit. The router normally quits Chrome itself through DevTools first.
