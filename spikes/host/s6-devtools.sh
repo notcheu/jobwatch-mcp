@@ -22,7 +22,7 @@ docker run -d --name "$BR" --init --network "$NET" --memory 1100m --memory-swap 
 IP=$(docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$BR")
 echo "browser container IP on $NET: $IP"
 echo "== run probe (stand-in for the router; no internet on this network)"
-docker run --rm --name "$RT" --network "$NET" --read-only --cap-drop ALL --security-opt no-new-privileges \
+docker run --rm --name "$RT" --network "$NET" --read-only --tmpfs /tmp:rw,size=64m,uid=1000,gid=1000 --cap-drop ALL --security-opt no-new-privileges \
   -e BROWSER_IP="$IP" -e BROWSER_NAME="$BR" jw-spike-probe || echo "(probe exited non-zero)"
 echo "== did Browser.close stop the container? (waiting up to 25 s)"
 for _ in $(seq 1 25); do [ "$(docker inspect -f '{{.State.Running}}' "$BR")" = false ] && break; sleep 1; done
