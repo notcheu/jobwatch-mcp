@@ -47,3 +47,12 @@ The dedicated stack user is **`mcpuser`** (uid 1002; not in the `docker` group).
 | `kernel.apparmor_restrict_unprivileged_userns` | 1 (rootlesskit AppArmor profile still required, see `10-…`) |
 | Home filesystem | ZFS (`/home`), same pool as before |
 | Memory | 1017 MB available, swap 3028 of 3810 MB used: worse than the first run, so host pressure varies; S3 must be measured several times |
+
+## Rootless Docker installed (`mcpuser`, 2026-10-01)
+| Check | Result |
+|---|---|
+| Daemon | Docker 29.1.5, **rootless** in Security Options, 0 containers/images (separate from the rootful daemon) |
+| Cgroup | v2, systemd driver |
+| Storage | `overlayfs` with the containerd snapshotter (Docker 29 default), root dir `/home/mcpuser/.local/share/docker`: works on the ZFS home |
+| Warnings | no `cpuset`, no `io.*`: expected (only `cpu memory pids` are delegated). We use `--cpus`, `--memory`, `--pids-limit`, none of which need them |
+| Still to test | that `--memory`/`--memory-swap`/`--memory-reservation` are actually enforced, Chrome's sandbox, peak RSS (spike script `spikes/host/s3-chrome-memory.sh`) |

@@ -24,7 +24,7 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 | V6 | Chrome on the pinned version honours `--remote-debugging-port` with a custom user-data-dir; DevTools reachable via socat and container IP | `05` G1/G2 | S6 | open |
 | V7 | Fingerprint self-check passes with Playwright `connect_over_cdp` | `05` G3 | S4 | open |
 | V8 | Navigating to `currentJobId` URLs (or `/jobs/view/<id>`) exposes the same description selector | `07` | S5 | open |
-| V9 | Rootless Docker flags: `--memory`, `--memory-swap`, `--memory-reservation`, `--init`; cgroup v2 delegation (memory controller) for rootless | `06` | S7 | partly confirmed: `cpu memory pids` delegated to user services on the host; flags themselves still to test |
+| V9 | Rootless Docker flags: `--memory`, `--memory-swap`, `--memory-reservation`, `--init`; cgroup v2 delegation (memory controller) for rootless | `06` | S7 | partly confirmed: rootless daemon runs, `cpu memory pids` delegated; limits still to be proven enforced by the S3 script |
 | V10 | Chrome sandbox works under the chosen rootless seccomp/userns setup; else `--no-sandbox` decision | `05` G6, `09` | S7 | open; host has `kernel.apparmor_restrict_unprivileged_userns=1`, which can block Chrome's userns sandbox, test early |
 | V11 | MCP TypeScript SDK supports stateless Streamable HTTP (`sessionIdGenerator: undefined`) with custom Express middleware as planned | `01` D9, `03` | Phase 1 start | **confirmed** (Node 26.10.0, SDK 1.31.0, Express 5: two fresh clients, raw `tools/list` without a session header, no `mcp-session-id`; `spikes/echo-mcp`) |
 | V12 | ATS endpoint patterns (Greenhouse/Lever/Ashby/SmartRecruiters/Workable/Teamtailor) | `08` | S9 | open |
