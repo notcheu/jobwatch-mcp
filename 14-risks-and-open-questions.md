@@ -27,8 +27,8 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 | V9 | Rootless Docker flags: `--memory`, `--memory-swap`, `--memory-reservation`, `--init`; cgroup v2 delegation (memory controller) for rootless | `06` | S7 | **confirmed**: `--memory`, `--memory-swap` enforced; `--memory-reservation` does not set `memory.high` (no soft throttle), `--init` works |
 | V10 | Chrome sandbox works under the chosen rootless seccomp/userns setup; else `--no-sandbox` decision | `05` G6, `09` | S7 | **confirmed**: works with the custom seccomp profile (default + `unshare`, `setns`, `clone`, `chroot`), `--cap-drop ALL`, `no-new-privileges`, read-only root; re-verify on each Chrome major |
 | V11 | MCP TypeScript SDK supports stateless Streamable HTTP (`sessionIdGenerator: undefined`) with custom Express middleware as planned | `01` D9, `03` | Phase 1 start | **confirmed** (Node 26.10.0, SDK 1.31.0, Express 5: two fresh clients, raw `tools/list` without a session header, no `mcp-session-id`; `spikes/echo-mcp`) |
-| V12 | ATS endpoint patterns (Greenhouse/Lever/Ashby/SmartRecruiters/Workable/Teamtailor) | `08` | S9 | open |
-| V13 | WTTJ/APEC public endpoints or login needs | `08` | S9 | open |
+| V12 | ATS endpoint patterns (Greenhouse/Lever/Ashby/SmartRecruiters/Workable/Teamtailor) | `08` | S9 | **confirmed** for Greenhouse, Lever, Ashby (15 of 24 watch-list companies have a public board, see `08`); SmartRecruiters/Recruitee matched nothing, Teamtailor not probed |
+| V13 | WTTJ/APEC public endpoints or login needs | `08` | S9 | **partly confirmed**: APEC search API is public over plain HTTP (no login), full-description endpoint unknown; WTTJ returns 403 to plain HTTP and its `robots.txt` disallows `*/jobs?query=*` (decision needed, see `08`) |
 | V14 | LinkedIn checkpoint/login marker strings | `07` | S4/S5 | open |
 | V15 | Nginx can proxy all OAuth/MCP paths (streaming, no buffering) and allowlisting `160.79.104.0/21` does not break discovery | `09` | S8 | open |
 
