@@ -1,0 +1,77 @@
+# 04 — Catalog and v1 tool schemas
+
+## Catalog entry format (`catalog/<tool>.json`)
+```json
+{
+  "name": "linkedin_search",
+  "title": "LinkedIn job search (read-only)",
+  "description": "Search LinkedIn job listings ... Returns compact cards; never applies to jobs.",
+  "platform": "linkedin",
+  "adapter": "linkedin",
+  "needs_browser": true,
+  "inputSchema": { "type": "object", "properties": { ... }, "required": [...], "additionalProperties": false },
+  "outputSchema": { ... },
+  "annotations": { "readOnlyHint": true, "openWorldHint": true, "idempotentHint": true },
+  "limits": {
+    "timeout_s": 90,
+    "memory": { "high_mb": 900, "max_mb": 1100 },
+    "rate": { "cost": 1 },
+    "output_max_bytes": 60000
+  },
+  "allowed_hosts": ["www.linkedin.com", "media.licdn.com"]
+}
+```
+Rules: `additionalProperties: false` everywhere; every string has `maxLength`; every array has `maxItems`; enums for modes. Descriptions must state read-only behaviour and side effects (none). Keep descriptions short: they are sent on every `tools/list`.
+
+## v1 tool set
+
+### `session_status` (Phase 1)
+Input: `{ "platform": "linkedin" | "apec" | "wttj" | "all" }`.
+Output: `[{ platform, logged_in: bool, state: "ok"|"needs_login"|"checkpoint"|"unknown", checked_at, note }]`.
+Behaviour: opens the platform home page in the platform's browser (spawns it), checks logged-in markers. For LinkedIn a cached answer younger than 10 minutes may be returned (`cached: true`) to avoid needless page loads. The routine calls it first and notifies Matthieu when it is not `ok`.
+
+### `linkedin_search` (Phase 1)
+Input:
+```json
+{
+  "keywords": "string (<=200)",
+  "geo": "paris_idf | france | <geoId string>",
+  "posted_within": "24h | any",
+  "remote_only": false,
+  "page": 1,
+  "max_cards": 25
+}
+```
+Notes: maps to the search-results URL (see `07-adapter-linkedin.md`). `remote_only` is **post-filtered** on the card location because LinkedIn drops the remote URL filter. `page` 1..5 (start = (page-1)*25).
+Output: `{ cards: [{ id, title, company, location, work_mode: "remote|hybrid|on-site|unknown", salary_text, posted_text, posted_hours_ago, promoted, easy_apply, url }], page, has_more, truncated, warnings }`.
+`url` is always `https://www.linkedin.com/jobs/view/<id>` (no tracking parameters).
+
+### `linkedin_job` (Phase 1)
+Input: `{ "ids": ["<id>", ...] (maxItems 10), "description_max_chars": 1500 }`.
+Output: `[{ id, title, company, location, description (untrusted text, truncated to N chars), description_truncated, stack_hints: ["react","angular",...], years_hints: [...], remote_hints, salary_text, url, status: "ok"|"not_loaded"|"closed" }]`.
+Behaviour: opens each job page **by navigation** (not synthetic card clicks) with human-like pacing; reads the About-the-job text. `stack_hints`/`years_hints`/`remote_hints` are simple deterministic extractions (regex dictionaries in `adapters/linkedin/parse.py`) to save tokens; the client still decides.
+
+### `linkedin_search_and_read` (Phase 1, convenience)
+Input: union of search args + `{ "skip_ids": [...] (maxItems 500), "open": "unseen_matching|none", "title_exclude_regex": "…", "max_jobs": 15, "description_max_chars": 1200 }`.
+Output: cards + details for opened ones. Mirrors what `linkedin-extract.js` did in one call; server-side it reuses the same tab and pacing.
+
+### `apec_search`, `wttj_matches`, `wttj_company_jobs`, `free_work_search`, `ats_jobs` (Phase 3)
+See `08-adapters-other-sources.md` for inputs/outputs. All return the same normalized card shape: `{ id, source, title, company, location, work_mode, salary_text, posted_text, url, promoted? }`.
+
+### `seen_filter`, `seen_mark` (Phase 4, optional state)
+`seen_filter({ platform, ids[] }) -> { unseen_ids[] }`; `seen_mark({ platform, items:[{id,title,company}] })` writes to the router's SQLite only. `seen_mark` is the only non-read-only tool: annotate `readOnlyHint: false` and `destructiveHint: false`, scope strictly to the router's own data. Decide with Matthieu whether the routine's memory stays in the Claude project (current) or moves here.
+
+### `memory_report` (Phase 1, ops)
+Output: `{ runtimes: [{platform, state, uptime_s, rss_mb, peak_rss_mb, last_call_at}], last_calls: [{tool, duration_ms, peak_rss_mb, cold_start, result}] }`.
+
+## Normalized card shape (all sources)
+```json
+{ "id": "string", "source": "linkedin|apec|wttj|greenhouse|lever|...",
+  "title": "string", "company": "string", "location": "string",
+  "work_mode": "remote|hybrid|on-site|unknown",
+  "salary_text": "string|null", "posted_text": "string|null", "posted_hours_ago": 0,
+  "promoted": false, "url": "string" }
+```
+
+## Contract tests (Phase 1 onward)
+For every tool: (1) catalog validates; (2) adapter output validates against `outputSchema`; (3) output stays under `output_max_bytes` on a max-size fixture; (4) `tools/list` response equals the catalog (snapshot test); (5) `tools/list` does not start any runtime (assert backend not called).

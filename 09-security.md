@@ -1,0 +1,47 @@
+# 09 — Security
+
+## Assets to protect
+1. Matthieu's LinkedIn (and other) sessions: cookies in the browser profiles.
+2. The home network / machine.
+3. The OAuth tokens and client secrets.
+4. The job-search data (low sensitivity) and Matthieu's identity.
+
+## Threats and mitigations
+| Threat | Mitigation |
+|---|---|
+| Anyone on the internet calls the MCP endpoint | OAuth front; router accepts only requests carrying the front's shared secret / mTLS on the private network; router not published on any host port |
+| A second Google/IdP account signs in | Allowlist exactly one identity at the front (VERIFY how each candidate enforces it; test with a second account) |
+| Token theft | Short access tokens (≈1 h), refresh rotation, revoke-on-suspicion runbook, HTTPS only, no tokens in URLs or logs |
+| Client-side misuse of tools (prompt injection from job text) | Read-only catalog; no generic browser tools; `additionalProperties:false`; outputs flagged as untrusted; Claude-side per-tool permissions; router ignores any instruction-like content (it never acts on page text) |
+| Malicious page content exploits the browser | Headful Chrome kept current (monthly rebuild), container hardening, host allowlist on navigation, no file downloads (block downloads), no extensions |
+| Exfiltration from a compromised page | Egress allowlist for browser containers (proxy or nftables) — Phase 4; container has no access to the home LAN |
+| Docker/Podman socket abuse | Rootless runtime only; router uses the user's own socket; no root socket anywhere; router runs as a non-root user with `no-new-privileges`, read-only root fs |
+| Account ban or checkpoint | Conservative budgets, jittered pacing, one tab, circuit breaker, `session_status`, notify Matthieu; residential IP only |
+| Profile theft from disk | Profiles 0700, dedicated user, disk encryption recommended; do not back up profiles unencrypted |
+| Secrets in git | `.gitignore` for `profiles/`, `data/`, `.env`, `secrets/`; pre-commit secret scan |
+| Supply chain | Pin image digests and Python deps (lockfile); scheduled `pip-audit`/`uv` checks; rebuild browser image deliberately |
+| Runaway resource use (DoS on the house) | cgroup caps, rate limits, queue timeout, global semaphore |
+
+## Network
+- Public: only the tunnel hostname (HTTPS). No inbound ports on the home router.
+- Optional: restrict the tunnel/WAF to Anthropic's egress range `160.79.104.0/21` — but keep `/.well-known/*` and OAuth endpoints reachable from that range (Anthropic notes a WAF in front of the authorization server can break discovery).
+- Internal networks: `jobwatch-core` (front ↔ router) and `jobwatch-browsers` (router ↔ browser containers; internal, egress via allowlist proxy in Phase 4).
+- The DevTools endpoint (port 9222 via socat) is reachable **only** on `jobwatch-browsers` and is never published on a host port (it is full control of the browser and its cookies).
+- The login viewer (noVNC) is bound to `127.0.0.1` on the host and reached through an SSH tunnel; never public.
+
+## Browser container hardening checklist
+`--cap-drop ALL`, `--security-opt no-new-privileges`, read-only root fs + tmpfs for `/tmp`/`/run`, non-root user, `--pids-limit`, `--memory`/`--memory-swap`, `--cpus`, seccomp profile suitable for Chrome (spike S7) or `--no-sandbox` only as a compensating-control decision recorded here, no host mounts except the platform profile, downloads disabled (Chrome policy or `Browser.setDownloadBehavior deny`), clipboard/permissions denied, no device passthrough.
+
+## Authorization model
+Single user. Scopes: `jobwatch.read` (all read-only tools) and `jobwatch.state` (only for `seen_mark` if/when enabled). Enforce scope per tool in the router (the front passes claims in a signed header). Log every call with request id and result code.
+
+## Terms of service and account-risk position (be honest in the docs and with Matthieu)
+LinkedIn's User Agreement prohibits automated access; accounts using automation can be restricted. This project reads Matthieu's own search results at human-scale volume from his own residential IP with his own logged-in session, and never writes. That is lower risk than commercial scraping but **not zero**. Keep the budget conservative, stop at the first checkpoint, and make it easy to fall back to manual/extension use. Other sites: check each site's terms before enabling its adapter; prefer official feeds/APIs (ATS endpoints) where available.
+
+## Privacy
+Do not log descriptions or cookies. Keep call logs 30 days. Never send the profile contents anywhere. Job descriptions returned to Claude are public job-post text.
+
+## Incident runbook (short)
+- Suspected token leak: revoke refresh tokens at the front, rotate `JW_FRONT_SHARED_SECRET`, re-add the connector.
+- LinkedIn checkpoint email/notification: stop the router's LinkedIn tools (breaker manual open), log in manually from the usual device, resolve the challenge, wait 24 h, resume with lower budgets.
+- Unexpected container running: `podman ps --filter label=jobwatch.managed=true`; stop and inspect logs; check the router's call log.

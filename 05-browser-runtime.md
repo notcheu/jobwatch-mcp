@@ -1,0 +1,95 @@
+# 05 — Browser runtime (the shared image) and how it is driven
+
+One image, used by every browser-backed platform. It contains **no adapter code**: it is Chrome + a virtual display + a few helper processes. Behaviour differs only by environment variables and the mounted profile volume.
+
+## Image contents
+- Base: Debian 12 (bookworm-slim) or an Ubuntu LTS minimal image (NOT the snap `chromium` package).
+- `google-chrome-stable` from Google's apt repository (VERIFY availability for the host CPU architecture with `uname -m`; fallback: Debian `chromium`).
+- `xvfb` (virtual display), `fonts-liberation` + a CJK/emoji font if needed, `tini` (PID 1 / zombie reaping), `socat` (DevTools port forward, see G2), `ca-certificates`, `tzdata`.
+- Login mode helpers: `x11vnc`, `novnc`/`websockify` (only started when `MODE=login`).
+- Non-root user `chrome` (uid 1000), home `/home/chrome`, profile mount `/profile`.
+- No adapters, no Playwright, no Python.
+
+## Containerfile sketch
+```dockerfile
+FROM debian:bookworm-slim
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl gnupg tini xvfb socat tzdata fonts-liberation \
+      x11vnc novnc websockify procps \
+ && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google.gpg \
+ && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+      > /etc/apt/sources.list.d/google-chrome.list \
+ && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
+ && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -u 1000 chrome && mkdir /profile && chown chrome:chrome /profile
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+USER chrome
+ENV DISPLAY=:99 TZ=Europe/Paris MODE=run SCREEN=1366x800x24
+ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint.sh"]
+```
+Pin the Chrome major version per image tag (`jobwatch-browser:<chrome-major>-<n>`) and rebuild deliberately: site behaviour and fingerprints depend on it. Keep the image small: `--no-install-recommends`, no dev tools, one layer for apt.
+
+## entrypoint.sh (behaviour)
+1. Start `Xvfb :99 -screen 0 $SCREEN -nolisten tcp &`; wait until the display answers.
+2. Remove stale `/profile/SingletonLock`, `SingletonCookie`, `SingletonSocket` (left by a killed Chrome).
+3. If `MODE=login`: start `x11vnc -display :99 -localhost -nopw -forever` and `websockify --web /usr/share/novnc 6080 localhost:5900` (published only on the host's loopback / private overlay, see `10-deployment.md`).
+4. Start Chrome (flags below) with `--user-data-dir=/profile`, DevTools on `127.0.0.1:9223`.
+5. Start `socat TCP-LISTEN:9222,fork,reuseaddr TCP:127.0.0.1:9223` so the router can reach DevTools from another container (G2).
+6. Trap SIGTERM: ask Chrome to quit gracefully (kill -TERM chrome, wait up to 8 s), then exit. The router normally quits Chrome itself through DevTools first.
+
+## Chrome flags (starting point)
+```
+--user-data-dir=/profile                    # MUST be non-default (see G1)
+--remote-debugging-port=9223
+--remote-allow-origins=*                    # only reachable on the private container network
+--no-first-run --no-default-browser-check --disable-session-crashed-bubble
+--disable-gpu --disable-dev-shm-usage       # /dev/shm sized explicitly by the runtime (--shm-size)
+--disable-background-networking --disable-extensions --disable-sync --mute-audio
+--js-flags=--max-old-space-size=512
+--renderer-process-limit=2
+--window-size=1366,800 --window-position=0,0
+--lang=<ACCOUNT_UI_LANG>                     # keep consistent with the LinkedIn UI language (see 07)
+--restore-last-session                       # keep session cookies across restarts (G4)
+--password-store=basic                       # no keyring in a container
+```
+Do NOT use `--single-process` (unstable), `--headless`, `--enable-automation`, or `--disable-web-security`. `--no-sandbox` only if the sandbox cannot start under the chosen seccomp/userns setup (see `09-security.md` for the trade-off). Block `media`/`font` requests at the CDP level only after measuring; blocking images makes the session look unlike a normal user (see `06-…`).
+
+## Gotchas (each one needs a Phase 0/1 check)
+- **G1 — Non-default profile dir.** Recent Chrome versions ignore `--remote-debugging-port` when launched with the default user-data directory. We always pass `--user-data-dir=/profile`. VERIFY on the pinned Chrome major.
+- **G2 — DevTools reachability.** Chrome may bind DevTools to 127.0.0.1 only and ignore `--remote-debugging-address`. Hence the `socat` forward. Also the DevTools HTTP endpoint rejects requests whose `Host` header is not `localhost` or an IP address: connect to the container's **IP**, not its DNS name (or add a fixed `Host` header). Keep `--remote-allow-origins=*` for the WebSocket handshake. VERIFY.
+- **G3 — Automation signals.** Connecting with Playwright over CDP can leave traces (Playwright globals, CDP side effects). Keep Playwright usage minimal (`connect_over_cdp`, one `new_page`, `page.goto`, `page.evaluate`). The startup fingerprint self-check (below) must pass. Fallbacks: Patchright, or a tiny raw-CDP client.
+- **G4 — Session cookies vs restarts.** When Chrome quits, cookies without an expiry are dropped unless session restore is on ("Continue where you left off"); Chromium persists session cookies on restart only in that mode (source in `15-sources.md`). Use `--restore-last-session` and/or set `session.restore_on_startup=1` in the profile's `Preferences`. VERIFY: log in, stop the runtime gracefully twice, start again: still logged in. If not, keep one long-lived Chrome per platform with longer TTL instead.
+- **G5 — Graceful quit.** Quit through the DevTools command `Browser.close` (flushes the cookie DB), then SIGTERM after ~10 s, SIGKILL after ~20 s. A SIGKILL can lose recent cookie writes and leaves lock files (cleaned at next start).
+- **G6 — Sandbox in containers.** Chrome's sandbox needs user namespaces; with `--cap-drop ALL` and some seccomp profiles it fails. Options: (a) Chrome's published seccomp profile (chromedp ships one, `chrome.json`) + rootless userns, (b) `--no-sandbox` with container hardening as the compensating control. Decide in spike S7.
+- **G7 — Display size / window.** Use a realistic viewport (1366×800 or the Mac's real size). Do not use tiny or odd sizes.
+- **G8 — Language/timezone/UA consistency.** Copy the real values from Matthieu's everyday Chrome (`navigator.languages`, timezone, UA major version, screen size) into the image env so the profile looks consistent. Do not spoof the UA string manually unless the self-check shows a mismatch.
+
+## How the router drives it
+```python
+pw = await async_playwright().start()
+browser = await pw.chromium.connect_over_cdp(f"http://{container_ip}:9222")
+ctx = browser.contexts[0]                      # the profile's default context (persistent profile)
+page = await ctx.new_page()                    # the ONE working tab
+await page.route("**/*", allowlist_router)     # abort requests to non-allowlisted hosts
+...                                            # adapter: goto + evaluate
+await page.close()                             # always; keep the original about:blank tab
+# runtime stop:
+cdp = await browser.new_browser_cdp_session(); await cdp.send("Browser.close")
+```
+Rules: never call `browser.close()` expecting it to quit Chrome; never leave more than one working tab; watchdog closes stray pages (popups, `target=_blank`). Navigation only to URLs built by the adapter from validated arguments (host allowlist from the catalog).
+
+## Startup fingerprint self-check (`browser/fingerprint.py`)
+After a runtime becomes ready, on `about:blank` evaluate and compare to a baseline JSON captured from the real Mac Chrome:
+`navigator.webdriver` (must be false/undefined), `navigator.userAgent` (no `HeadlessChrome`), `navigator.languages`, `navigator.plugins.length`, `window.chrome` present, `Notification.permission`, `Intl.DateTimeFormat().resolvedOptions().timeZone`, screen size, presence of `__playwright*`/`__pw*` globals (must be absent). On failure: log `fingerprint_mismatch` with the diff, return `adapter_broken`-like warning, and refuse LinkedIn calls until fixed (configurable).
+
+## Login procedure (MODE=login)
+1. `jobwatch login linkedin` (CLI of the router or a script) starts the runtime in `login` mode with the platform profile, prints an SSH-tunnel command.
+2. From the laptop: `ssh -L 6080:localhost:6080 <home-host>`, open `http://localhost:6080/vnc.html`, log in to LinkedIn manually (handle captcha/phone confirmation), browse once to a jobs page.
+3. `jobwatch login --done` stops the runtime gracefully; the router runs `session_status` in `run` mode to confirm.
+The login viewer is never exposed publicly and never started by a tool call.
+
+## Image and profile maintenance
+- Rebuild monthly or on Chrome security releases; keep the previous tag for rollback.
+- Profiles are sensitive (cookies): mode 0700, excluded from git, backups encrypted or skipped.
+- After a Chrome major upgrade run the fingerprint check and `session_status` before trusting runs.
