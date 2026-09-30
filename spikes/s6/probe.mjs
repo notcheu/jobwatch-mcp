@@ -82,3 +82,6 @@ try {
   await Promise.race([closed, new Promise((r) => setTimeout(r, 10000))]);
   out(true, "H. Browser.close sent over CDP; the script will now check the container stopped");
 } catch (e) { out(false, "H. Browser.close", String(e.message).split("\n")[0]); }
+
+// Never hang: Playwright can keep the event loop alive if Chrome did not close.
+process.exit(0);
