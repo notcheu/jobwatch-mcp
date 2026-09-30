@@ -44,7 +44,7 @@ npm test                    # vitest: unit + contract
 npm run test:integration    # needs the browser runtime (rootless Docker)
 npm run catalog:gen         # regenerate catalog/*.json from the registry; commit the result
 docker build -t jobwatch-router:dev .
-docker compose -f deploy/compose.yml --env-file deploy/.env up -d      # as the jobwatch user
+docker compose -f deploy/compose.yml --env-file deploy/.env up -d      # as mcpuser
 ```
 Node version is pinned in `.nvmrc` and `engines`. After changing any tool definition, run `catalog:gen` (a contract test fails on drift).
 

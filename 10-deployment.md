@@ -54,7 +54,7 @@ Browser containers are **not** declared in compose; the router spawns them with 
 ## Router image (`Dockerfile`)
 Multi-stage build from the repo root: `deps` (`npm ci`) → `build` (`npm run build`, must also copy non-TS assets such as `adapters/**/extract.js` into `dist/`) → `prod-deps` (`npm ci --omit=dev`) → `runtime` (Node 26 slim, `tini`, a remote-only container CLI, non-root user `node`, `catalog/` baked in, `HEALTHCHECK` on `/healthz`). The filesystem is read-only at run time; state lives in `/data`.
 ```bash
-docker build -t jobwatch-router:dev .                       # run as the jobwatch user so it uses the rootless daemon
+docker build -t jobwatch-router:dev .                       # run as mcpuser so it uses the rootless daemon
 docker compose -f deploy/compose.yml --env-file deploy/.env build router
 docker compose -f deploy/compose.yml --env-file deploy/.env up -d
 ```

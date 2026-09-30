@@ -28,7 +28,7 @@ services:
     environment:
       JW_BASE_URL: ${JW_BASE_URL}            # https://mcp.<your-domain>
       JW_RUNTIME: docker
-      DOCKER_HOST: unix:///var/run/docker.sock          # the jobwatch user's ROOTLESS socket, mounted below
+      DOCKER_HOST: unix:///var/run/docker.sock          # mcpuser's ROOTLESS socket, mounted below
       JW_METRICS_ENABLED: ${JW_METRICS_ENABLED:-false}  # true => Prometheus /metrics on 9464
       JW_METRICS_PORT: 9464
     volumes:
