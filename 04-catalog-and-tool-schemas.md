@@ -59,7 +59,8 @@ Behaviour: opens each job page **by navigation** (not synthetic card clicks) wit
 Input: union of search args + `{ "skip_ids": [...] (maxItems 500), "open": "unseen_matching|none", "title_exclude_regex": "…", "max_jobs": 15, "description_max_chars": 1200 }`.
 Output: cards + details for opened ones. Mirrors what `linkedin-extract.js` did in one call; server-side it reuses the same tab and pacing.
 
-### `apec_search`, `wttj_matches`, `wttj_company_jobs`, `free_work_search`, `ats_jobs` (Phase 3)
+### `apec_search` (HTTP), `apec_job` (browser), `wttj_matches`, `free_work_search`, `ats_jobs` (Phase 3)
+`wttj_company_jobs` was dropped in v1 (WTTJ `robots.txt`, see `08`): company jobs come from `ats_jobs`.
 See `08-adapters-other-sources.md` for inputs/outputs. All return the same normalized card shape: `{ id, source, title, company, location, work_mode, salary_text, posted_text, url, promoted? }`.
 
 ### `seen_filter`, `seen_mark` (Phase 4, optional state)

@@ -14,8 +14,9 @@ Only **how sources are read**. Profile, criteria, triage, mail template/rules, m
 | LinkedIn Paris daily (2 keyword sets, pages 1–2, `f_TPR=r86400`) | `linkedin_search_and_read(keywords=…, geo="paris_idf", posted_within="24h", page=1..2, skip_ids=<ids from offres-vues.md>, open="unseen_matching")` |
 | LinkedIn France remote (post-filter) | `linkedin_search(geo="france", remote_only=true, posted_within="24h", page=1..2)` then `linkedin_job` for plausible ones |
 | Wednesday sweep (5 pages, no time filter, all offers) | `linkedin_search(posted_within="any", page=1..5)` (+ `linkedin_job` for unseen plausible cards); promoted flag available in cards |
-| WTTJ matches/company pages | `wttj_matches`, `wttj_company_jobs` (Phase 3) |
-| APEC searches | `apec_search` (Phase 3) |
+| WTTJ matches | `wttj_matches` (Phase 3) |
+| WTTJ company pages | `ats_jobs` for companies with a public ATS (WTTJ `robots.txt` disallows the `jobs?query=` URLs) |
+| APEC searches | `apec_search`, then `apec_job` for plausible offers (Phase 3) |
 | Career pages | `ats_jobs` (Phase 3) |
 | Indeed | unchanged (separate Claude connector) |
 | Dedup vs memory | `skip_ids` built from `claude/offres-vues.md` (LinkedIn ids appear in its links); optional later: `seen_filter` |

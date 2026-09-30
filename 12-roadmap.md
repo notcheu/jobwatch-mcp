@@ -27,7 +27,7 @@ Tasks: choose/configure the OAuth front; compose stack; router Docker image (`Do
 **Exit**: a scheduled routine successfully calls `session_status` and `linkedin_search` unattended on 3 consecutive days; second-account sign-in rejected.
 
 ## Phase 3 — More adapters
-Tasks (in value order): `ats_jobs` + `companies.yaml` discovery; `apec_search`; `wttj_matches`/`wttj_company_jobs`; (optional) `free_work_search`. Each with fixtures, contract tests, budgets.
+Tasks (in value order): `ats_jobs` + `companies.yaml` discovery; `apec_search` (HTTP) + `apec_job` (browser, full description); `wttj_matches`; (optional) `free_work_search`. Each with fixtures, contract tests, budgets.
 **Exit**: each adapter passes its tests and a live smoke; global semaphore/preemption verified with mixed calls.
 
 ## Phase 4 — Hardening and state

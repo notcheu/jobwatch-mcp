@@ -198,8 +198,8 @@ flowchart TB
     LS["linkedin_search"]
     LJ["linkedin_job"]
     LSR["linkedin_search_and_read"]
-    WM["wttj_matches / wttj_company_jobs<br/>Phase 3"]
-    AS["apec_search<br/>Phase 3"]
+    WM["wttj_matches<br/>Phase 3"]
+    AS["apec_search, apec_job<br/>Phase 3"]
     AJ["ats_jobs<br/>Phase 3"]
     MR["memory_report"]
   end
