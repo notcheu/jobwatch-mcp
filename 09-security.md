@@ -17,7 +17,7 @@
 | Client-side misuse of tools (prompt injection from job text) | Read-only catalog; no generic browser tools; `additionalProperties:false`; outputs flagged as untrusted; Claude-side per-tool permissions; router ignores any instruction-like content (it never acts on page text) |
 | Malicious page content exploits the browser | Headful Chrome kept current (monthly rebuild), container hardening, host allowlist on navigation, no file downloads (block downloads), no extensions |
 | Exfiltration from a compromised page | Egress allowlist for browser containers (proxy or nftables) — Phase 4; container has no access to the home LAN |
-| Docker socket abuse | Rootless Docker only; router uses the `jobwatch` user's own socket; no root socket anywhere; router runs as a non-root user with `no-new-privileges`, read-only root fs |
+| Docker socket abuse | Rootless Docker only; router uses the `mcpuser` user's own socket; no root socket anywhere; router runs as a non-root user with `no-new-privileges`, read-only root fs |
 | Account ban or checkpoint | Conservative budgets, jittered pacing, one tab, circuit breaker, `session_status`, notify Matthieu; residential IP only |
 | Profile theft from disk | Profiles 0700, dedicated user, disk encryption recommended; do not back up profiles unencrypted |
 | Secrets in git | `.gitignore` for `profiles/`, `data/`, `.env`, `secrets/`; pre-commit secret scan |

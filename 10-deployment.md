@@ -3,12 +3,12 @@
 > **Related docs:** Load for Docker, compose, Nginx, CI/CD, Watchtower and observability. Also load: `09` (hardening), `05` (browser image), `06` (container limits), `03` (config keys, endpoints), `02` (front and OAuth), `01` (D8-D10). Follow a link only if the task needs it.
 
 ## Host prerequisites (Ubuntu LTS)
-- **Rootless Docker** for a dedicated user `jobwatch` (no sudo, not in the `docker` group; leave your existing rootful Docker untouched or disabled for this user). One-time setup, as root:
+- **Rootless Docker** for a dedicated user `mcpuser` (no sudo, not in the `docker` group; leave your existing rootful Docker untouched or disabled for this user). One-time setup, as root:
   ```bash
   sudo apt install -y uidmap dbus-user-session docker-ce-cli docker-compose-plugin docker-ce-rootless-extras   # from Docker's apt repo (on Nuc-desktop only uidmap and dbus-user-session are missing)
-  sudo adduser --disabled-password jobwatch
+  sudo adduser --disabled-password mcpuser
   echo "jobwatch:100000:65536" | sudo tee -a /etc/subuid /etc/subgid     # only if not already present
-  sudo loginctl enable-linger jobwatch
+  sudo loginctl enable-linger mcpuser
   ```
   **Ubuntu 24.04 only** (`kernel.apparmor_restrict_unprivileged_userns=1`): allow rootlesskit to create user namespaces, otherwise the daemon fails with a permission error. VERIFY the exact profile against Docker's rootless docs for your version:
   ```
@@ -22,7 +22,7 @@
   ```
   then `sudo systemctl restart apparmor.service`.
 
-  then as `jobwatch' (login with `sudo machinectl shell jobwatch@` so the user systemd session exists):
+  then as `mcpuser` (login with `sudo apt install systemd-container && sudo machinectl shell mcpuser@` so the user systemd session exists):
   ```bash
   dockerd-rootless-setuptool.sh install
   systemctl --user enable --now docker
@@ -31,14 +31,14 @@
   ```
   The daemon socket is `/run/user/<uid>/docker.sock` (`$XDG_RUNTIME_DIR/docker.sock`). Rootless limits to know: no ports below 1024 (we use 8080/9464), slower networking (slirp4netns/pasta), and cgroup limits need cgroup v2 delegation (next line).
 - cgroup v2 with delegation to user services (VERIFY: `systemctl --user` with `Delegate=yes`; `cat /sys/fs/cgroup/cgroup.controllers`).
-- `loginctl enable-linger jobwatch` so user services start at boot.
+- `loginctl enable-linger mcpuser` so user services start at boot.
 - zram swap enabled on the host (spike S3/S7 decides size); disk encryption recommended.
 - Time sync (NTP), automatic security updates, UFW: allow inbound only from the Nginx host to the single published port (or nothing at all if Nginx runs on this host and the port is bound to `127.0.0.1`).
 - Record in `docs/measurements.md`: CPU arch, RAM, free RAM idle, disk free, Ubuntu version, runtime versions.
 
 ## Directory layout on the host
 ```
-/srv/jobwatch/                 (owner jobwatch:jobwatch, mode 0750)
+/srv/jobwatch/                 (owner mcpuser:mcpuser, mode 0750)
   compose/compose.yml
   secrets/                     (0700)  front secrets, shared secret (file-based secrets)
   data/                        router SQLite, logs (0700)
@@ -99,13 +99,13 @@ push to main → [test job: lint, typecheck, unit+contract, catalog drift] → b
 - **GitHub secrets:** `REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD` (same names as TraderTavern). The test job is skipped until `package.json` exists.
 - **`provenance: false` is required:** a provenance attestation turns the push into an OCI index with an `unknown/unknown` platform entry that Watchtower cannot resolve. Do not remove it.
 - **Single tag:** only `latest` is published, and Watchtower follows it. There is no versioned rollback tag; to roll back, revert the commit on `main` and let CI publish again.
-- **Host side (`deploy/compose.yml`):** the router uses `image: ${JW_REGISTRY}/jobwatch-router:${JW_TAG:-latest}` and carries the label `com.centurylinklabs.watchtower.enable=true`. A `watchtower` service runs with `WATCHTOWER_LABEL_ENABLE=true`, so **only the router** auto-updates; the OAuth front stays pinned by digest (supply chain, `09-…`). Watchtower mounts the same rootless socket and the `jobwatch` user's `~/.docker/config.json` (read-only) to authenticate to the registry. Log in once on the host: `docker login <registry>` as `jobwatch`.
+- **Host side (`deploy/compose.yml`):** the router uses `image: ${JW_REGISTRY}/jobwatch-router:${JW_TAG:-latest}` and carries the label `com.centurylinklabs.watchtower.enable=true`. A `watchtower` service runs with `WATCHTOWER_LABEL_ENABLE=true`, so **only the router** auto-updates; the OAuth front stays pinned by digest (supply chain, `09-…`). Watchtower mounts the same rootless socket and the `mcpuser` user's `~/.docker/config.json` (read-only) to authenticate to the registry. Log in once on the host: `docker login <registry>` as `mcpuser`.
 - **Browser image:** not auto-updated (spawned containers are invisible to Watchtower, and rebuilding Chrome should be deliberate). Build and push it from a separate workflow triggered only by changes under `images/browser/`, and pull the new tag by hand, then bump `JW_BROWSER_IMAGE`.
 - **Restart safety:** Watchtower may recreate the router while a call is running. On startup the router must reap orphan containers labelled `jobwatch.managed=true` and reconcile state from SQLite; a failed in-flight call is returned to Claude as an error and the routine retries. Set Watchtower to a quiet schedule (`WATCHTOWER_SCHEDULE`, e.g. after the daily routine) rather than the default poll interval.
 - **Caveats to VERIFY:** the original `containrrr/watchtower` is archived, so pick a maintained fork and check it supports the rootless socket and current Docker API version; verify the registry is reachable from the host and uses valid TLS.
 
 ## Autostart
-Rootless Docker starts at boot through `systemctl --user enable docker` + `loginctl enable-linger jobwatch`. The compose services use `restart: unless-stopped`, so they return with the daemon; alternatively a user unit that runs `docker compose up -d`; `Restart=on-failure`; slice with `MemoryMax` for the always-on services (small) and a separate slice for spawned browsers.
+Rootless Docker starts at boot through `systemctl --user enable docker` + `loginctl enable-linger mcpuser`. The compose services use `restart: unless-stopped`, so they return with the daemon; alternatively a user unit that runs `docker compose up -d`; `Restart=on-failure`; slice with `MemoryMax` for the always-on services (small) and a separate slice for spawned browsers.
 
 ## Build/update procedure
 1. Merge to `main`: CI tests, builds and pushes the router image (see "CI/CD" above). Manual path: `git pull`, run tests, `docker build`.

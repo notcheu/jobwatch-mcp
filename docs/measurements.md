@@ -35,3 +35,15 @@
 - Keep a dedicated `jobwatch` user (not `noguetith`), so the rootless daemon and its `DOCKER_HOST` never interfere with your existing rootful Docker.
 - Before S3, consider enabling zram and, if acceptable, stopping the desktop session during runs (`gnome-shell` and friends) to free memory. Decide after the first Chrome measurement.
 - Budgets in `06-…` stay at the current guesses until S3 measures real Chrome; expect to lower `memory.max`.
+
+## `host-check.sh` results as `mcpuser` (2026-10-01)
+The dedicated stack user is **`mcpuser`** (uid 1002; not in the `docker` group).
+| Check | Result |
+|---|---|
+| subuid / subgid | `mcpuser:165536:65536` |
+| `uidmap` | installed (`newuidmap`, `newgidmap`) |
+| cgroup delegation | `cpu memory pids` |
+| Linger | yes |
+| `kernel.apparmor_restrict_unprivileged_userns` | 1 (rootlesskit AppArmor profile still required, see `10-…`) |
+| Home filesystem | ZFS (`/home`), same pool as before |
+| Memory | 1017 MB available, swap 3028 of 3810 MB used: worse than the first run, so host pressure varies; S3 must be measured several times |

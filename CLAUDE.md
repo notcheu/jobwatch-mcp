@@ -9,7 +9,7 @@ Self-hosted **MCP orchestrator** ("jobwatch-mcp") running on Matthieu's home Ubu
 Request path: Claude → **existing Nginx reverse proxy** (TLS, own domain; no tunnel) → one published host port → **OAuth front** → **router** (private Docker network) → adapters → Chrome containers (spawned via the **rootless Docker** socket) or plain HTTP fetch. Diagrams: `16-architecture-diagrams.md`.
 - **Language/tooling:** TypeScript (strict), ESM, **Node 26**, **npm** (committed `package-lock.json`, `npm ci`).
 - **Libraries:** `@modelcontextprotocol/sdk` (stateless Streamable HTTP) on Express, `zod`, `playwright-core` (`connectOverCDP` only, behind `BrowserSession`), `better-sqlite3`, `pino`, `prom-client` (optional metrics), `vitest`, `eslint` + `prettier`.
-- **Runtime:** rootless Docker for a dedicated `jobwatch` user; always-on services (OAuth front, router, Watchtower) in `deploy/compose.yml`; browser containers are spawned by the router, never declared in compose.
+- **Runtime:** rootless Docker for a dedicated `mcpuser` user; always-on services (OAuth front, router, Watchtower) in `deploy/compose.yml`; browser containers are spawned by the router, never declared in compose.
 - **Adapters:** one module per platform under `src/adapters/<platform>/index.ts` using the Adapter SDK (`defineAdapter`/`defineTool`). Tool definitions live in code; `catalog/*.json` is a **generated** snapshot.
 - **Delivery:** GitHub Actions builds and pushes `jobwatch-router:latest` to a private registry; Watchtower on the host updates the router (`10-deployment.md`).
 
@@ -31,7 +31,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, own domain; no t
 - Never commit, stage or push: `deploy/.env`, anything under `secrets/`, `profiles/` or `data/`, cookies, browser profiles, tokens, registry credentials, HAR files, or saved HTML of logged-in pages. Only `deploy/.env.example` (placeholders only) may be committed.
 - These are excluded via `.gitignore`. Do not remove or weaken those rules.
 - Whenever a file containing environment variables, credentials or captured page data is read, edited or analysed, double-check: (1) is it gitignored, and (2) would it expose a real key/secret/session if committed. If unsure, treat it as unsafe and flag it before staging.
-- CI secrets (`REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`) live only in GitHub secrets; the host's registry login lives only in the `jobwatch` user's `~/.docker/config.json`.
+- CI secrets (`REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`) live only in GitHub secrets; the host's registry login lives only in the `mcpuser` user's `~/.docker/config.json`.
 
 ## Commands
 Scripts are planned and do not exist until `package.json` is created in Phase 1; keep this list in sync when they do.
