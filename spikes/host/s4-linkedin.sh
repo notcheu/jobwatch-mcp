@@ -18,9 +18,10 @@ cleanup() { docker stop -t 25 "$BR" >/dev/null 2>&1 || true; docker rm -f "$BR" 
 trap 'cleanup' EXIT
 
 prepare() {
-  cleanup
+  echo "[1/3] cleaning up leftovers"; cleanup
+  echo "[2/3] building the Chrome image (a few minutes the first time, cached afterwards)..."
   docker build -q -t jw-spike-chrome "$ROOT/spikes/chrome" >/dev/null
-  docker network create "$NET" >/dev/null
+  echo "[3/3] creating network $NET"; docker network create "$NET" >/dev/null
 }
 start_browser() { # $1 = mode, rest = extra docker args
   local mode=$1; shift
@@ -36,6 +37,7 @@ case "$cmd" in
 login)
   prepare
   VNC_PASSWORD=$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 10)
+  echo "starting Chrome in login mode..."
   start_browser login -p 127.0.0.1:6080:6080 -e VNC_PASSWORD="$VNC_PASSWORD" -e START_URL=https://www.linkedin.com/login
   HOST_IP=$(hostname -I | awk '{print $1}')
   cat <<MSG
@@ -50,6 +52,7 @@ MSG
   stop_graceful ;;
 check|persist)
   prepare
+  echo "building the probe image (a few minutes the first time)..."
   docker build -q --build-arg NODE_VERSION="$NODE_VERSION" -t jw-spike-s4-probe "$ROOT/spikes/s4" >/dev/null
   cycles=1; [ "$cmd" = persist ] && cycles=3
   for n in $(seq 1 "$cycles"); do
