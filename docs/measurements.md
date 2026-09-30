@@ -78,3 +78,12 @@ Findings:
 
 ### Run 5: sandbox ON with the custom seccomp profile (2026-10-01)
 Host available 1562 MB. Cold start 1.3 s, idle 229 MB, Wikipedia 286, Le Monde 333, WTTJ 490, APEC 322 MB, **peak 518 MB**, `OOMKilled=false`. Chrome started with its sandbox after adding `unshare`, `setns`, `clone` (first attempt: namespace creation denied) and `chroot` (second attempt: `sys_chroot` denied) to Docker's default seccomp profile. V10 is confirmed; decision recorded in `05` G6. The profile still needs to be moved to `images/browser/` and pinned in Phase 1.
+
+## S6: router-like container driving Chrome over an internal network (2026-10-01, `spikes/host/s6-devtools.sh`)
+Chrome 154.0.8037.92 container on an `--internal` Docker network (no published ports), probe container with `playwright-core` 1.63.0 on Node 26.
+- DevTools by container IP: 200. By container name: 500 "Host header is specified and is not an IP address or localhost" (also fails through `connectOverCDP`); with `Host: localhost`: 200. Chrome's own port 9223 is refused from other containers, so `socat` on 9222 is required (G2, V6 confirmed).
+- WebSocket handshake succeeds with any `Origin` (`--remote-allow-origins=*`): the internal network is the only protection; never publish 9222.
+- `chromium.connectOverCDP(http://<IP>:9222)`: one context and one page; `newPage()` then `page.close()` restores the original single tab.
+- Fingerprint signals on a blank page: `navigator.webdriver=false`, UA without `HeadlessChrome`, `window.chrome` present, 5 plugins, screen 1366x800, TZ `Europe/Paris`, no `playwright`/`__pw` globals. `navigator.languages` is `["en-US","en"]`: set the container locale/`--lang` to match the real browser (G8).
+- `Browser.close` over CDP: Chrome exits, container stops with exit code 0 (G5 confirmed).
+- Finding for the router: Playwright needs a writable temp dir, so the router container needs a `/tmp` tmpfs (already in `deploy/compose.yml`).

@@ -21,8 +21,8 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 | V3 | Google Chrome stable is available for the host architecture | `05` | S3 | **confirmed** (host is x86_64, `docs/measurements.md`) |
 | V4 | One headful Chrome container fits in ≈1 GB on LinkedIn pages | `06` | S3 | **confirmed for public pages** (peak 487-625 MB, `docs/measurements.md`); LinkedIn logged-in still to measure in S5. Host itself is near its RAM/swap limit |
 | V5 | Session cookies persist across graceful restarts with `--restore-last-session` | `05` G4 | S4 | open |
-| V6 | Chrome on the pinned version honours `--remote-debugging-port` with a custom user-data-dir; DevTools reachable via socat and container IP | `05` G1/G2 | S6 | open |
-| V7 | Fingerprint self-check passes with Playwright `connect_over_cdp` | `05` G3 | S4 | open |
+| V6 | Chrome on the pinned version honours `--remote-debugging-port` with a custom user-data-dir; DevTools reachable via socat and container IP | `05` G1/G2 | S6 | **confirmed** (Chrome 154, `socat` forward, container IP, internal network; `docs/measurements.md`) |
+| V7 | Fingerprint self-check passes with Playwright `connect_over_cdp` | `05` G3 | S4 | **partly confirmed** on a blank page (S6): `webdriver=false`, no `HeadlessChrome`, no `__playwright*` globals. Still to check on real sites (S4) and set `navigator.languages`/UI language to match the real browser (G8) |
 | V8 | Navigating to `currentJobId` URLs (or `/jobs/view/<id>`) exposes the same description selector | `07` | S5 | open |
 | V9 | Rootless Docker flags: `--memory`, `--memory-swap`, `--memory-reservation`, `--init`; cgroup v2 delegation (memory controller) for rootless | `06` | S7 | **confirmed**: `--memory`, `--memory-swap` enforced; `--memory-reservation` does not set `memory.high` (no soft throttle), `--init` works |
 | V10 | Chrome sandbox works under the chosen rootless seccomp/userns setup; else `--no-sandbox` decision | `05` G6, `09` | S7 | **confirmed**: works with the custom seccomp profile (default + `unshare`, `setns`, `clone`, `chroot`), `--cap-drop ALL`, `no-new-privileges`, read-only root; re-verify on each Chrome major |
