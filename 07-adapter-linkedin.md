@@ -1,5 +1,7 @@
 # 07 — LinkedIn adapter (with lessons learned from the Chrome-extension era)
 
+> **Related docs:** Load for the LinkedIn adapter. Also load: `04` (tool shapes), `03` (Adapter SDK), `05` (browser and fingerprint), `09` (usage budget and ToS), `13` (routine side), `14` (VERIFY items). Follow a link only if the task needs it.
+
 The proven extraction logic is `../linkedin-extract.js` (and the procedure in `../02-linkedin.md`). This adapter must reproduce its behaviour server-side with better reliability. Everything below comes from real runs on 2026-09-29/30 unless tagged VERIFY.
 
 ## Scope (read-only)
@@ -41,7 +43,7 @@ For each id (max 10 per call): navigate to the details URL, wait for the About-t
 ### `linkedin_search_and_read`
 Search, drop `skip_ids`, apply `title_exclude_regex` (default = the routine's exclusions: Engineering Manager, Angular, Vue, Java, .NET, fullstack, freelance, stage/alternance, **word-bounded `intern(ship)?`** — the old unbounded `intern` matched "Internal Tools"), open up to `max_jobs` remaining jobs, return cards + details.
 
-## Hints dictionaries (`parse.py`)
+## Hints dictionaries (`parse.ts`)
 - Stack: React, Next.js, TypeScript, JavaScript, Angular/AngularJS, Vue/Vue.js/Nuxt, Node.js, Java, Kotlin, PHP/Symfony, Python, Svelte, GraphQL, Storybook, Design System, micro-frontends. Use **case-sensitive word-boundary** matching for `Vue` (the French word "vue" otherwise matches everywhere).
 - Years: patterns like `(\d+)\s*\+?\s*(ans|years)`; return the list of matches.
 - Remote: `télétravail`, `remote`, `hybrid`, `\d+ jours`, `full remote`.

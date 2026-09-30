@@ -1,0 +1,53 @@
+# Always-on services only. Browser containers are spawned by the router (label jobwatch.managed=true).
+# Nginx (your existing reverse proxy) proxies the public hostname to the single published port below.
+name: jobwatch
+networks:
+  jobwatch-core:     { internal: false }     # front <-> router
+  jobwatch-browsers: { internal: true }      # router <-> spawned browsers
+services:
+  front:
+    image: ${JW_FRONT_IMAGE}                 # OAuth front (decision D7), pin by digest
+    # config: issuer/base URL = JW_BASE_URL, single allowed identity, backend = http://router:8080/mcp
+    ports:
+      - "${JW_BIND:-127.0.0.1}:${JW_PORT:-8080}:8080"   # VERIFY the front's container listen port; the ONLY published port
+    networks: [ jobwatch-core ]
+    volumes: [ "../data/front:/data" ]
+    restart: unless-stopped
+  router:
+    image: ${JW_REGISTRY}/jobwatch-router:${JW_TAG:-latest}    # pushed by CI (.github/workflows/docker-publish.yml)
+    build:                                   # local fallback: docker compose build router
+      context: ..
+      dockerfile: Dockerfile
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    user: "1000:1000"                        # VERIFY: in rootless Docker the socket is owned by the host user = container root (uid 0); if uid 1000 cannot open it, run as "0:0" (still unprivileged on the host, keep cap_drop ALL)
+    read_only: true
+    tmpfs: [ "/tmp:rw,size=64m" ]
+    cap_drop: [ ALL ]
+    security_opt: [ "no-new-privileges:true" ]
+    environment:
+      JW_BASE_URL: ${JW_BASE_URL}            # https://mcp.<your-domain>
+      JW_RUNTIME: docker
+      DOCKER_HOST: unix:///var/run/docker.sock          # the jobwatch user's ROOTLESS socket, mounted below
+      JW_METRICS_ENABLED: ${JW_METRICS_ENABLED:-false}  # true => Prometheus /metrics on 9464
+      JW_METRICS_PORT: 9464
+    volumes:
+      - "${XDG_RUNTIME_DIR}/docker.sock:/var/run/docker.sock"
+      - "../data/router:/data"
+      - "../profiles:/profiles:ro"           # read-only here; browser containers mount the subfolders rw by host path
+    ports:
+      - "${JW_METRICS_BIND:-127.0.0.1}:${JW_METRICS_PORT:-9464}:9464"   # Prometheus scrape target; nothing listens unless metrics are enabled
+    networks: [ jobwatch-core, jobwatch-browsers ]   # MCP port is not published
+    restart: unless-stopped
+  watchtower:                                # auto-updates only containers labelled watchtower.enable=true (the router)
+    image: ${JW_WATCHTOWER_IMAGE}            # VERIFY: maintained fork; pin by digest
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_SCHEDULE: "0 30 4 * * *"    # 04:30 daily (6-field cron), after the routine; adjust
+    volumes:
+      - "${XDG_RUNTIME_DIR}/docker.sock:/var/run/docker.sock"
+      - "${HOME}/.docker/config.json:/config.json:ro"    # registry credentials from `docker login`
+    networks: [ jobwatch-core ]
+    restart: unless-stopped

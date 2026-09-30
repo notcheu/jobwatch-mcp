@@ -1,5 +1,7 @@
 # 01 — Decisions (ADR log)
 
+> **Related docs:** Load when choosing, changing or questioning a decision. Also load: `02` (D7 OAuth front), `05` (D8 browser/runtime), `10` (D8-D10 deployment, stack), `03` (D9 layout), `15` (sources). Skip for pure implementation work. Follow a link only if the task needs it.
+
 Status tags: **DECIDED** (agreed with Matthieu), **PROPOSED** (recommended, confirm in Phase 0), **OPEN** (needs a decision or a spike).
 
 ## D1 — Write our own router rather than deploy a general MCP gateway — DECIDED
@@ -29,15 +31,15 @@ Fallback: Chromium from Debian/Playwright build if Chrome stable is unavailable 
 - (c) Fallback: implement the resource-server side in the router and use a hosted/self-hosted IdP with DCR (more work).
 Evaluation criteria are in `02-claude-connector-requirements.md` (checklist) and Phase 0 spike S2.
 
-## D8 — Container runtime: rootless Podman (or rootless Docker); the router gets the rootless socket, never a root socket — PROPOSED
-A root-level Docker socket is root-equivalent; a socket proxy only filters by API endpoint (not image). With rootless runtime a compromised router is an unprivileged user. Runtime access is behind a `RuntimeBackend` interface with implementations: `PodmanCliBackend` (shell out to `podman run/stop/rm/inspect`), later optional `SystemdScopeBackend` (Chrome under `systemd-run --user --scope -p MemoryMax=…`, no container, no network isolation).
-Matthieu asked for docker-compose for the always-on services: use `podman compose` or `docker compose` with rootless setup for tunnel + OAuth front + router; browser containers are spawned by the router (not declared in compose).
+## D8 — Container runtime: rootless Docker; the router gets the rootless socket, never a root socket — DECIDED
+Matthieu already uses Docker, so the stack uses **rootless Docker** under a dedicated `jobwatch` user. A root-level Docker socket is root-equivalent and a socket proxy only filters by API endpoint (not image); with rootless Docker a compromised router is an unprivileged user. Runtime access is behind a `RuntimeBackend` interface with implementations: `DockerCliBackend` (shell out to `docker run/stop/rm/inspect/stats`), later optional `SystemdScopeBackend` (Chrome under `systemd-run --user --scope -p MemoryMax=…`, no container, no network isolation). Podman could be added as another backend later; nothing in the design depends on it.
+The always-on services (OAuth front + router) are declared in `docker compose`; browser containers are spawned by the router (not declared in compose).
 
 ## D9 — Implementation language/stack — PROPOSED
-Python 3.12, `uv` for deps, `mcp` official Python SDK (FastMCP, Streamable HTTP, **stateless** mode) on Starlette/uvicorn, `pydantic` v2 for schemas, `httpx` for plain fetch adapters, `playwright` (Python) used only via `connect_over_cdp` and `page.evaluate` (keep the surface minimal so it can be swapped for Patchright or raw CDP), `pytest` + `pytest-asyncio`, `ruff`, `mypy`. VERIFY exact SDK options for stateless HTTP at implementation time.
+TypeScript (strict) on Node.js 26 (pinned via `engines` in `package.json` and `.nvmrc`; VERIFY that `better-sqlite3` ships or builds a binary for Node 26 and that Node 26 is LTS-eligible by deploy time), **npm** for deps (committed `package-lock.json`, `npm ci` in CI/deploy), ESM. `@modelcontextprotocol/sdk` (official TypeScript SDK, `McpServer` + `StreamableHTTPServerTransport` in **stateless** mode, i.e. `sessionIdGenerator: undefined`, one transport per request) on Express (or Hono), `zod` for schemas (catalog JSON is converted/validated with zod and exposed as JSON Schema), built-in `fetch` (undici) for plain fetch adapters, `playwright-core` used only via `chromium.connectOverCDP` and `page.evaluate` (keep the surface minimal so it can be swapped for Patchright or raw CDP), `better-sqlite3` for the store, `pino` for logs, `vitest` for tests, `eslint` + `prettier`, `tsc --noEmit` for type checks, `tsx` for dev. VERIFY exact SDK options for stateless HTTP at implementation time.
 
-## D10 — Public exposure: outbound tunnel (e.g. Cloudflare Tunnel) — OPEN
-Requirements: stable public HTTPS hostname, `/.well-known/*` routed to the OAuth front, no inbound ports on the house router, ability to allowlist Anthropic's egress range `160.79.104.0/21` (note Anthropic warns a WAF in front of the authorization server can break discovery). Matthieu must pick the provider/domain.
+## D10 — Public exposure: existing Nginx reverse proxy + one published port — DECIDED
+Matthieu's network already sits behind an Nginx reverse proxy that terminates TLS for his own domain. No tunnel (Cloudflare or other) is used. The compose stack publishes **exactly one host port**, owned by the OAuth front (default `127.0.0.1:8080`, configurable through `JW_BIND`/`JW_PORT`); Nginx proxies the public hostname to it. The router never publishes a port. Requirements: stable public HTTPS hostname, all of `/.well-known/*`, `/register`, `/authorize`, `/token`, `/mcp` proxied to the front, streaming-friendly proxy settings (no buffering, long read timeout), and Anthropic's egress range `160.79.104.0/21` must reach the discovery and OAuth endpoints (a WAF or allowlist in front of the authorization server can break discovery). Nginx settings and the compose wiring are in `10-deployment.md`.
 
 ## D11 — State kept by the router — PROPOSED
 SQLite (WAL) in `data/`: rate-limit counters, circuit breaker state, `seen_ids` per platform (Phase 4), call log (tool, duration, peak RSS, cold start). No job data is stored beyond what `seen_ids` needs.

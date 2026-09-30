@@ -1,5 +1,7 @@
 # 02 — What Claude requires from the public endpoint
 
+> **Related docs:** Load for OAuth/connector work. Also load: `01` (D7 front choice), `10` (Nginx and compose), `09` (auth threats), `12` (spikes S1, S2, S8), `15` (sources). Follow a link only if the task needs it.
+
 Source: Anthropic docs "Authentication for connectors" and "Third party connectors with remote MCP" (see `15-sources.md`). Re-read them at implementation time: they change. Items marked VERIFY were not testable from the design session.
 
 ## Supported authentication types for a custom remote MCP connector

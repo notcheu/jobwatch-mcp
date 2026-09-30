@@ -1,5 +1,7 @@
 # 08 — Other adapters (Phase 3)
 
+> **Related docs:** Load for APEC, WTTJ and ATS adapters (Phase 3). Also load: `04` (tool shapes), `03` (Adapter SDK), `05` (browser), `13` (routine side). Follow a link only if the task needs it.
+
 All return the normalized card shape from `04-…`. Every adapter declares `allowed_hosts` and respects the platform's rate policy.
 
 ## WTTJ (Welcome to the Jungle) — browser-backed
@@ -26,7 +28,7 @@ Filters in the URL were ignored (mix of freelance/CDI/support). Skip in v1 unles
 An Indeed connector already exists on the Claude side (tools `search_jobs`, `get_job_details`, …). Keep using it directly; it is **not** part of the orchestrator. (It failed to connect on 2026-09-29/30 and appeared later: test it during Phase 5.)
 
 ## Company career pages / public ATS job boards — plain HTTP, no browser (high value)
-Many watch-list companies host jobs on Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Teamtailor, etc., which expose public JSON/RSS endpoints. A `ats_jobs(provider, company, query)` tool calls them with `httpx` (no container, no semaphore).
+Many watch-list companies host jobs on Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Teamtailor, etc., which expose public JSON/RSS endpoints. A `ats_jobs(provider, company, query)` tool calls them with built-in `fetch` (no container, no semaphore).
 Endpoint patterns to **VERIFY** at implementation time (not tested in the design session):
 - Greenhouse: `https://boards-api.greenhouse.io/v1/boards/<token>/jobs?content=true`
 - Lever: `https://api.lever.co/v0/postings/<company>?mode=json`

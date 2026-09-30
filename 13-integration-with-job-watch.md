@@ -1,5 +1,7 @@
 # 13 — Integration with the job-watch routine
 
+> **Related docs:** Load for the routine side. Also load: `04` (tool contracts), `07`/`08` (per-platform behaviour), `02` (connector constraints). The routine's own files live outside this repo. Follow a link only if the task needs it.
+
 The routine lives in the parent folder: `../00-orchestrator.md` (entry), `01-profile.md`, `02-linkedin.md`, `03-indeed.md`, `04-other-sources.md`, `05-mail-rules.md`, `06-mail-template.md`, `mail-template.html`, `linkedin-extract.js`; its memory is the Claude project document `claude/offres-vues.md`. The routine is a scheduled task that reads these files and writes one HTML mail via Gmail.
 
 ## What changes

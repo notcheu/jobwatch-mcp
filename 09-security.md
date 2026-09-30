@@ -1,5 +1,7 @@
 # 09 — Security
 
+> **Related docs:** Load for threat modelling and hardening reviews. Also load: `10` (compose, Docker socket, CI/CD), `05` (browser sandbox), `03` (error model, trust), `07` (LinkedIn budget), `02` (OAuth). Follow a link only if the task needs it.
+
 ## Assets to protect
 1. Matthieu's LinkedIn (and other) sessions: cookies in the browser profiles.
 2. The home network / machine.
@@ -15,16 +17,17 @@
 | Client-side misuse of tools (prompt injection from job text) | Read-only catalog; no generic browser tools; `additionalProperties:false`; outputs flagged as untrusted; Claude-side per-tool permissions; router ignores any instruction-like content (it never acts on page text) |
 | Malicious page content exploits the browser | Headful Chrome kept current (monthly rebuild), container hardening, host allowlist on navigation, no file downloads (block downloads), no extensions |
 | Exfiltration from a compromised page | Egress allowlist for browser containers (proxy or nftables) — Phase 4; container has no access to the home LAN |
-| Docker/Podman socket abuse | Rootless runtime only; router uses the user's own socket; no root socket anywhere; router runs as a non-root user with `no-new-privileges`, read-only root fs |
+| Docker socket abuse | Rootless Docker only; router uses the `jobwatch` user's own socket; no root socket anywhere; router runs as a non-root user with `no-new-privileges`, read-only root fs |
 | Account ban or checkpoint | Conservative budgets, jittered pacing, one tab, circuit breaker, `session_status`, notify Matthieu; residential IP only |
 | Profile theft from disk | Profiles 0700, dedicated user, disk encryption recommended; do not back up profiles unencrypted |
 | Secrets in git | `.gitignore` for `profiles/`, `data/`, `.env`, `secrets/`; pre-commit secret scan |
-| Supply chain | Pin image digests and Python deps (lockfile); scheduled `pip-audit`/`uv` checks; rebuild browser image deliberately |
+| Supply chain | CI publishes the router to a private registry (credentials only in GitHub secrets and the host `~/.docker/config.json`); Watchtower updates only the labelled router; pin image digests and npm deps (committed `package-lock.json`, `npm ci`, exact versions); scheduled `npm audit` checks; rebuild browser image deliberately |
 | Runaway resource use (DoS on the house) | cgroup caps, rate limits, queue timeout, global semaphore |
 
 ## Network
-- Public: only the tunnel hostname (HTTPS). No inbound ports on the home router.
-- Optional: restrict the tunnel/WAF to Anthropic's egress range `160.79.104.0/21` — but keep `/.well-known/*` and OAuth endpoints reachable from that range (Anthropic notes a WAF in front of the authorization server can break discovery).
+- Public: only the hostname served by your existing Nginx (HTTPS, TLS terminated there). The stack publishes a single host port (the OAuth front), bound to `127.0.0.1` when Nginx runs on the same host, or to the private LAN address otherwise; never `0.0.0.0` unless a firewall restricts it to the Nginx host.
+- Optional: restrict the Nginx `server` block (`allow`/`deny`) or WAF to Anthropic's egress range `160.79.104.0/21` — but keep `/.well-known/*` and OAuth endpoints reachable from that range (Anthropic notes a WAF in front of the authorization server can break discovery).
+- The optional Prometheus `/metrics` listener (port 9464, `JW_METRICS_ENABLED`) is off by default, is never proxied by Nginx or the front, and is bound to `127.0.0.1` or the LAN address your Prometheus uses.
 - Internal networks: `jobwatch-core` (front ↔ router) and `jobwatch-browsers` (router ↔ browser containers; internal, egress via allowlist proxy in Phase 4).
 - The DevTools endpoint (port 9222 via socat) is reachable **only** on `jobwatch-browsers` and is never published on a host port (it is full control of the browser and its cookies).
 - The login viewer (noVNC) is bound to `127.0.0.1` on the host and reached through an SSH tunnel; never public.
@@ -44,4 +47,4 @@ Do not log descriptions or cookies. Keep call logs 30 days. Never send the profi
 ## Incident runbook (short)
 - Suspected token leak: revoke refresh tokens at the front, rotate `JW_FRONT_SHARED_SECRET`, re-add the connector.
 - LinkedIn checkpoint email/notification: stop the router's LinkedIn tools (breaker manual open), log in manually from the usual device, resolve the challenge, wait 24 h, resume with lower budgets.
-- Unexpected container running: `podman ps --filter label=jobwatch.managed=true`; stop and inspect logs; check the router's call log.
+- Unexpected container running: `docker ps --filter label=jobwatch.managed=true`; stop and inspect logs; check the router's call log.

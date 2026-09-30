@@ -1,5 +1,7 @@
 # 06 — Memory and lifecycle policy (strict)
 
+> **Related docs:** Load for RAM policy and runtime lifecycle. Also load: `05` (image flags), `03` (runtime manager and leases), `10` (host cgroups, slices), `11` (measurement and soak tests), `14` (open VERIFY items). Follow a link only if the task needs it.
+
 The host has limited RAM. Policy: **nothing runs when idle; one browser at a time; one tab at a time; hard caps enforced by cgroups; every limit observable.** All numbers below are starting guesses to be replaced by measurements (Phase 0 spike S3).
 
 ## Per-platform runtime state machine
@@ -10,10 +12,10 @@ COLD ──call──▶ STARTING ──ready──▶ BUSY ──call done─�
                FAILED ──(1 retry)──▶ STARTING                     preempt (other platform needs RAM) ─┘
 BUSY/IDLE_GRACE ──watchdog >90%──▶ STOPPING(kill) ; max_lifetime reached while IDLE_GRACE ──▶ STOPPING
 ```
-- **STARTING**: `podman run` with limits; wait for DevTools (timeout 30 s); fingerprint self-check; logged-in check is done by the adapter, not here.
+- **STARTING**: `docker run` with limits; wait for DevTools (timeout 30 s); fingerprint self-check; logged-in check is done by the adapter, not here.
 - **BUSY**: a lease is held; exactly one working tab open.
 - **IDLE_GRACE**: no lease; timer `idle_ttl` (default 120 s) runs; the blank tab remains. Any new call for the same platform cancels the timer.
-- **STOPPING**: `Browser.close` via DevTools → wait 10 s → SIGTERM → wait to 20 s → SIGKILL → `podman rm`. Profile volume untouched.
+- **STOPPING**: `Browser.close` via DevTools → wait 10 s → SIGTERM → wait to 20 s → SIGKILL → `docker rm`. Profile volume untouched.
 - **Preemption**: if a call for platform B arrives while platform A is IDLE_GRACE, stop A immediately (do not wait for the TTL), then start B. If A is BUSY, B queues (FIFO) up to `queue_timeout` (default 60 s), else `busy`.
 - **Max lifetime**: a runtime older than `max_lifetime` (default 30 min) is recycled at the next IDLE_GRACE/lease boundary, never mid-call.
 
@@ -25,9 +27,9 @@ BUSY/IDLE_GRACE ──watchdog >90%──▶ STOPPING(kill) ; max_lifetime reach
 
 ## Hard limits (per browser container)
 ```
-podman run --rm --name jw-<platform> --init \
+docker run --rm --name jw-<platform> --init \
   --memory 1100m --memory-swap 1100m            # hard cap, no swap for this container
-  --cgroup-conf memory.high=900M                # soft throttle below the hard cap (VERIFY flag support)
+  --memory-reservation 900m                     # soft limit; under host pressure the kernel reclaims down to it (VERIFY; no memory.high equivalent in docker run)
   --oom-score-adj 500                           # die before the rest of the machine
   --pids-limit 512 --shm-size 256m --cpus 1.5
   --cap-drop ALL --security-opt no-new-privileges
@@ -41,7 +43,7 @@ Per-tool budgets in the catalog (`memory.high_mb`, `memory.max_mb`) override the
 Host level: run the whole stack in a systemd slice with `MemoryMax`; enable zram swap on the host to absorb spikes (keep it OFF inside the browser container). VERIFY cgroup v2 delegation for the rootless user (`systemctl --user`, `Delegate=yes`).
 
 ## Watchdog thresholds
-Polling source: `podman stats --no-stream --format json <name>` (or the cgroup `memory.current` file when accessible). Interval 5 s while a runtime is running.
+Polling source: `docker stats --no-stream --format json <name>` (or the cgroup `memory.current` file when accessible). Interval 5 s while a runtime is running.
 | Level | Condition | Action |
 |---|---|---|
 | warn | ≥ 70% of `memory.max` | close every non-working tab; `HeapProfiler.collectGarbage`; log `mem_warn` |
@@ -59,12 +61,12 @@ The idle TTL (120 s) must be longer than the typical gap between a routine's con
 On the real machine, with the pinned Chrome image:
 1. Idle RAM and free RAM of the host before anything runs (`free -m`).
 2. RSS (container `memory.current`) for: Chrome+Xvfb idle; LinkedIn search page; job details page; after 10 job pages; after closing the working tab; after 20 minutes idle.
-3. Cold-start time: `podman run` → DevTools ready → logged-in check.
+3. Cold-start time: `docker run` → DevTools ready → logged-in check.
 4. With/without resource blocking; with `--renderer-process-limit` 1 vs 2.
 5. Derive: `memory.high`/`max`, `idle_ttl`, `max_lifetime`, warn/critical thresholds. Update this file.
 
 ## Invariants (tests must enforce)
 - At most one browser container with label `jobwatch.managed=true` exists at any time (assert in integration tests).
-- After the TTL expires no managed container remains (`podman ps` empty) — soak test.
+- After the TTL expires no managed container remains (`docker ps` empty) — soak test.
 - `tools/list` and ops calls never start a runtime.
 - A runtime never exceeds its `memory.max` (cgroup) and is killed before the host swaps heavily.

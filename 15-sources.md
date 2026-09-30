@@ -1,5 +1,7 @@
 # 15 — Sources consulted during design (re-check when implementing)
 
+> **Related docs:** Load only to re-check a reference. Usually reached from `01`, `02` or `05`. Follow a link only if the task needs it.
+
 Claude connector requirements
 - Authentication for connectors — https://claude.com/docs/connectors/building/authentication
 - Third party connectors with remote MCP — https://claude.com/docs/connectors/custom/remote-mcp

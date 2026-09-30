@@ -1,5 +1,7 @@
 # 11 — Testing and validation
 
+> **Related docs:** Load for tests and acceptance. Also load: `12` (phase exit criteria), `06` (RAM expectations), `05` (fingerprint checks), `09` (security checklist), `14` (VERIFY items), `03` (contract tests, testkit). Follow a link only if the task needs it.
+
 ## Test pyramid
 1. **Unit (fast, no containers)**: catalog validation, argument validation, rate limiter, circuit breaker, state machine (with a fake `RuntimeBackend`), output shaping/size caps, parsers (fixtures), hints dictionaries (including the `Vue` case-sensitivity trap).
 2. **Contract**: for each tool, adapter output validates against `outputSchema`; `tools/list` snapshot equals catalog; `tools/list` never calls the backend; every tool has `readOnlyHint` and `additionalProperties:false`; descriptions ≤ N chars.
@@ -10,7 +12,7 @@
 
 ## Lifecycle/memory tests (must pass before go-live)
 - **Cold/warm**: first call cold (record ms); second call within the TTL warm (no spawn).
-- **Idle reap**: after the TTL no managed container remains (poll `podman ps`).
+- **Idle reap**: after the TTL no managed container remains (poll `docker ps`).
 - **Preemption**: call APEC while LinkedIn is in grace → LinkedIn container stops immediately, APEC starts; never two at once.
 - **Queueing**: two simultaneous calls → serialized; third beyond `queue_timeout` → `busy`.
 - **Watchdog**: fake adapter that allocates memory → `budget_exceeded`, container stopped, router healthy.
@@ -31,4 +33,4 @@ See `12-roadmap.md` (exit criteria). Global acceptance for go-live:
 - [ ] Security checklist in `09-…` fully ticked.
 
 ## Tooling
-`pytest`, `pytest-asyncio`, `respx`/`httpx` mock for HTTP adapters, `ruff`, `mypy --strict` on core modules, `pre-commit` (ruff, secret scan), GitHub Actions or a local `make ci` (Matthieu's choice) running unit+contract+integration on the Ubuntu machine (integration needs the runtime; mark with a pytest marker).
+`vitest`, `msw` (or undici `MockAgent`) to mock HTTP adapters, `eslint` + `prettier`, `tsc --noEmit` with `strict`, `husky`/`pre-commit` (eslint, secret scan), GitHub Actions or a local `npm run ci` (Matthieu's choice) running unit+contract+integration on the Ubuntu machine (integration needs the runtime; separate vitest project/tag, e.g. `npm run test:integration`).

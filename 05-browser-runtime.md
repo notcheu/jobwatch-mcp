@@ -1,5 +1,7 @@
 # 05 — Browser runtime (the shared image) and how it is driven
 
+> **Related docs:** Load for the Chrome image, CDP and login mode. Also load: `06` (limits, watchdog, state machine), `09` (container hardening), `10` (host and Docker setup), `07` (fingerprint and LinkedIn needs), `15` (sources). Follow a link only if the task needs it.
+
 One image, used by every browser-backed platform. It contains **no adapter code**: it is Chrome + a virtual display + a few helper processes. Behaviour differs only by environment variables and the mounted profile volume.
 
 ## Image contents
@@ -8,9 +10,9 @@ One image, used by every browser-backed platform. It contains **no adapter code*
 - `xvfb` (virtual display), `fonts-liberation` + a CJK/emoji font if needed, `tini` (PID 1 / zombie reaping), `socat` (DevTools port forward, see G2), `ca-certificates`, `tzdata`.
 - Login mode helpers: `x11vnc`, `novnc`/`websockify` (only started when `MODE=login`).
 - Non-root user `chrome` (uid 1000), home `/home/chrome`, profile mount `/profile`.
-- No adapters, no Playwright, no Python.
+- No adapters, no Playwright, no Node/npm.
 
-## Containerfile sketch
+## Dockerfile sketch (browser image)
 ```dockerfile
 FROM debian:bookworm-slim
 ARG DEBIAN_FRONTEND=noninteractive
@@ -58,7 +60,7 @@ Do NOT use `--single-process` (unstable), `--headless`, `--enable-automation`, o
 ## Gotchas (each one needs a Phase 0/1 check)
 - **G1 — Non-default profile dir.** Recent Chrome versions ignore `--remote-debugging-port` when launched with the default user-data directory. We always pass `--user-data-dir=/profile`. VERIFY on the pinned Chrome major.
 - **G2 — DevTools reachability.** Chrome may bind DevTools to 127.0.0.1 only and ignore `--remote-debugging-address`. Hence the `socat` forward. Also the DevTools HTTP endpoint rejects requests whose `Host` header is not `localhost` or an IP address: connect to the container's **IP**, not its DNS name (or add a fixed `Host` header). Keep `--remote-allow-origins=*` for the WebSocket handshake. VERIFY.
-- **G3 — Automation signals.** Connecting with Playwright over CDP can leave traces (Playwright globals, CDP side effects). Keep Playwright usage minimal (`connect_over_cdp`, one `new_page`, `page.goto`, `page.evaluate`). The startup fingerprint self-check (below) must pass. Fallbacks: Patchright, or a tiny raw-CDP client.
+- **G3 — Automation signals.** Connecting with Playwright over CDP can leave traces (Playwright globals, CDP side effects). Keep Playwright usage minimal (`connectOverCDP`, one `newPage`, `page.goto`, `page.evaluate`). The startup fingerprint self-check (below) must pass. Fallbacks: Patchright, or a tiny raw-CDP client.
 - **G4 — Session cookies vs restarts.** When Chrome quits, cookies without an expiry are dropped unless session restore is on ("Continue where you left off"); Chromium persists session cookies on restart only in that mode (source in `15-sources.md`). Use `--restore-last-session` and/or set `session.restore_on_startup=1` in the profile's `Preferences`. VERIFY: log in, stop the runtime gracefully twice, start again: still logged in. If not, keep one long-lived Chrome per platform with longer TTL instead.
 - **G5 — Graceful quit.** Quit through the DevTools command `Browser.close` (flushes the cookie DB), then SIGTERM after ~10 s, SIGKILL after ~20 s. A SIGKILL can lose recent cookie writes and leaves lock files (cleaned at next start).
 - **G6 — Sandbox in containers.** Chrome's sandbox needs user namespaces; with `--cap-drop ALL` and some seccomp profiles it fails. Options: (a) Chrome's published seccomp profile (chromedp ships one, `chrome.json`) + rootless userns, (b) `--no-sandbox` with container hardening as the compensating control. Decide in spike S7.
@@ -66,20 +68,21 @@ Do NOT use `--single-process` (unstable), `--headless`, `--enable-automation`, o
 - **G8 — Language/timezone/UA consistency.** Copy the real values from Matthieu's everyday Chrome (`navigator.languages`, timezone, UA major version, screen size) into the image env so the profile looks consistent. Do not spoof the UA string manually unless the self-check shows a mismatch.
 
 ## How the router drives it
-```python
-pw = await async_playwright().start()
-browser = await pw.chromium.connect_over_cdp(f"http://{container_ip}:9222")
-ctx = browser.contexts[0]                      # the profile's default context (persistent profile)
-page = await ctx.new_page()                    # the ONE working tab
-await page.route("**/*", allowlist_router)     # abort requests to non-allowlisted hosts
-...                                            # adapter: goto + evaluate
-await page.close()                             # always; keep the original about:blank tab
-# runtime stop:
-cdp = await browser.new_browser_cdp_session(); await cdp.send("Browser.close")
+```ts
+import { chromium } from "playwright-core";
+
+const browser = await chromium.connectOverCDP(`http://${containerIp}:9222`);
+const ctx = browser.contexts()[0];             // the profile's default context (persistent profile)
+const page = await ctx.newPage();              // the ONE working tab
+await page.route("**/*", allowlistRouter);     // abort requests to non-allowlisted hosts
+// ...                                         // adapter: goto + evaluate
+await page.close();                            // always; keep the original about:blank tab
+// runtime stop:
+const cdp = await browser.newBrowserCDPSession(); await cdp.send("Browser.close");
 ```
 Rules: never call `browser.close()` expecting it to quit Chrome; never leave more than one working tab; watchdog closes stray pages (popups, `target=_blank`). Navigation only to URLs built by the adapter from validated arguments (host allowlist from the catalog).
 
-## Startup fingerprint self-check (`browser/fingerprint.py`)
+## Startup fingerprint self-check (`src/browser/fingerprint.ts`)
 After a runtime becomes ready, on `about:blank` evaluate and compare to a baseline JSON captured from the real Mac Chrome:
 `navigator.webdriver` (must be false/undefined), `navigator.userAgent` (no `HeadlessChrome`), `navigator.languages`, `navigator.plugins.length`, `window.chrome` present, `Notification.permission`, `Intl.DateTimeFormat().resolvedOptions().timeZone`, screen size, presence of `__playwright*`/`__pw*` globals (must be absent). On failure: log `fingerprint_mismatch` with the diff, return `adapter_broken`-like warning, and refuse LinkedIn calls until fixed (configurable).
 
