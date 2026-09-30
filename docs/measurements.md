@@ -56,3 +56,22 @@ The dedicated stack user is **`mcpuser`** (uid 1002; not in the `docker` group).
 | Storage | `overlayfs` with the containerd snapshotter (Docker 29 default), root dir `/home/mcpuser/.local/share/docker`: works on the ZFS home |
 | Warnings | no `cpuset`, no `io.*`: expected (only `cpu memory pids` are delegated). We use `--cpus`, `--memory`, `--pids-limit`, none of which need them |
 | Still to test | that `--memory`/`--memory-swap`/`--memory-reservation` are actually enforced, Chrome's sandbox, peak RSS (spike script `spikes/host/s3-chrome-memory.sh`) |
+
+## S3/S7 Chrome memory test, 2026-10-01 (`spikes/host/s3-chrome-memory.sh`)
+Headful Chrome + Xvfb, container capped at `--memory 1100m --memory-swap 1100m --memory-reservation 900m`, logged-out public pages, 10 s settle per page.
+
+| Run | Sandbox / seccomp | Host available before | Cold start | Idle | Wikipedia | Le Monde | WTTJ | APEC | Peak |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | `--no-sandbox`, default | 469 MB | 2.7 s | 361 MB | 404 | 442 | 601 | 451 | **625 MB** |
+| 2 | `--no-sandbox`, default | 1191 MB | 1.7 s | 226 MB | 288 | 332 | 492 | 334 | 516 MB |
+| 3 | `--no-sandbox`, default | 1501 MB | 1.1 s | 198 MB | 262 | 310 | 463 | 304 | 487 MB |
+| 4 | **sandbox ON**, `seccomp=unconfined` | 1691 MB | 1.1 s | 211 MB | 273 | 315 | 472 | 314 | 498 MB |
+(page columns are current MB after loading; `OOMKilled=false` in all runs.)
+
+Findings:
+- **Enforcement works:** `memory.max=1153433600` (1100 MiB) and `memory.swap.max=0` are applied in the rootless container. `--memory-reservation` does **not** set `memory.high` (it stays `max`), so there is no kernel-side soft throttle: the watchdog thresholds (70 % warn, 90 % critical) in `06-…` are the only soft control.
+- **Memory (V4):** peak 487-625 MB on the heaviest public pages (WTTJ adds about 150 MB), so one headful Chrome fits well inside 1100 MB with a 40 % margin. Run 1 was higher because the host was already starved (469 MB available). **Logged-in LinkedIn pages are not measured yet (S5); treat these as a lower bound.** No change to the 1100 MB default until then.
+- **Cold start:** 1.1-2.7 s to DevTools ready.
+- **After closing tabs** memory falls by 100-200 MB but not back to idle, which is fine for the 120 s grace period.
+- **Sandbox (V10):** with default seccomp the sandbox fails ("Failed to move to new namespace: Operation not permitted"). With `seccomp=unconfined` and everything else unchanged (`--cap-drop ALL`, `no-new-privileges`, read-only root) it works. So **seccomp is the only blocker**. AppArmor's userns restriction did not interfere. A minimal profile is in `spikes/chrome/chrome-seccomp.json` (Docker's default plus `unshare`, `setns`, `clone`); to be verified.
+- **Host health:** swap was 3.4-3.7 GB of 3.8 GB in every run, with available RAM swinging between 469 and 1691 MB. The container itself is fine, but the host is close to its limit. Enabling zram or trimming other services is recommended before running this unattended.

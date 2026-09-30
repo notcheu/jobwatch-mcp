@@ -29,7 +29,7 @@ BUSY/IDLE_GRACE ──watchdog >90%──▶ STOPPING(kill) ; max_lifetime reach
 ```
 docker run --rm --name jw-<platform> --init \
   --memory 1100m --memory-swap 1100m            # hard cap, no swap for this container
-  --memory-reservation 900m                     # soft limit; under host pressure the kernel reclaims down to it (VERIFY; no memory.high equivalent in docker run)
+  --memory-reservation 900m                     # only a reclaim hint under host pressure; does NOT set memory.high (measured), so the watchdog below is the soft control
   --oom-score-adj 500                           # die before the rest of the machine
   --pids-limit 512 --shm-size 256m --cpus 1.5
   --cap-drop ALL --security-opt no-new-privileges
