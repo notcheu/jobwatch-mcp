@@ -1,0 +1,23 @@
+{
+  "name": "jobwatch-spike-echo-mcp",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Phase 0 spike S1/V11: stateless Streamable HTTP MCP echo server. Not production code.",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "tsx src/check.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "express": "5.2.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "22.15.0",
+    "tsx": "4.20.3",
+    "typescript": "5.8.3"
+  }
+}

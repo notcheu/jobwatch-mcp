@@ -26,7 +26,7 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 | V8 | Navigating to `currentJobId` URLs (or `/jobs/view/<id>`) exposes the same description selector | `07` | S5 | open |
 | V9 | Rootless Docker flags: `--memory`, `--memory-swap`, `--memory-reservation`, `--init`; cgroup v2 delegation (memory controller) for rootless | `06` | S7 | open |
 | V10 | Chrome sandbox works under the chosen rootless seccomp/userns setup; else `--no-sandbox` decision | `05` G6, `09` | S7 | open |
-| V11 | MCP TypeScript SDK supports stateless Streamable HTTP (`sessionIdGenerator: undefined`) with custom Express middleware as planned | `01` D9, `03` | Phase 1 start | open |
+| V11 | MCP TypeScript SDK supports stateless Streamable HTTP (`sessionIdGenerator: undefined`) with custom Express middleware as planned | `01` D9, `03` | Phase 1 start | **confirmed** (Node 26.10.0, SDK 1.31.0, Express 5: two fresh clients, raw `tools/list` without a session header, no `mcp-session-id`; `spikes/echo-mcp`) |
 | V12 | ATS endpoint patterns (Greenhouse/Lever/Ashby/SmartRecruiters/Workable/Teamtailor) | `08` | S9 | open |
 | V13 | WTTJ/APEC public endpoints or login needs | `08` | S9 | open |
 | V14 | LinkedIn checkpoint/login marker strings | `07` | S4/S5 | open |
