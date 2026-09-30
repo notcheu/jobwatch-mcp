@@ -2,11 +2,12 @@
 # Phase 0 (S3/S7): run a headful Chrome in a memory-capped rootless container, load pages, record memory.
 # Run as mcpuser with DOCKER_HOST pointing at the rootless socket. Creates/removes only the container "jw-spike-chrome" and the volume "jw-spike-profile".
 # The profile lives on a named volume (disk), like production; tmpfs mounts (/tmp, /home/chrome) DO count against the memory cap.
-# Env: MEM_MAX (1100m) MEM_RES (900m) NO_SANDBOX (0|1) SETTLE_S (10) URLS (space-separated)
+# Env: MEM_MAX (1100m) MEM_RES (900m) NO_SANDBOX (0|1) SECCOMP (default | unconfined | /path/profile.json) SETTLE_S (10) URLS (space-separated)
 set -euo pipefail
 cd "$(dirname "$0")/../chrome"
 MEM_MAX=${MEM_MAX:-1100m}; MEM_RES=${MEM_RES:-900m}; NO_SANDBOX=${NO_SANDBOX:-0}; SETTLE_S=${SETTLE_S:-10}
 URLS=${URLS:-"https://en.wikipedia.org/wiki/Main_Page https://www.lemonde.fr https://www.welcometothejungle.com/fr https://www.apec.fr"}
+SECCOMP=${SECCOMP:-default}; SEC_OPT=(); [ "$SECCOMP" != default ] && SEC_OPT=(--security-opt "seccomp=$SECCOMP")
 NAME=jw-spike-chrome; VOL=jw-spike-profile; PORT=19222
 # Capture first: with pipefail, `docker info | grep -q` can fail from SIGPIPE even when the daemon is fine.
 if ! info=$(docker info 2>&1) || ! grep -qi rootless <<<"$info"; then
@@ -24,10 +25,10 @@ echo "== build"; docker build -q -t jw-spike-chrome .
 cg() { docker exec "$NAME" cat "/sys/fs/cgroup/$1" 2>/dev/null || echo 0; }
 mb() { echo $(( $1 / 1024 / 1024 )); }
 
-echo "== run (memory=$MEM_MAX reservation=$MEM_RES no_sandbox=$NO_SANDBOX)"
+echo "== run (memory=$MEM_MAX reservation=$MEM_RES no_sandbox=$NO_SANDBOX seccomp=$SECCOMP)"
 t0=$(date +%s.%N)
 docker run -d --name "$NAME" --init --memory "$MEM_MAX" --memory-swap "$MEM_MAX" --memory-reservation "$MEM_RES" \
-  --pids-limit 512 --shm-size 256m --cpus 1.5 --cap-drop ALL --security-opt no-new-privileges \
+  --pids-limit 512 --shm-size 256m --cpus 1.5 --cap-drop ALL --security-opt no-new-privileges ${SEC_OPT[@]+"${SEC_OPT[@]}"} \
   --read-only --tmpfs /tmp:rw,size=256m --tmpfs /run:rw,size=16m --tmpfs /home/chrome:rw,size=64m,uid=1000,gid=1000 \
   -v "$VOL":/profile \
   -e NO_SANDBOX="$NO_SANDBOX" -p 127.0.0.1:$PORT:9222 jw-spike-chrome >/dev/null
