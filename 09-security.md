@@ -33,7 +33,7 @@
 - The login viewer (noVNC) is bound to `127.0.0.1` on the host and reached through an SSH tunnel; never public.
 
 ## Browser container hardening checklist
-`--cap-drop ALL`, `--security-opt no-new-privileges`, read-only root fs + tmpfs for `/tmp`/`/run`, non-root user, `--pids-limit`, `--memory`/`--memory-swap`, `--cpus`, seccomp profile suitable for Chrome (spike S7) or `--no-sandbox` only as a compensating-control decision recorded here, no host mounts except the platform profile, downloads disabled (Chrome policy or `Browser.setDownloadBehavior deny`), clipboard/permissions denied, no device passthrough.
+`--cap-drop ALL`, `--security-opt no-new-privileges`, read-only root fs + tmpfs for `/tmp`/`/run`, non-root user, `--pids-limit`, `--memory`/`--memory-swap`, `--cpus`, the custom Chrome seccomp profile (Docker default plus `unshare`, `setns`, `clone`, `chroot`; decided in spike S7, `05` G6) so Chrome keeps its own sandbox; `--no-sandbox` only as a recorded fallback, no host mounts except the platform profile, downloads disabled (Chrome policy or `Browser.setDownloadBehavior deny`), clipboard/permissions denied, no device passthrough.
 
 ## Authorization model
 Single user. Scopes: `jobwatch.read` (all read-only tools) and `jobwatch.state` (only for `seen_mark` if/when enabled). Enforce scope per tool in the router (the front passes claims in a signed header). Log every call with request id and result code.
