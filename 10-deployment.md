@@ -5,12 +5,24 @@
 ## Host prerequisites (Ubuntu LTS)
 - **Rootless Docker** for a dedicated user `jobwatch` (no sudo, not in the `docker` group; leave your existing rootful Docker untouched or disabled for this user). One-time setup, as root:
   ```bash
-  sudo apt install -y uidmap dbus-user-session docker-ce-cli docker-compose-plugin docker-ce-rootless-extras   # from Docker's apt repo
+  sudo apt install -y uidmap dbus-user-session docker-ce-cli docker-compose-plugin docker-ce-rootless-extras   # from Docker's apt repo (on Nuc-desktop only uidmap and dbus-user-session are missing)
   sudo adduser --disabled-password jobwatch
   echo "jobwatch:100000:65536" | sudo tee -a /etc/subuid /etc/subgid     # only if not already present
   sudo loginctl enable-linger jobwatch
   ```
-  then as `jobwatch` (login with `sudo machinectl shell jobwatch@` so the user systemd session exists):
+  **Ubuntu 24.04 only** (`kernel.apparmor_restrict_unprivileged_userns=1`): allow rootlesskit to create user namespaces, otherwise the daemon fails with a permission error. VERIFY the exact profile against Docker's rootless docs for your version:
+  ```
+  # /etc/apparmor.d/usr.bin.rootlesskit
+  abi <abi/4.0>,
+  include <tunables/global>
+  /usr/bin/rootlesskit flags=(unconfined) {
+    userns,
+    include if exists <local/usr.bin.rootlesskit>
+  }
+  ```
+  then `sudo systemctl restart apparmor.service`.
+
+  then as `jobwatch' (login with `sudo machinectl shell jobwatch@` so the user systemd session exists):
   ```bash
   dockerd-rootless-setuptool.sh install
   systemctl --user enable --now docker
