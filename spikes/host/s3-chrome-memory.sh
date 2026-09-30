@@ -8,7 +8,15 @@ cd "$(dirname "$0")/../chrome"
 MEM_MAX=${MEM_MAX:-1100m}; MEM_RES=${MEM_RES:-900m}; NO_SANDBOX=${NO_SANDBOX:-0}; SETTLE_S=${SETTLE_S:-10}
 URLS=${URLS:-"https://en.wikipedia.org/wiki/Main_Page https://www.lemonde.fr https://www.welcometothejungle.com/fr https://www.apec.fr"}
 NAME=jw-spike-chrome; VOL=jw-spike-profile; PORT=19222
-docker info 2>/dev/null | grep -qi rootless || { echo "ERROR: not talking to the rootless daemon (check DOCKER_HOST)"; exit 1; }
+# Capture first: with pipefail, `docker info | grep -q` can fail from SIGPIPE even when the daemon is fine.
+if ! info=$(docker info 2>&1) || ! grep -qi rootless <<<"$info"; then
+  echo "ERROR: not talking to the rootless daemon."
+  echo "  user=$(id -un)  DOCKER_HOST=${DOCKER_HOST:-<unset>}  XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-<unset>}"
+  echo "  fix: export DOCKER_HOST=unix://\$XDG_RUNTIME_DIR/docker.sock   (run as mcpuser in a real login session, e.g. machinectl shell mcpuser@)"
+  echo "  daemon: systemctl --user is-active docker   (start with: systemctl --user start docker)"
+  echo "  docker info said: $(head -3 <<<"$info" | tr '\n' ' ')"
+  exit 1
+fi
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; docker volume rm "$VOL" >/dev/null 2>&1 || true; }; trap cleanup EXIT; cleanup
 
 echo "== host before"; free -m | sed -n 1,3p
