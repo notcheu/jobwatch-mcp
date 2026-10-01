@@ -4,7 +4,7 @@ import { EXTRACT_PAGE_STATE, type ExtractedPageState } from './extract';
 import { aiSearchResultsLayout } from './layouts/aiSearchResults';
 import { classicLayout } from './layouts/classic';
 import type { SearchLayout } from './layouts/layout';
-import { classifyPage, termMatcher } from './parse';
+import { POSTED_WITHIN, classifyPage, termMatcher } from './parse';
 import { readByIds, readNew, type AcceptedJob } from './read';
 import { MAX_PAGE, clip, searchCards, type SearchArgs } from './search';
 
@@ -78,7 +78,10 @@ const searchInput = z
   .object({
     keywords: z.string().trim().min(1).max(200).describe('Search keywords, e.g. "full stack engineer".'),
     geo: geo.describe('Location: paris_idf, france, or a numeric LinkedIn geoId.'),
-    posted_within: z.enum(['24h', 'any']).default('24h'),
+    posted_within: z
+      .enum(POSTED_WITHIN)
+      .default('last_24_hours')
+      .describe('How recent the postings must be: last_24_hours, past_week, past_month, or any (no date filter).'),
     remote_only: z.boolean().default(false).describe('Keep only cards whose location says Remote (filtered here, not by LinkedIn).'),
     max_results: z
       .number()

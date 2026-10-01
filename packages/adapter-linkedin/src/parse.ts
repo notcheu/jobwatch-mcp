@@ -28,6 +28,16 @@ export interface Card {
 export const GEO_PRESETS = { paris_idf: '104246759', france: '105015875' } as const;
 export const PAGE_SIZE = 25;
 
+/** How recent a posting must be. `any` sends no filter. The `f_TPR` values are LinkedIn's own ("Past 24 hours/week/month"). */
+export const POSTED_WITHIN = ['last_24_hours', 'past_week', 'past_month', 'any'] as const;
+export type PostedWithin = (typeof POSTED_WITHIN)[number];
+const TPR: Record<Exclude<PostedWithin, 'any'>, string> = { last_24_hours: 'r86400', past_week: 'r604800', past_month: 'r2592000' };
+
+/** The `f_TPR=...` URL parameter for a date range, or null for any time. */
+export function postedParam(range: PostedWithin): string | null {
+  return range === 'any' ? null : `f_TPR=${TPR[range]}`;
+}
+
 const JOB_ID = /^\d{5,15}$/;
 export const isJobId = (value: string): boolean => JOB_ID.test(value);
 

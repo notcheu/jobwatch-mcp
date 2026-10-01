@@ -1,12 +1,12 @@
 import { AdapterBroken, Checkpoint, SessionInvalid, type BrowserAdapterContext } from '@jobwatch/sdk';
 import { EXTRACT_CARDS, EXTRACT_JOB, type ExtractedCards, type ExtractedJob } from './extract';
 import type { SearchLayout } from './layouts/layout';
-import { PAGE_SIZE, classifyPage, extractHints, jobUrl, parseCard, type Card, type Hints } from './parse';
+import { PAGE_SIZE, classifyPage, extractHints, jobUrl, parseCard, type Card, type Hints, type PostedWithin } from './parse';
 
 export interface SearchArgs {
   keywords: string;
   geo: string;
-  posted_within: '24h' | 'any';
+  posted_within: PostedWithin;
   remote_only: boolean;
   /** First result page to load (25 results each). */
   page: number;
