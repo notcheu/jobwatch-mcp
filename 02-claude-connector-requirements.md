@@ -44,7 +44,7 @@ Source: Anthropic docs "Authentication for connectors" and "Third party connecto
 - [~] AS metadata reachable, lists `registration_endpoint`, `code_challenge_methods_supported: ["S256"]` (2026-10-01: yes, `token_endpoint_auth_methods_supported: ["none"]`, grants `authorization_code` + `refresh_token`, no CIMD flag so Claude uses DCR). **Not met by design:** `scopes_supported` is empty, so no `offline_access`; refresh must be proven unattended (S1).
 - [ ] Token endpoint accepts form-encoded bodies; refresh rotation works; expired/revoked refresh → `invalid_grant`.
 - [ ] Response times < 2 s for discovery/registration/token under normal conditions.
-- [ ] Adding the URL as a custom connector in Claude completes the sign-in; tools list appears; a call works.
-- [ ] Only Matthieu's account can complete sign-in (try a second account: must fail).
+- [x] Adding the URL as a custom connector in Claude completes the sign-in; tools list appears; a call works (Matthieu, 2026-10-01, echo MCP server behind the real front, Google sign-in).
+- [~] Only Matthieu's account can complete sign-in. **Consciously accepted without a test (Matthieu, 2026-10-01):** enforced by the Google OAuth app being in Testing mode with a single test user; no second-account attempt was made. Re-check if the app is ever published or a test user is added.
 - [ ] Works from Claude Code (`claude mcp add --transport http …`) with loopback redirect.
-- [ ] Works from a **scheduled routine** (spike S1). Record exact behaviour when the access token expires during a run.
+- [~] Works from a **scheduled routine** (spike S1). **Consciously not tested now (Matthieu, 2026-10-01):** no multi-day ping routine. It is verified in Phase 5 with the real routine; the failure handling is already in `13-…` (connector error → notify and fall back to the Chrome path).
