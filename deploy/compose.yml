@@ -1,17 +1,40 @@
 # Always-on services only. Browser containers are spawned by the router (label jobwatch.managed=true).
-# Nginx (your existing reverse proxy) proxies the public hostname to the single published port below.
+# Your existing Nginx proxies https://mcp.noguetith.fr to the single published MCP port below (deploy/nginx/).
+# Runs on Linux (Ubuntu, rootless Docker) and on macOS (Docker Desktop, arm64) for development: see compose.dev.yml and 10-deployment.md.
 name: jobwatch
 networks:
-  jobwatch-core:     { internal: false }     # front <-> router
+  jobwatch-core:     { internal: false }     # front <-> router, front <-> redis (front needs egress to reach Google)
   jobwatch-browsers: { internal: true }      # router <-> spawned browsers
 services:
-  front:
-    image: ${JW_FRONT_IMAGE}                 # OAuth front (decision D7), pin by digest
-    # config: issuer/base URL = JW_BASE_URL, single allowed identity, backend = http://router:8080/mcp
+  front:                                     # OAuth 2.1 authorization server + reverse proxy (decision D7: babs/mcp-auth-proxy)
+    image: ${JW_FRONT_IMAGE:-ghcr.io/babs/mcp-auth-proxy:v1.4.1}   # pin by digest once verified (S1)
+    environment:
+      PROXY_BASE_URL: ${JW_BASE_URL}                 # https://mcp.noguetith.fr
+      UPSTREAM_MCP_URL: http://router:8080/mcp       # path is the public mount AND is forwarded verbatim
+      OIDC_ISSUER_URL: https://accounts.google.com   # the only IdP; access is limited to Matthieu by the Google app's "Testing" mode (see 10)
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}      # from deploy/.env (gitignored). VERIFY whether a *_FILE variant exists
+      TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET}  # openssl rand -base64 48 (64 chars, no padding); keep identical across restarts
+      REDIS_URL: redis://redis:6379/0
+      TRUSTED_PROXY_CIDRS: ${JW_NGINX_CIDR}          # address(es) of your Nginx as seen by this container; needed for X-Forwarded-* and rate limits
+      # LISTEN_ADDR defaults to :8080; metrics/readyz listen on 127.0.0.1:9090 inside the container (not published)
+    depends_on: [ redis ]
     ports:
-      - "${JW_BIND:-127.0.0.1}:${JW_PORT:-8080}:8080"   # VERIFY the front's container listen port; the ONLY published port
+      - "${JW_BIND:-127.0.0.1}:${JW_PORT:-8080}:8080"   # the ONLY published MCP port; Nginx proxy_pass target
     networks: [ jobwatch-core ]
-    volumes: [ "../data/front:/data" ]
+    mem_limit: 128m
+    read_only: true
+    cap_drop: [ ALL ]
+    security_opt: [ "no-new-privileges:true" ]
+    restart: unless-stopped
+  redis:                                     # replay defence for the front (single-use codes, refresh rotation)
+    image: ${JW_REDIS_IMAGE:-redis:7-alpine}
+    command: [ "redis-server", "--appendonly", "yes", "--maxmemory", "32mb", "--maxmemory-policy", "noeviction" ]
+    volumes: [ "../data/redis:/data" ]
+    networks: [ jobwatch-core ]
+    mem_limit: 64m
+    cap_drop: [ ALL ]
+    security_opt: [ "no-new-privileges:true" ]
     restart: unless-stopped
   router:
     image: ${JW_REGISTRY}/jobwatch-router:${JW_TAG:-latest}    # pushed by CI (.github/workflows/docker-publish.yml)
@@ -26,18 +49,18 @@ services:
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
     environment:
-      JW_BASE_URL: ${JW_BASE_URL}            # https://mcp.<your-domain>
+      JW_BASE_URL: ${JW_BASE_URL}
       JW_RUNTIME: docker
       DOCKER_HOST: unix:///var/run/docker.sock          # mcpuser's ROOTLESS socket, mounted below
       JW_METRICS_ENABLED: ${JW_METRICS_ENABLED:-false}  # true => Prometheus /metrics on 9464
       JW_METRICS_PORT: 9464
     volumes:
-      - "${XDG_RUNTIME_DIR}/docker.sock:/var/run/docker.sock"
+      - "${JW_DOCKER_SOCKET:-${XDG_RUNTIME_DIR}/docker.sock}:/var/run/docker.sock"   # Linux rootless: $XDG_RUNTIME_DIR/docker.sock; Docker Desktop (macOS): /var/run/docker.sock
       - "../data/router:/data"
-      - "../profiles:/profiles:ro"           # read-only here; browser containers mount the subfolders rw by host path
+      # Browser profiles are named Docker volumes (jw-profile-<platform>) created by the router: no host paths, so the same file works on Linux and macOS.
     ports:
       - "${JW_METRICS_BIND:-127.0.0.1}:${JW_METRICS_PORT:-9464}:9464"   # Prometheus scrape target; nothing listens unless metrics are enabled
-    networks: [ jobwatch-core, jobwatch-browsers ]   # MCP port is not published
+    networks: [ jobwatch-core, jobwatch-browsers ]   # MCP port is not published: only the front reaches it
     restart: unless-stopped
   watchtower:                                # auto-updates only containers labelled watchtower.enable=true (the router)
     image: ${JW_WATCHTOWER_IMAGE}            # VERIFY: maintained fork; pin by digest
@@ -47,7 +70,7 @@ services:
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_SCHEDULE: "0 30 4 * * *"    # 04:30 daily (6-field cron), after the routine; adjust
     volumes:
-      - "${XDG_RUNTIME_DIR}/docker.sock:/var/run/docker.sock"
+      - "${JW_DOCKER_SOCKET:-${XDG_RUNTIME_DIR}/docker.sock}:/var/run/docker.sock"
       - "${HOME}/.docker/config.json:/config.json:ro"    # registry credentials from `docker login`
     networks: [ jobwatch-core ]
     restart: unless-stopped

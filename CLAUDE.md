@@ -6,9 +6,10 @@ Self-hosted **MCP orchestrator** ("jobwatch-mcp") running on Matthieu's home Ubu
 **Status:** design is complete, no code yet. Next step is Phase 0 (spikes) in `12-roadmap.md`.
 
 ## Architecture and stack
-Request path: Claude → **existing Nginx reverse proxy** (TLS, own domain; no tunnel) → one published host port → **OAuth front** → **router** (private Docker network) → adapters → Chrome containers (spawned via the **rootless Docker** socket) or plain HTTP fetch. Diagrams: `16-architecture-diagrams.md`.
+Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.noguetith.fr`; no tunnel) → one published host port → **OAuth front** (babs/mcp-auth-proxy + Redis, Google sign-in limited to Matthieu) → **router** (private Docker network) → adapters → Chrome containers (spawned via the **rootless Docker** socket) or plain HTTP fetch. Diagrams: `16-architecture-diagrams.md`.
 - **Language/tooling:** TypeScript (strict), ESM, **Node 26**, **npm** (committed `package-lock.json`, `npm ci`).
 - **Libraries:** `@modelcontextprotocol/sdk` (stateless Streamable HTTP) on Express, `zod`, `playwright-core` (`connectOverCDP` only, behind `BrowserSession`), `better-sqlite3`, `pino`, `prom-client` (optional metrics), `vitest`, `eslint` + `prettier`.
+- **Platforms:** production is the Ubuntu NUC (x86_64, rootless Docker). The images are multi-arch (amd64 + arm64) so they also run on a Mac (Docker Desktop, arm64) for development; the arm64 browser image uses Chromium (Google ships no Linux arm64 Chrome) and is **not** for the LinkedIn session. Never hard-code Linux-only paths: profiles are named Docker volumes, the Docker socket path comes from `JW_DOCKER_SOCKET`.
 - **Runtime:** rootless Docker for a dedicated `mcpuser` user; always-on services (OAuth front, router, Watchtower) in `deploy/compose.yml`; browser containers are spawned by the router, never declared in compose.
 - **Adapters:** one module per platform under `src/adapters/<platform>/index.ts` using the Adapter SDK (`defineAdapter`/`defineTool`). Tool definitions live in code; `catalog/*.json` is a **generated** snapshot.
 - **Delivery:** GitHub Actions builds and pushes `jobwatch-router:latest` to a private registry; Watchtower on the host updates the router (`10-deployment.md`).
@@ -63,7 +64,6 @@ Node version is pinned in `.nvmrc` and `engines`. After changing any tool defini
 - **Memory limits need cgroup v2 delegation** for the rootless user; `--memory-reservation` is not the same as Podman's `memory.high` (`06-…`).
 
 ## Ask Matthieu before
-- Choosing the public hostname on the existing Nginx proxy.
 - Enabling any tool that writes state outside the router's own data directory, or exposing anything beyond the catalog.
 - Changing the LinkedIn usage budget (`09-security.md`).
 - Changing what the router can do through the Docker socket (new mounts, privileges, capabilities), the Watchtower scope, or the CI registry and its credentials.

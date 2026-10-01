@@ -36,7 +36,7 @@ docker run --rm --name jw-<platform> --init \
   --cap-drop ALL --security-opt no-new-privileges
   --security-opt seccomp=/path/to/chrome-seccomp.json   # Docker default + unshare/setns/clone/chroot so Chrome's sandbox works (see 05 G6)
   --read-only --tmpfs /tmp:rw,size=256m --tmpfs /run:rw,size=16m --tmpfs /home/chrome:rw,size=64m,uid=1000,gid=1000   # Chrome needs a writable HOME; tmpfs counts toward the memory cap
-  -v <profiles>/<platform>:/profile:rw
+  -v jw-profile-<platform>:/profile             # named volume; persists across runs, never a host path
   --network jobwatch-browsers ...
   --label jobwatch.managed=true --label jobwatch.platform=<platform>
   jobwatch-browser:<tag>

@@ -28,6 +28,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up QEMU (arm64 emulation for the multi-arch build)
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -42,11 +45,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64        # confirmed: host is x86_64 (docs/measurements.md)
+          platforms: linux/amd64,linux/arm64   # amd64 = the Ubuntu NUC (x86_64, confirmed); arm64 = Apple Silicon Macs for development
           push: true
           tags: ${{ secrets.REGISTRY_URL }}/jobwatch-router:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # Plain single-platform image only: a provenance attestation makes an OCI index with an
-          # "unknown/unknown" entry that Watchtower fails to resolve when checking for a new digest.
+          # "unknown/unknown" entry that Watchtower fails to resolve when checking for a new digest. (The two-platform manifest list is a normal image index; VERIFY Watchtower resolves it.)
           provenance: false

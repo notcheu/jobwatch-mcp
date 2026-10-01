@@ -23,7 +23,7 @@ if [ "${MODE}" = "login" ]; then
   websockify --web /usr/share/novnc 6080 localhost:5900 &
 fi
 
-google-chrome-stable "${EXTRA[@]}" \
+chrome-bin "${EXTRA[@]}" \
   --user-data-dir=/profile --remote-debugging-port=9223 --remote-allow-origins=* \
   --lang="${CHROME_LANG}" --no-first-run --no-default-browser-check --disable-session-crashed-bubble \
   --disable-gpu --disable-dev-shm-usage --disable-background-networking --disable-extensions \

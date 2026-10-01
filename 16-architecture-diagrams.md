@@ -14,13 +14,15 @@ flowchart LR
     Indeed["Indeed connector"]
   end
 
-  Nginx["Existing Nginx reverse proxy<br/>TLS, your domain"]
+  Nginx["Existing Nginx reverse proxy<br/>TLS, mcp.noguetith.fr"]
+  Google["Google sign-in<br/>OAuth app in Testing mode,<br/>one test user"]
 
   subgraph Host["Home Ubuntu host, rootless Docker, limited RAM"]
     direction LR
 
     subgraph Core["network jobwatch-core, always-on, one published host port"]
-      Front["OAuth front<br/>validates bearer token<br/>serves /.well-known, /register, /authorize, /token"]
+      Front["OAuth front, babs/mcp-auth-proxy<br/>validates bearer token<br/>serves /.well-known, /register, /authorize, /token"]
+      Redis[("Redis<br/>replay defence")]
       Router["Router, Node 26 + TypeScript<br/>MCP Streamable HTTP, stateless<br/>optional /metrics on :9464"]
     end
 
@@ -45,7 +47,9 @@ flowchart LR
 
   Routine -- "HTTPS + OAuth, MCP tools/call" --> Nginx
   Nginx -- "proxy_pass to 127.0.0.1:8080" --> Front
-  Front -- "authenticated MCP + shared secret" --> Router
+  Front -- "authenticated MCP" --> Router
+  Front --- Redis
+  Front -. "OIDC login at /callback" .-> Google
   Router --- Catalog
   Router --- Data
   Router -- "docker run / stop, CDP over internal net" --> BLI

@@ -39,17 +39,19 @@
 
 ## Directory layout on the host
 ```
-/srv/jobwatch/                 (owner mcpuser:mcpuser, mode 0750)
-  compose/compose.yml
-  secrets/                     (0700)  front secrets, shared secret (file-based secrets)
-  data/                        router SQLite, logs (0700)
-  profiles/linkedin|apec|wttj  browser profiles (0700) — NEVER in git or plain backups
-  images/                      Dockerfiles (build context)
+/srv/jobwatch/                 (owner mcpuser:mcpuser, mode 0750)   # or the cloned repo; paths below are relative to deploy/
+  deploy/compose.yml, deploy/.env (0600, secrets), deploy/nginx/*.conf
+  data/router                  router SQLite, logs (0700)
+  data/redis                   Redis append-only file for the OAuth front
+  data/front                   (reserved)
 ```
+Browser profiles are **not** host directories: they are named Docker volumes `jw-profile-<platform>` in the `mcpuser` rootless daemon's storage (`~/.local/share/docker/volumes`), created by the router. This keeps the compose file and the router identical on Linux and macOS. Never in git, never in plain backups.
 
 ## Services declared in compose (always-on)
-1. **front** — OAuth front (decision D7: R0Wi/mcp-gateway or babs/mcp-auth-proxy); the only service with a published host port (`${JW_BIND}:${JW_PORT}`, default `127.0.0.1:8080`); forwards authenticated MCP traffic to the router on `jobwatch-core`.
-2. **router** — this project; built from the repo-root `Dockerfile`; mounts the rootless runtime socket (user-level), `/srv/jobwatch/data`, `/srv/jobwatch/profiles` (for passing volume paths to spawned containers), catalog (baked into the image). No published port.
+1. **front** — `ghcr.io/babs/mcp-auth-proxy` (decision D7): OAuth 2.1 authorization server (DCR, PKCE, RFC 9728/8414) that signs users in with **Google** and reverse-proxies `/mcp` to the router. The only service with a published host port (`${JW_BIND}:${JW_PORT}`, default `127.0.0.1:8080`).
+2. **redis** — small (32 MB cap) store the front needs for single-use authorization codes and refresh-token rotation. Not published.
+3. **router** — this project; built from the repo-root `Dockerfile`; mounts the rootless runtime socket, `data/router`. No published MCP port (only the optional metrics port).
+4. **watchtower** — updates the labelled router image.
 Browser containers are **not** declared in compose; the router spawns them with `docker run` (label `jobwatch.managed=true`). Your existing Nginx stays outside this stack.
 
 ## Router image (`Dockerfile`)
@@ -62,39 +64,42 @@ docker compose -f deploy/compose.yml --env-file deploy/.env up -d
 Planned `package.json` scripts: `docker:build` (the first command), `docker:up`. VERIFY when the code exists: the `docker:<version>-cli` tag used to copy the CLI (`DOCKER_CLI_VERSION` build arg), `better-sqlite3` prebuilt binaries on Node 26 (otherwise add a build toolchain to the `deps` stage only), and that the published image runs with `read_only: true`. The browser image (`images/browser/`) is built separately (see `05-…`). The `Dockerfile`, `.dockerignore` and `deploy/compose.yml` have not been built yet because the router code does not exist.
 
 ## compose.yml
-Lives in `deploy/compose.yml` (variables in `deploy/.env`, template `deploy/.env.example`). Adapt after D7.
-Notes: only the front publishes the MCP port; the router publishes only the optional metrics port (9464); spawned browsers attach to `jobwatch-browsers` only. If the router cannot attach spawned containers to a compose-created network, create it with `docker network create --internal jobwatch-browsers` and mark it `external: true`.
+Lives in `deploy/compose.yml`; variables in `deploy/.env` (template `deploy/.env.example`, **the real file holds secrets: chmod 600, never commit**). Only the front publishes the MCP port; the router publishes only the optional metrics port (9464); spawned browsers attach to `jobwatch-browsers` only. If the router cannot attach spawned containers to a compose-created network, create it with `docker network create --internal jobwatch-browsers` and mark it `external: true`.
+Front settings that matter (`babs/mcp-auth-proxy`, defaults are production-safe: `PROD_MODE`, PKCE required, consent page, per-IP rate limits): `PROXY_BASE_URL=https://mcp.noguetith.fr`, `UPSTREAM_MCP_URL=http://router:8080/mcp`, `OIDC_ISSUER_URL=https://accounts.google.com`, `OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET` (from Google), `TOKEN_SIGNING_SECRET` (`openssl rand -base64 48`, keep it stable: changing it invalidates all tokens), `REDIS_URL`, `TRUSTED_PROXY_CIDRS` (Nginx address as seen by the container; `172.17.0.1/32` is the usual Docker gateway when Nginx runs on the host, else its LAN IP; with rootless Docker check `docker network inspect jobwatch_jobwatch-core`). Metrics/readyz are on `127.0.0.1:9090` inside the container (not published). **VERIFY (S1):** a `*_FILE` variant for the client secret, the real container listen port (`:8080` assumed), and that the front forwards the original path `/mcp` to the router.
 
-## Nginx (your existing reverse proxy)
-Add a `server` block for the connector hostname; the upstream is the published port.
-```nginx
-server {
-    listen 443 ssl;
-    http2 on;
-    server_name mcp.example.com;
-    # ssl_certificate / ssl_certificate_key: as for your other hosts
+## Google sign-in (the identity provider)
+Access is limited to Matthieu by the Google OAuth app itself: while the app is in **Testing** status only listed test users can sign in, and the front has no email allowlist of its own.
+1. Google Cloud Console → create a project (e.g. `jobwatch-mcp`) → **APIs & Services → OAuth consent screen**: user type **External**, app name, your support email; scopes `openid`, `email`, `profile` (non-sensitive, no verification needed); **Test users: add only your own Google account**; leave **Publishing status = Testing**. Do not publish the app.
+2. **Credentials → Create credentials → OAuth client ID → Web application**; **Authorized redirect URI: `https://mcp.noguetith.fr/callback`** (the front's OIDC callback, `{PROXY_BASE_URL}/callback`). Copy the client ID and secret into `deploy/.env` as `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
+3. Generate `TOKEN_SIGNING_SECRET=$(openssl rand -base64 48)` into `deploy/.env`.
+4. Acceptance (also in `02-…`): your account completes the sign-in; a second Google account is refused by Google ("access blocked"); the front never issues a token without the Google step.
+Notes: the front only uses Google to authenticate the person; it does not keep Google refresh tokens, so Google's 7-day limit on test-app refresh tokens does not apply. The front's own refresh tokens last 7 days (see D7).
 
-    location / {
-        proxy_pass http://127.0.0.1:8080;      # JW_BIND:JW_PORT
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Connection "";
-        proxy_buffering off;                   # Streamable HTTP / SSE must not be buffered
-        proxy_cache off;
-        proxy_read_timeout 300s;               # longer than the slowest tool timeout (catalog timeout_s) + queue time
-        proxy_send_timeout 300s;
-    }
-}
-```
-Rules: route every path (`/.well-known/*`, `/register`, `/authorize`, `/token`, `/mcp`) to the front; do not rewrite paths; do not put a login page, WAF challenge or rate-limit rule in front of the OAuth endpoints; if you allowlist `160.79.104.0/21`, keep `/.well-known/*`, `/register`, `/token` reachable from it (Anthropic's discovery runs from that range). Set `JW_BASE_URL` to the public `https://` URL exactly as Nginx serves it. VERIFY in spike S8.
+## Nginx for `mcp.noguetith.fr` (your existing reverse proxy; not running yet)
+Files in `deploy/nginx/`: `mcp.noguetith.fr.bootstrap.conf` (port 80 only, for the certificate) and `mcp.noguetith.fr.conf` (final site). Both pass `nginx -t` (tested in the `nginx:alpine` image with throwaway certificates; the real certificate and the live proxying are untested). Paths below assume Nginx installed on the Ubuntu host (Debian layout); adapt if it runs in a container.
+1. **DNS:** create `mcp.noguetith.fr` as an `A` record (and `AAAA` only if your IPv6 forwards to the host) pointing at your home public IP, or a CNAME to the dynamic-DNS name you already use for other hosts. Check: `dig +short mcp.noguetith.fr`.
+2. **Port redirection on the home router:** forward TCP **80 and 443** to the machine running Nginx (static LAN IP or DHCP reservation). If your other sites already work from the internet, these rules exist and nothing changes. Allow them in UFW (`sudo ufw allow 80,443/tcp`). The MCP port (8080) is **never** forwarded: it stays on `127.0.0.1`.
+3. **Bootstrap site:** `sudo mkdir -p /var/www/certbot && sudo cp deploy/nginx/mcp.noguetith.fr.bootstrap.conf /etc/nginx/sites-available/mcp.noguetith.fr && sudo ln -s /etc/nginx/sites-available/mcp.noguetith.fr /etc/nginx/sites-enabled/ && sudo nginx -t && sudo systemctl reload nginx`.
+4. **Certificate:** `sudo certbot certonly --webroot -w /var/www/certbot -d mcp.noguetith.fr` (renewal is handled by certbot's timer; the final site keeps the same ACME location).
+5. **Final site:** `sudo cp deploy/nginx/mcp.noguetith.fr.conf /etc/nginx/sites-available/mcp.noguetith.fr && sudo nginx -t && sudo systemctl reload nginx`. If Nginx runs in a container, change `proxy_pass http://127.0.0.1:8080` to the Docker host address and set `JW_BIND` to an interface that address can reach (never `0.0.0.0` without a firewall rule).
+6. **Smoke test** (after `docker compose up -d`): `curl -i https://mcp.noguetith.fr/mcp` must return `401` with `WWW-Authenticate: Bearer resource_metadata="https://mcp.noguetith.fr/.well-known/oauth-protected-resource"`; `curl -s https://mcp.noguetith.fr/.well-known/oauth-authorization-server` returns JSON with `registration_endpoint` and `code_challenge_methods_supported: ["S256"]`.
+Rules: route every path to the front; do not rewrite paths; no login page, WAF challenge or rate-limit rule in front of the OAuth endpoints; if you allowlist `160.79.104.0/21`, keep `/.well-known/*`, `/register` and `/token` reachable from it (an example `location = /mcp` allowlist is commented in the site file). Set `JW_BASE_URL` to exactly `https://mcp.noguetith.fr`.
+
+## Other hosts: macOS (Apple Silicon) and other Linux (decided 2026-10-01)
+The images may run on something other than the Ubuntu NUC, typically Matthieu's Mac. What is portable and what is not:
+- **Router image:** multi-arch (`linux/amd64`, `linux/arm64`), built by the CI workflow with QEMU. Pull or build it on the Mac as usual.
+- **Browser image:** amd64 uses Google Chrome stable; **arm64 uses Debian Chromium** (Google ships no Linux arm64 Chrome). Build locally with `docker build -t jobwatch-browser:dev images/browser` (the Dockerfile selects the browser from `TARGETARCH`). **Do not use the arm64 image for the LinkedIn session:** Chromium reports a different brand list and other signals, so the logged-in profile and the daily routine stay on the amd64 NUC. Emulating amd64 Chrome on Apple Silicon is slow and crash-prone; not supported.
+- **Runtime:** Docker Desktop (or OrbStack/Colima) instead of rootless Docker. Set `JW_DOCKER_SOCKET=/var/run/docker.sock`. Its socket is root-equivalent inside the VM and the router then runs as `user: "0:0"`; acceptable for local development, **not for the production host**.
+- **No host paths:** profiles are named volumes and the seccomp profile is passed by file to the Docker CLI, so nothing depends on `/srv/...` or `XDG_RUNTIME_DIR`.
+- **Development without OAuth:** `docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up router` runs only the router on `http://127.0.0.1:8080/mcp` with `JW_AUTH=none` (accepted only on loopback). Test with the MCP Inspector or `claude mcp add --transport http jobwatch-dev http://127.0.0.1:8080/mcp`. The full front needs the public hostname and cannot run on a laptop without a tunnel; test it on the NUC.
+- **Memory:** Docker Desktop's VM has its own memory limit (Settings → Resources); give it at least 3 GB to run Chromium plus the router. The Linux-only spike scripts (`spikes/host/*.sh`, GNU `date`, `hostname -I`, rootless checks) are NUC tools, not portable.
+- **Never** treat a Mac run as evidence for the budgets in `06-…`: those were measured on the amd64 NUC with Google Chrome.
 
 ## CI/CD: build, publish, auto-update
 Same pattern as the TraderTavern project: GitHub Actions builds the image and pushes it to your **private registry**; **Watchtower** on the Ubuntu host notices the new digest and restarts the router. Workflow: `.github/workflows/docker-publish.yml`.
 
 ```
-push to main → [test job: lint, typecheck, unit+contract, catalog drift] → build router image (Buildx, linux/amd64, provenance: false)
+push to main → [test job: lint, typecheck, unit+contract, catalog drift] → build router image (Buildx, linux/amd64 + linux/arm64, provenance: false)
              → push <registry>/jobwatch-router:latest → Watchtower (host, polls) → pulls + recreates router
 ```
 - **GitHub secrets:** `REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD` (same names as TraderTavern). The test job is skipped until `package.json` exists.
@@ -116,7 +121,14 @@ Rootless Docker starts at boot through `systemctl --user enable docker` + `login
 
 ## Runbooks
 ### First-time setup
-Create user, enable linger, install runtime, create dirs, create networks, build images, fill `secrets/` and `deploy/.env`, bring up compose, add the Nginx server block and reload Nginx, add the connector in Claude, perform the LinkedIn login (see `05-…`), run the acceptance checklist in `02-…`.
+1. User `mcpuser`, linger, rootless Docker (Host prerequisites above).
+2. DNS record and router port forwarding for `mcp.noguetith.fr` (Nginx section, steps 1-2).
+3. Google OAuth app in Testing mode, with only your account as test user ("Google sign-in" section).
+4. `cp deploy/.env.example deploy/.env && chmod 600 deploy/.env`, fill `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `TOKEN_SIGNING_SECRET`, `JW_NGINX_CIDR`, `JW_REGISTRY`, `JW_WATCHTOWER_IMAGE`; `mkdir -p data/router data/redis`.
+5. Nginx: bootstrap site, certbot, final site (Nginx section, steps 3-5).
+6. `docker login <registry>` as `mcpuser`; `docker compose -f deploy/compose.yml --env-file deploy/.env up -d`; run the smoke test (Nginx section, step 6).
+7. Add `https://mcp.noguetith.fr/mcp` as a custom connector in Claude, sign in with your Google account, then the acceptance checklist in `02-…`.
+8. LinkedIn login through noVNC (`05-…`).
 
 ### Session expired / `needs_login` or `checkpoint`
 The routine notifies Matthieu. Procedure: `jobwatch login linkedin` → SSH tunnel to the viewer → log in → `jobwatch login --done`. After a checkpoint wait 24 h and reduce budgets.
@@ -125,13 +137,13 @@ The routine notifies Matthieu. Procedure: `jobwatch login linkedin` → SSH tunn
 Look at `memory_report` and the call log (`peak_rss_mb`). Lower per-tool `max_cards`, enable resource blocking, raise `memory.max` only if the host has headroom, or reduce `renderer-process-limit`.
 
 ### Rotating secrets
-Front secrets and the shared secret: change in `secrets/`, restart front+router. OAuth signing key rotation: per the front's docs; re-add the connector if required.
+`OIDC_CLIENT_SECRET` (rotate in Google Cloud Console, update `deploy/.env`, `docker compose up -d front`). `TOKEN_SIGNING_SECRET`: changing it invalidates every issued token and registered client, so Claude must reconnect (remove and re-add the connector). Redis data (`data/redis`) can be wiped; it only costs in-flight refresh rotations.
 
 ### Disk/profile hygiene
 Weekly: prune unused images; Chrome caches inside profiles can grow — delete `Cache`/`Code Cache` folders monthly while stopped. Never delete `Cookies`/`Preferences` unless re-logging in.
 
 ### Uninstall
-`compose down`, remove images, remove connector in Claude, delete `/srv/jobwatch/profiles`, revoke sessions in LinkedIn (Settings → sign-in & security → where you're signed in).
+`compose down`, remove images, remove connector in Claude, delete the `jw-profile-*` Docker volumes (`docker volume rm`), revoke sessions in LinkedIn (Settings → sign-in & security → where you're signed in).
 
 ## Observability (optional Prometheus + Grafana)
 - **Logs:** JSON lines to stdout (docker/journald); router call log in SQLite (30-day retention).

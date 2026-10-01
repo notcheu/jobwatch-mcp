@@ -32,6 +32,12 @@ Source: Anthropic docs "Authentication for connectors" and "Third party connecto
 - Static-header fallback: if the org has the beta, a long random bearer token in `Authorization` is the simplest machine-friendly option. Keep it as plan B; treat the token as a password (rotate, never in URL).
 - Tool-level controls in Claude: Claude lets the user set per-tool permissions (Always allow / Blocked). Expose `readOnlyHint` annotations so read-only tools can be safely "always allowed" for the routine.
 
+## Front in use: babs/mcp-auth-proxy (decision D7)
+- Public URL entered in Claude: `https://mcp.noguetith.fr/mcp`. The proxy's root protected-resource metadata advertises `{PROXY_BASE_URL}/` (trailing slash) for Claude.ai compatibility and the path-specific metadata advertises `https://mcp.noguetith.fr/mcp`; **VERIFY in S1 that Claude accepts the resource match**.
+- It advertises `scopes_supported: []`, so Claude will not append `offline_access`; its refresh tokens are issued regardless (7 days, rotated). **VERIFY in S1** that a scheduled routine still refreshes unattended and what happens after 7 idle days.
+- Redirect URI `https://claude.ai/api/mcp/auth_callback` is accepted at registration; Claude Code loopback URIs are accepted over HTTP only for loopback hosts.
+- Single user is enforced by the Google OAuth app (Testing mode, one test user), not by the proxy: include "a second Google account is refused" in the acceptance run.
+
 ## Acceptance checklist for the auth layer (used in Phase 2)
 - [ ] `curl -i https://<host>/mcp` (no token) → `401` + `WWW-Authenticate` with `resource_metadata`.
 - [ ] `/.well-known/oauth-protected-resource` returns JSON with exact `resource` and first `authorization_servers` entry.

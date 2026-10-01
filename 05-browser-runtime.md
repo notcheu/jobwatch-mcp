@@ -6,7 +6,7 @@ One image, used by every browser-backed platform. It contains **no adapter code*
 
 ## Image contents
 - Base: Debian 12 (bookworm-slim) or an Ubuntu LTS minimal image (NOT the snap `chromium` package).
-- `google-chrome-stable` from Google's apt repository (VERIFY availability for the host CPU architecture with `uname -m`; fallback: Debian `chromium`).
+- **Multi-architecture (decided 2026-10-01: the images may run on something other than the Ubuntu NUC, e.g. an arm64 Mac).** amd64: `google-chrome-stable` from Google's apt repository (confirmed on the NUC). arm64: **Google publishes no Linux arm64 Chrome**, so the arm64 variant uses Debian `chromium` (see the build arg below). Chromium reports a different brand list (`navigator.userAgentData`) and may differ in other signals, so **treat the arm64 image as development only, not for the LinkedIn session**; the logged-in profile belongs on the amd64 NUC. (Emulating amd64 Chrome on Apple Silicon works through Docker Desktop but is slow and crash-prone; not a supported path.) Original note: (VERIFY availability for the host CPU architecture with `uname -m`; fallback: Debian `chromium`).
 - `xvfb` (virtual display), `fonts-liberation` + a CJK/emoji font if needed, `tini` (PID 1 / zombie reaping), `socat` (DevTools port forward, see G2), `ca-certificates`, `tzdata`.
 - Login mode helpers: `x11vnc`, `novnc`/`websockify` (only started when `MODE=login`).
 - Non-root user `chrome` (uid 1000), home `/home/chrome`, profile mount `/profile`.
@@ -16,13 +16,17 @@ One image, used by every browser-backed platform. It contains **no adapter code*
 ```dockerfile
 FROM debian:bookworm-slim
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH   # set by BuildKit: amd64 -> Google Chrome stable, arm64 -> Debian Chromium (development only)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl gnupg xvfb socat tzdata fonts-liberation \
-      x11vnc novnc websockify procps \
- && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google.gpg \
- && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
-      > /etc/apt/sources.list.d/google-chrome.list \
- && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
+      ca-certificates curl gnupg xvfb socat tzdata fonts-liberation procps x11vnc novnc websockify jq \
+ && if [ "${TARGETARCH:-amd64}" = "amd64" ]; then \
+      curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google.gpg \
+      && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+      && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
+      && ln -s /usr/bin/google-chrome-stable /usr/local/bin/chrome-bin; \
+    else \
+      apt-get install -y --no-install-recommends chromium && ln -s /usr/bin/chromium /usr/local/bin/chrome-bin; \
+    fi \
  && rm -rf /var/lib/apt/lists/*
 RUN useradd -m -u 1000 chrome && mkdir /profile && chown chrome:chrome /profile
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

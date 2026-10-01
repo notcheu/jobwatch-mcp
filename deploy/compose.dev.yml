@@ -1,0 +1,18 @@
+# Development override, e.g. on a Mac (Docker Desktop, arm64): run ONLY the router, without the OAuth front, Redis or Watchtower.
+#   docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up router
+# The router answers on http://127.0.0.1:8080/mcp with NO authentication (JW_AUTH=none is accepted only when bound to loopback).
+# Use the MCP Inspector or `claude mcp add --transport http jobwatch-dev http://127.0.0.1:8080/mcp`; never expose this port.
+services:
+  router:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: jobwatch-router:dev
+    labels: []                               # not managed by Watchtower
+    user: "0:0"                              # Docker Desktop's socket is not owned by uid 1000
+    environment:
+      JW_AUTH: none
+      JW_BASE_URL: http://127.0.0.1:8080
+      JW_BROWSER_IMAGE: jobwatch-browser:dev  # built locally for the host architecture (arm64 uses Chromium, see 05)
+    ports:
+      - "127.0.0.1:8080:8080"

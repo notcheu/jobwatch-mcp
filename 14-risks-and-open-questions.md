@@ -6,8 +6,8 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 
 ## Open questions for Matthieu (ask before the related work)
 1. Machine facts: CPU architecture, total/free RAM when idle, disk, always-on desktop session?
-2. Public hostname for the connector (subdomain on the existing domain behind Nginx, e.g. `mcp.<domain>`). D10 is decided: Nginx + one published port.
-3. OAuth identity provider for the single-user login: proposed Google OAuth app in "Testing" mode with Matthieu as the only test user (see D7 in `01`), or a tiny self-hosted IdP (Dex/Pocket ID). Confirm.
+2. ~~Public hostname~~ **decided: `mcp.noguetith.fr`** behind the existing Nginx (D10: Nginx + one published port). DNS record, port forwarding and certificate are still to be created (`10-…`).
+3. ~~Identity provider~~ **decided: Google** OAuth app in "Testing" mode with Matthieu as the only test user (D7 in `01`).
 4. LinkedIn usage budget (defaults in `07-…`) — approve or adjust.
 5. LinkedIn UI language to standardize on (English vs French).
 6. Should the routine's "seen offers" memory move server-side (Phase 4) or stay in the Claude project?
@@ -40,6 +40,7 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 | Selector drift breaks adapters | high over time | medium | fixtures, `adapter_broken` code, nightly smoke, small adapters |
 | RAM pressure on the host | medium | medium | strict policy, measurements, zram, single browser |
 | Automation fingerprint detected | medium | medium/high | headful Chrome, consistency with real Chrome, Patchright option, low volume |
+| arm64/Mac image behaves differently from the production amd64 Chrome | high | medium | arm64 uses Chromium (no Google Chrome for Linux arm64); development only, the LinkedIn profile and the routine run on the amd64 NUC; never use Mac measurements for budgets |
 | Over-engineering for one consumer | medium | wasted time | phase gates; Phase 1 is useful alone; stop after Phase 2 if value is reached |
 | Nginx/WAF rules break OAuth discovery or MCP streaming | low/medium | high | follow Anthropic's notes, test with checklist, allowlist carefully |
 | Exposed OAuth front vulnerability | low | high | pinned images, updates, single identity, minimal surface |

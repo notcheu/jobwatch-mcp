@@ -195,11 +195,12 @@ Never include cookies, tokens, full URLs with session parameters, or raw HTML in
 
 ## Configuration (env + `config.yaml`)
 ```
-JW_BASE_URL=https://mcp.example.com          # public URL (resource identifier)
+JW_BASE_URL=https://mcp.noguetith.fr          # public URL (resource identifier)
 JW_FRONT_SHARED_SECRET=...                    # header from the OAuth front (or mTLS)
 JW_RUNTIME=docker                             # docker | systemd-scope
 JW_BROWSER_IMAGE=localhost/jobwatch-browser:1
-JW_PROFILES_DIR=/srv/jobwatch/profiles
+JW_PROFILE_VOLUME_PREFIX=jw-profile-         # browser profiles are named Docker volumes jw-profile-<platform> (no host paths: works on Linux and macOS)
+JW_AUTH=front                                # front | none (none only for local development, loopback only; see compose.dev.yml)
 JW_DATA_DIR=/srv/jobwatch/data
 JW_IDLE_TTL_S=120  JW_MAX_LIFETIME_S=1800  JW_QUEUE_TIMEOUT_S=60
 JW_MEM_HIGH_MB=1200 JW_MEM_MAX_MB=1500        # defaults, measured in S5 (see 06); per-tool budgets override
