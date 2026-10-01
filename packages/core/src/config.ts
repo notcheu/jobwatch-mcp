@@ -30,6 +30,15 @@ const envSchema = z.object({
     .regex(/^[a-z0-9][a-z0-9_.-]*$/)
     .default('jobwatch-browsers'),
   JW_BROWSER_SECCOMP: z.string().startsWith('/').optional(),
+  JW_BROWSER_LANG: z
+    .string()
+    .regex(/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/)
+    .default('fr-FR'),
+  JW_BROWSER_ACCEPT_LANGS: z
+    .string()
+    .regex(/^[A-Za-z0-9,;=.-]{2,512}$/)
+    .optional(),
+  JW_FINGERPRINT: z.enum(['enforce', 'warn', 'off']).default('enforce'),
   JW_PROFILE_VOLUME_PREFIX: z
     .string()
     .regex(/^[a-z0-9][a-z0-9_.-]*$/)
@@ -63,6 +72,11 @@ export interface Config {
   browserNetwork: string;
   /** Absolute path of the Chrome seccomp profile as seen by the docker CLI; unset = Docker's default profile. */
   browserSeccomp: string | undefined;
+  /** UI language and `navigator.languages` of the browser (copied from the everyday browser, 05 G8). The list is personal: keep it in the untracked deploy/.env. */
+  browserLang: string;
+  browserAcceptLangs: readonly string[] | undefined;
+  /** `enforce`: refuse to use a browser that fails its startup fingerprint check. */
+  fingerprint: 'enforce' | 'warn' | 'off';
   profileVolumePrefix: string;
   dataDir: string;
   /** SQLite file (rate-limit usage, circuit breakers, call log). `:memory:` only in tests. */
@@ -154,6 +168,11 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       browserImage: parsed.JW_BROWSER_IMAGE,
       browserNetwork: parsed.JW_BROWSER_NETWORK,
       browserSeccomp: parsed.JW_BROWSER_SECCOMP,
+      browserLang: parsed.JW_BROWSER_LANG,
+      browserAcceptLangs: parsed.JW_BROWSER_ACCEPT_LANGS?.split(',')
+        .map((l) => l.trim())
+        .filter(Boolean),
+      fingerprint: parsed.JW_FINGERPRINT,
       profileVolumePrefix: parsed.JW_PROFILE_VOLUME_PREFIX,
       dataDir: parsed.JW_DATA_DIR,
       dbPath: parsed.JW_DB_PATH ?? `${parsed.JW_DATA_DIR.replace(/\/+$/, '')}/jobwatch.sqlite`,

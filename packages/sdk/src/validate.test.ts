@@ -58,6 +58,19 @@ describe('validateAdapter: adapter-level rules', () => {
     }
   });
 
+  it('accepts a valid pacing and rejects nonsense', () => {
+    expect(rules({ ...httpAdapter, pacing: { minMs: 2500, maxMs: 5000 } })).toEqual([]);
+    expect(rules({ ...httpAdapter, pacing: { minMs: 0, maxMs: 0 } })).toEqual([]);
+    for (const pacing of [
+      { minMs: -1, maxMs: 5 },
+      { minMs: 10, maxMs: 5 },
+      { minMs: 1.5, maxMs: 5 },
+      { minMs: 0, maxMs: 120_000 },
+    ]) {
+      expect(rules({ ...httpAdapter, pacing }), JSON.stringify(pacing)).toContain('pacing');
+    }
+  });
+
   it('rejects a tool whose cost is above the hourly budget (it could never run)', () => {
     const expensive = withTool({ limits: { timeoutS: 30, cost: 50, outputMaxBytes: 4096 } });
     expect(rules({ ...expensive, rate: { perHour: 40, perDay: 300 } })).toContain('rate');

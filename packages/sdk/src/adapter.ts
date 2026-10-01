@@ -11,6 +11,12 @@ export interface RatePolicy {
   perDay: number;
 }
 
+/** Human-like pause between page loads, drawn uniformly from [minMs, maxMs] (07-adapter-linkedin.md: 2.5 to 5 s). */
+export interface Pacing {
+  minMs: number;
+  maxMs: number;
+}
+
 interface AdapterBase {
   /** The name used by `jobwatch adapters enable <id>` and in adapters.json, e.g. `linkedin`. Lowercase, digits, hyphens. */
   id: string;
@@ -24,6 +30,8 @@ interface AdapterBase {
   allowedHosts: readonly string[];
   /** Budget for this platform. Omit to get the engine default for the adapter kind (browser: 120/hour, 300/day; http: 600/hour, 3000/day). */
   rate?: RatePolicy;
+  /** Pause `ctx.pace()` waits. Omit for the engine default (browser: 2500 to 5000 ms, http: none; HTTP is paced per host by the client). */
+  pacing?: Pacing;
 }
 
 /** An adapter that needs the leased, single-tab Chrome of its platform. */

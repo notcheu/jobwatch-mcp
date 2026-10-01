@@ -25,7 +25,7 @@ Workspace layout and rules: `03-router-spec.md` ("Repo layout: Nx monorepo"). Bu
 3. `packages/core`: config and logging, enabled-adapters file, registry (`loadAdapters`, `listTools`), proven with fake adapters that `tools/list` works with no container; `packages/adapters` (installed map) and the adapter generator (`npm run new:adapter`). **Done** (core 60 tests, generator verified end to end by generating an http and a browser adapter, running the full CI on them, then removing them).
 4. `apps/mcp`: stateless Streamable HTTP, `/healthz`, `/metrics` listener, auth guards, the `callTool` pipeline in core, tests with a real MCP client; `apps/cli` with `adapters list|enable|disable`; the router `Dockerfile` built and run for real. **Done** (mcp 31 tests, cli 26, core 90). The step 4 PR also turns the publish job on.
 5. Split into two PRs. **5a: SQLite store (`node:sqlite`), rate limiter, circuit breaker, call log. Done** (core 155 tests, mcp 45). **5b: `RuntimeBackend` + `DockerCliBackend`, runtime manager (state machine, semaphore, preemption, reaper, watchdog), tested against a fake backend. Done** (core 226 tests, mcp 52).
-6. `core`: browser layer (CDP wrapper with exactly one tab and host allowlist, fingerprint self-check) and `images/browser/` (promoted from `spikes/`).
+6. `core`: browser layer (CDP wrapper with exactly one tab and host allowlist, fingerprint self-check), HTTP client, context provider, and `images/browser/` (promoted from `spikes/`). **Done**; real-browser integration test in `tests/integration/`.
 7. `packages/adapter-linkedin` (layout A first, then B), ops tools `session_status` and `memory_report`.
 8. `apps/cli`: `login`, `catalog`, `doctor`; Docker integration tests.
 9. Soak test.

@@ -9,6 +9,7 @@ export type Rule =
   | 'platform'
   | 'hosts'
   | 'rate'
+  | 'pacing'
   | 'tools'
   | 'tool-name'
   | 'tool-unique'
@@ -52,6 +53,13 @@ export function validateAdapter(adapter: AdapterModule): Violation[] {
   for (const host of adapter.allowedHosts) {
     if (!isBareHostname(host))
       add('hosts', 'adapter', `allowedHosts entry "${host}" must be a bare lowercase hostname (no scheme, port, path, wildcard or IP)`);
+  }
+
+  if (adapter.pacing !== undefined) {
+    const { minMs, maxMs } = adapter.pacing;
+    if (!Number.isInteger(minMs) || !Number.isInteger(maxMs) || minMs < 0 || maxMs < minMs || maxMs > 60_000) {
+      add('pacing', 'adapter', 'pacing needs integers with 0 <= minMs <= maxMs <= 60000');
+    }
   }
 
   if (adapter.rate !== undefined) {

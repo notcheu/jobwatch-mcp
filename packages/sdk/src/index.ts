@@ -32,7 +32,7 @@ export { defineHttpTool, defineBrowserTool } from './tool';
 export type { ToolAnnotations, ToolLimits, AdapterResult, ToolDefinition, ErasedTool } from './tool';
 
 export { defineAdapter, summarizeAdapter } from './adapter';
-export type { AdapterModule, BrowserAdapter, HttpAdapter, AdapterKind, AdapterSummary, RatePolicy } from './adapter';
+export type { AdapterModule, BrowserAdapter, HttpAdapter, AdapterKind, AdapterSummary, Pacing, RatePolicy } from './adapter';
 
 export { validateAdapter, formatViolations } from './validate';
 export type { Rule, Violation } from './validate';

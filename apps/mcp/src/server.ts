@@ -3,6 +3,9 @@ import {
   CircuitBreaker,
   ConfigError,
   DockerCliBackend,
+  connectBrowser,
+  createBrowserHooks,
+  createContextProvider,
   RateLimiter,
   RegistryError,
   RuntimeManager,
@@ -14,7 +17,7 @@ import {
   describeConfig,
   loadAdapters,
   loadConfig,
-  noRuntime,
+  type ConnectBrowser,
   policyFor,
   resolveEnabledAdapters,
   type Clock,
@@ -48,15 +51,17 @@ export interface RunningServer {
 export interface StartOptions {
   env: Readonly<Record<string, string | undefined>>;
   version: string;
-  /** Tests inject their own installed table and context provider. */
+  /** Tests inject their own installed table and context provider (which replaces the real one built from the runtime). */
   installed?: InstalledAdapters;
   contexts?: ContextProvider;
   /** Where log lines go; defaults to stdout. */
   logDestination?: NodeJS.WritableStream;
   /** Container runtime for browser adapters; tests pass a fake. Defaults to the docker CLI. */
   runtimeBackend?: RuntimeBackend;
-  /** Browser-layer hooks (DevTools readiness, quit, memory shedding): wired in step 6. */
+  /** Replaces the browser-layer hooks (DevTools readiness, quit, memory shedding). Tests only. */
   runtimeHooks?: RuntimeHooks;
+  /** Replaces the CDP connection (playwright-core). Tests only. */
+  connectBrowser?: ConnectBrowser;
   /** Time source for rate limits and breakers; tests pass a controllable one. */
   clock?: Clock;
   /** Overrides JW_PORT (tests pass 0 for a free port). */
@@ -144,6 +149,11 @@ export async function start(options: StartOptions): Promise<RunningServer> {
         network: config.browserNetwork,
         ...(config.browserSeccomp ? { seccompProfile: config.browserSeccomp } : {}),
         profileVolumePrefix: config.profileVolumePrefix,
+        // Handed to the container; the language list is personal and comes from the untracked deploy/.env (05 G8).
+        env: {
+          CHROME_LANG: config.browserLang,
+          ...(config.browserAcceptLangs ? { ACCEPT_LANGS: config.browserAcceptLangs.join(',') } : {}),
+        },
         idleTtlS: config.idleTtlS,
         maxLifetimeS: config.maxLifetimeS,
         queueTimeoutS: config.queueTimeoutS,
@@ -151,7 +161,13 @@ export async function start(options: StartOptions): Promise<RunningServer> {
         memHighMb: config.memHighMb,
       },
       logger,
-      options.runtimeHooks,
+      options.runtimeHooks ??
+        createBrowserHooks({
+          connect: options.connectBrowser ?? connectBrowser,
+          logger,
+          fingerprint: config.fingerprint,
+          expectations: config.browserAcceptLangs ? { languages: config.browserAcceptLangs } : {},
+        }),
       (event) => metrics?.recordRuntime(event),
     );
     // Containers left by a previous router (crash, kill -9) would hold RAM and a profile lock. A docker that is not reachable
@@ -161,7 +177,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
 
   const app = createApp({
     registry,
-    contexts: options.contexts ?? noRuntime,
+    contexts: options.contexts ?? createContextProvider({ runtime, connect: options.connectBrowser ?? connectBrowser, logger }),
     logger,
     metrics,
     version: options.version,

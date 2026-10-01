@@ -21,7 +21,11 @@ export interface GotoOptions {
 export interface BrowserSession {
   /** Navigate the single tab. Throws `HostNotAllowedError` unless the URL passes `isUrlAllowed` for the adapter. */
   goto(url: string, options: GotoOptions): Promise<void>;
-  /** Run a script (source string or function) in the page. The result must be JSON-serialisable. */
+  /**
+   * Run a script in the page and return its JSON-serialisable result. A STRING is a function expression that is CALLED with
+   * `arg` (`'(ids) => ids.length'`), the form `linkedin-extract.js` already has; `arg` then travels as JSON. A real function is
+   * passed to the browser as is. (A bare expression such as `'1 + 1'` is not supported: wrap it, `'() => 1 + 1'`.)
+   */
   evaluate<T, A = undefined>(script: string | ((arg: A) => T), arg?: A): Promise<T>;
   /** Resolves true when the selector appears within the timeout, false otherwise (never throws on timeout). */
   waitForSelector(selector: string, timeoutMs: number): Promise<boolean>;
