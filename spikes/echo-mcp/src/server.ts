@@ -16,7 +16,21 @@ function buildServer(): McpServer {
       inputSchema: { text: z.string().max(200) },
       annotations: { readOnlyHint: true, openWorldHint: false, idempotentHint: true },
     },
-    async ({ text }) => ({ content: [{ type: "text", text }] }),
+    async ({ text }) => { console.log(`[echo] ${new Date().toISOString()}`); return { content: [{ type: "text", text }] }; },
+  );
+  server.registerTool(
+    "ping",
+    {
+      title: "Ping (read-only)",
+      description: "Returns the server time in UTC. Read-only, no side effects.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false, idempotentHint: false },
+    },
+    async () => {
+      const now = new Date().toISOString();
+      console.log(`[ping] ${now}`);
+      return { content: [{ type: "text", text: now }] };
+    },
   );
   return server;
 }
