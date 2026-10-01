@@ -202,7 +202,7 @@ JW_BROWSER_IMAGE=localhost/jobwatch-browser:1
 JW_PROFILES_DIR=/srv/jobwatch/profiles
 JW_DATA_DIR=/srv/jobwatch/data
 JW_IDLE_TTL_S=120  JW_MAX_LIFETIME_S=1800  JW_QUEUE_TIMEOUT_S=60
-JW_MEM_HIGH_MB=900 JW_MEM_MAX_MB=1100         # defaults; per-tool budgets override (see 06)
+JW_MEM_HIGH_MB=1200 JW_MEM_MAX_MB=1500        # defaults, measured in S5 (see 06); per-tool budgets override
 JW_LOG_LEVEL=info
 JW_METRICS_ENABLED=false                      # true => Prometheus /metrics on JW_METRICS_PORT
 JW_METRICS_PORT=9464

@@ -18,7 +18,7 @@
   "annotations": { "readOnlyHint": true, "openWorldHint": true, "idempotentHint": true },
   "limits": {
     "timeout_s": 90,
-    "memory": { "high_mb": 900, "max_mb": 1100 },
+    "memory": { "high_mb": 1200, "max_mb": 1500 },
     "rate": { "cost": 1 },
     "output_max_bytes": 60000
   },

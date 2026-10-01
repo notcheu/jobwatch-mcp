@@ -134,3 +134,12 @@ The three container runs had loaded **a "No results found" page** (`/jobs/search
 | `split_view_1` | search with `currentJobId` | 19.8 s | 1673 MB | 1800 MB |
 No kernel OOM kill, memory.peak sat at the 1800 MB cap throughout. This does **not** show the minimum need: with a high cap Chrome keeps caches and the working set (current - inactive_file) still includes active file pages. The earlier runs at 1100 MB crashed on a "No results found" page, a different page, so they say nothing about this one. Decisive next run: the same flow at `MEM_MAX=1100m` (stages `search,view_1,view_2`) with the new `anon+shmem` metric (process memory without file cache). `/jobs/` alone needed 774 MB.
 Selector results are recorded in `07` (layout A) and V8 in `14`.
+
+## S5 decisive run: classic layout at the original 1100 MB cap (2026-10-01, `STAGES=search,view_1,view_2`)
+All three stages completed and read their data (25 cards; descriptions 1826 and 5604 characters via `/jobs/view/<id>/`), `STATE: ok`. But:
+| Stage | gotoMs | Working set | anon+shmem | memory.peak |
+|---|---|---|---|---|
+| `search` | 16.8 s | 1091 MB | **1036 MB** | 1100 MB |
+| `view_1` | 7.7 s | 752 MB | 641 MB | 1100 MB |
+| `view_2` | 7.6 s | 1043 MB | 956 MB | 1100 MB |
+`kernel oom_kill events = 1`: the kernel killed one process (the page data was still obtained, so it was probably a helper or a spare renderer), and the search stage used 94 % of the cap as process memory. A 1100 MB cap is therefore not safe, and the router's 90 % watchdog (990 MB) would have aborted this very call. **Verdict: the realistic need is about 1.04 GB of process memory on the search page; budget `memory.max` 1500 MB (`high` 1200 MB).** Navigation was fast this time (7-17 s), so the 8-28 s of the previous run came from host memory pressure, not from LinkedIn. The host still has to provide about 2 GB free when a runtime starts.

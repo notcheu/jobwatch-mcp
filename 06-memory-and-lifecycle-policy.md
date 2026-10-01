@@ -28,8 +28,8 @@ BUSY/IDLE_GRACE ──watchdog >90%──▶ STOPPING(kill) ; max_lifetime reach
 ## Hard limits (per browser container)
 ```
 docker run --rm --name jw-<platform> --init \
-  --memory 1100m --memory-swap 1100m            # hard cap, no swap for this container
-  --memory-reservation 900m                     # only a reclaim hint under host pressure; does NOT set memory.high (measured), so the watchdog below is the soft control
+  --memory 1500m --memory-swap 1500m            # hard cap, no swap for this container (measured need on LinkedIn search: about 1.04 GB anon+shmem, see S5)
+  --memory-reservation 1200m                    # only a reclaim hint under host pressure; does NOT set memory.high (measured), so the watchdog below is the soft control
   --oom-score-adj 500                           # die before the rest of the machine
   --pids-limit 512 --shm-size 256m --cpus 1.5
   --cap-drop ALL --security-opt no-new-privileges
@@ -42,6 +42,11 @@ docker run --rm --name jw-<platform> --init \
 ```
 Per-tool budgets in the catalog (`memory.high_mb`, `memory.max_mb`) override the defaults when the runtime is (re)started; a platform's runtime uses the max of the budgets of the tools it serves (single value per platform in v1).
 Host level: run the whole stack in a systemd slice with `MemoryMax`; enable zram swap on the host to absorb spikes (keep it OFF inside the browser container). VERIFY cgroup v2 delegation for the rootless user (`systemctl --user`, `Delegate=yes`).
+
+## Measured budget (spikes S3/S5, 2026-10-01; details in `docs/measurements.md`)
+- Chrome + Xvfb idle: 200-360 MB. Public sites (Wikipedia, Le Monde, WTTJ, APEC): peak 490-630 MB. Logged-in LinkedIn: `/jobs/` about 775 MB working set; **search page with 25 cards: about 1.04 GB of process memory (anon+shmem)**, job pages (`/jobs/view/<id>/`) 640-960 MB. At a 1100 MB cap the same flow completed but the kernel killed a process once (`oom_kill` = 1) and the working set reached 1091 MB: too close to the cap, and the 90 % watchdog threshold (990 MB) would have aborted the call with `budget_exceeded`.
+- Therefore defaults are **`memory.max` 1500 MB, `high` 1200 MB** (about 30 % margin over the measured peak; watchdog warn at 70 % = 1050 MB, critical at 90 % = 1350 MB). The host must have at least cap + 300 MB genuinely free when a runtime starts. On the 3.8 GB home machine that is not guaranteed (1.0-1.7 GB available, swap full): see `10-…` host prerequisites.
+- Tuning ideas to verify in Phase 1: open a fresh tab per detail page and close the search tab first (the view stage after the search used 641 MB anon vs 1036 MB), keep `--renderer-process-limit=2`, `--js-flags=--max-old-space-size=512`. Not effective in S5: site isolation off, blocking images/media/fonts.
 
 ## Watchdog thresholds
 Polling source: `docker stats --no-stream --format json <name>` (or the cgroup `memory.current` file when accessible). **Use the working set (`memory.current` minus `inactive_file`, which is what `docker stats` reports), not `memory.peak` or raw `memory.current`:** both include reclaimable page cache and would trigger false alarms (measured in S4: `memory.peak` reached the 1100 MB cap on a page that still loaded fine). Interval 5 s while a runtime is running.
