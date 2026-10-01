@@ -1,5 +1,5 @@
 import type { AdapterModule, BaseContext, ErasedTool, JobwatchError } from '@jobwatch/sdk';
-import type { CallGuard } from '../call';
+import type { Admission, CallGuard } from '../call';
 import type { CircuitBreaker } from './breaker';
 import { effectiveRate } from './policy';
 import type { RateLimiter } from './ratelimit';
@@ -12,9 +12,10 @@ import type { RateLimiter } from './ratelimit';
  */
 export function createGuard(limiter: RateLimiter, breaker: CircuitBreaker): CallGuard {
   return {
-    admit(adapter: AdapterModule, tool: ErasedTool<BaseContext>): void {
+    admit(adapter: AdapterModule, tool: ErasedTool<BaseContext>): Admission {
       breaker.check(adapter.platform);
-      limiter.take(adapter.platform, tool.limits.cost);
+      const ticket = limiter.take(adapter.platform, tool.limits.cost);
+      return { settle: (cost) => limiter.settle(ticket, cost) };
     },
     failed(adapter: AdapterModule, error: JobwatchError): void {
       if (error.code === 'needs_login') breaker.open(adapter.platform, 'needs_login');

@@ -26,6 +26,12 @@ export interface AdapterResult<O extends object = Record<string, unknown>> {
   text?: string;
   /** Non-fatal notes, e.g. "remote filter not applied by LinkedIn; post-filtered". */
   warnings: string[];
+  /**
+   * Budget units really spent (page views), a whole number from 0 up to the tool's `limits.cost`. The engine takes the full
+   * `limits.cost` BEFORE the call (so concurrent calls cannot overshoot) and refunds the difference afterwards. Omit it to keep
+   * the full charge. A call that throws is always charged in full: the request reached the platform.
+   */
+  cost?: number;
 }
 
 export interface ToolDefinition<I, O extends object, C extends BaseContext> {

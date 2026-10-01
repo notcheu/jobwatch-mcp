@@ -26,8 +26,13 @@ export const noRuntime: ContextProvider = {
  * throws a `JobwatchError` (`needs_login`, `checkpoint`, `rate_limited`) to refuse the call. `failed` is told about every
  * error the handler raised, so a lost session or a checkpoint can open the circuit breaker.
  */
+/** Returned by `admit`: lets the call hand back budget it did not use. */
+export interface Admission {
+  settle(actualCost: number): void;
+}
+
 export interface CallGuard {
-  admit(adapter: AdapterModule, tool: ErasedTool<BaseContext>): void;
+  admit(adapter: AdapterModule, tool: ErasedTool<BaseContext>): Admission | undefined;
   failed(adapter: AdapterModule, error: JobwatchError): void;
 }
 
@@ -169,8 +174,9 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
     });
   }
 
+  let admission: Admission | undefined;
   try {
-    deps.guard?.admit(adapter, tool);
+    admission = deps.guard?.admit(adapter, tool);
   } catch (error) {
     if (error instanceof JobwatchError) return fail(error.toBody());
     throw error;
@@ -210,6 +216,7 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
         details: { limit_bytes: tool.limits.outputMaxBytes },
       });
     }
+    if (produced.cost !== undefined) admission?.settle(produced.cost);
     const result: ToolCallResult = {
       isError: false,
       content: [{ type: 'text', text }],

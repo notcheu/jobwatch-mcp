@@ -198,8 +198,15 @@ export class Store {
     return rows.map((row) => ({ ts: Number(row['ts']), cost: Number(row['cost']) }));
   }
 
-  addUsage(platform: string, ts: number, cost: number): void {
-    this.db.prepare('INSERT INTO usage (platform, ts, cost) VALUES (?, ?, ?)').run(platform, ts, cost);
+  /** Returns the id of the new event, so the charge can be settled once the real cost is known. */
+  addUsage(platform: string, ts: number, cost: number): number {
+    return Number(this.db.prepare('INSERT INTO usage (platform, ts, cost) VALUES (?, ?, ?)').run(platform, ts, cost).lastInsertRowid);
+  }
+
+  /** Lower an event's cost (a refund); 0 removes it. Never raises it. */
+  settleUsage(id: number, cost: number): void {
+    if (cost <= 0) this.db.prepare('DELETE FROM usage WHERE id = ?').run(id);
+    else this.db.prepare('UPDATE usage SET cost = ? WHERE id = ? AND cost > ?').run(cost, id, cost);
   }
 
   // ---- circuit breaker

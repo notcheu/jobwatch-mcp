@@ -8,17 +8,25 @@ export interface SearchArgs {
   geo: string;
   posted_within: '24h' | 'any';
   remote_only: boolean;
+  /** First result page to load (25 results each). */
   page: number;
-  max_cards: number;
+  /** How many results to examine; the pages needed are loaded one after the other. */
+  max_results: number;
 }
 
 export interface SearchResult {
   cards: Card[];
+  /** First page loaded. */
   page: number;
+  /** Search pages actually loaded (each is one budget unit). */
+  pages_loaded: number;
   has_more: boolean;
   truncated: boolean;
   warnings: string[];
 }
+
+/** LinkedIn serves about 1000 results per search; more than 10 pages is never useful for a daily watch. */
+export const MAX_PAGE = 10;
 
 export type JobStatus = 'ok' | 'not_loaded' | 'closed';
 
@@ -42,20 +50,25 @@ export function assertSignedIn(url: string, hasLoginForm: boolean): void {
   if (verdict === 'needs_login') throw new SessionInvalid('LinkedIn is asking to sign in.');
 }
 
-/** Load one search page and return normalized cards. */
-export async function searchCards(ctx: BrowserAdapterContext, layout: SearchLayout, args: SearchArgs): Promise<SearchResult> {
+interface PageResult {
+  cards: Card[];
+  fullPage: boolean;
+  warnings: string[];
+}
+
+/** Load ONE search page and return its normalized cards (no filtering). */
+async function loadPage(ctx: BrowserAdapterContext, layout: SearchLayout, args: SearchArgs, page: number): Promise<PageResult> {
   const { session } = ctx;
   const warnings: string[] = [];
   await ctx.pace('page');
-  await session.goto(layout.searchUrl(args), { timeoutMs: NAVIGATION_TIMEOUT_MS });
+  await session.goto(layout.searchUrl({ ...args, page }), { timeoutMs: NAVIGATION_TIMEOUT_MS });
   await session.waitForSelector('li[data-occludable-job-id], [componentKey^="job-card-component-ref-"], h2', CARDS_WAIT_MS);
   const extracted = await session.evaluate<ExtractedCards>(EXTRACT_CARDS);
   assertSignedIn(session.url(), extracted.loginForm);
 
   if (extracted.cards.length === 0) {
     // An empty list is only acceptable when the page SAYS there are no results. Otherwise the markup changed (drift).
-    if (extracted.noResults)
-      return { cards: [], page: args.page, has_more: false, truncated: false, warnings: ['LinkedIn reports no results for this search.'] };
+    if (extracted.noResults) return { cards: [], fullPage: false, warnings: ['LinkedIn reports no results for this search.'] };
     throw new AdapterBroken('No job cards were found and the page does not say "no results": the LinkedIn layout may have changed.');
   }
   const parsed = extracted.cards.map(parseCard);
@@ -67,17 +80,60 @@ export async function searchCards(ctx: BrowserAdapterContext, layout: SearchLayo
   if (cards.length < parsed.length) warnings.push(`${parsed.length - cards.length} card(s) could not be read and were skipped.`);
   if (extracted.ai > 0 && layout.id === 'classic') warnings.push('LinkedIn served the AI search layout; cards were still read.');
   if (extracted.classic > 0 && layout.id === 'ai') warnings.push('LinkedIn served the classic search layout; cards were still read.');
+  return { cards, fullPage: extracted.cards.length >= PAGE_SIZE, warnings };
+}
 
-  let result = cards;
+/**
+ * Examine `max_results` search results, starting at page `page`: loads as many 25-result pages as needed, one after the other
+ * (paced), and stops early when a page is not full (the end of the results). Duplicates across pages are dropped. The remote
+ * filter is applied last, so `max_results` counts what was examined, not what was kept.
+ */
+export async function searchCards(ctx: BrowserAdapterContext, layout: SearchLayout, args: SearchArgs): Promise<SearchResult> {
+  const warnings: string[] = [];
+  const wanted = Math.ceil(args.max_results / PAGE_SIZE);
+  const last = Math.min(args.page + wanted - 1, MAX_PAGE);
+  if (last < args.page + wanted - 1)
+    warnings.push(`Only pages up to ${MAX_PAGE} are read; ${args.page + wanted - 1 - MAX_PAGE} page(s) of the request were not loaded.`);
+
+  const seen = new Set<string>();
+  const examined: Card[] = [];
+  let pagesLoaded = 0;
+  let more = false;
+  for (let page = args.page; page <= last; page += 1) {
+    let loaded: PageResult;
+    try {
+      loaded = await loadPage(ctx, layout, args, page);
+    } catch (error) {
+      // The first page proves the layout works; a later empty page just means the results ended.
+      if (page > args.page && error instanceof AdapterBroken) {
+        warnings.push(`Page ${page} returned no cards; stopped there.`);
+        break;
+      }
+      throw error;
+    }
+    pagesLoaded += 1;
+    warnings.push(...loaded.warnings.filter((warning) => !warnings.includes(warning)));
+    for (const card of loaded.cards) {
+      if (!seen.has(card.id)) {
+        seen.add(card.id);
+        examined.push(card);
+      }
+    }
+    more = loaded.fullPage;
+    if (!loaded.fullPage || examined.length >= args.max_results) break;
+  }
+
+  let result = examined.slice(0, args.max_results);
+  const truncated = examined.length > args.max_results;
   if (args.remote_only) {
     result = result.filter((card) => card.work_mode === 'remote');
     warnings.push('remote filter is not applied by LinkedIn; cards were post-filtered on the location.');
   }
-  const truncated = result.length > args.max_cards;
   return {
-    cards: result.slice(0, args.max_cards),
+    cards: result,
     page: args.page,
-    has_more: extracted.cards.length >= PAGE_SIZE && args.page < 5,
+    pages_loaded: pagesLoaded,
+    has_more: (more || truncated) && args.page + pagesLoaded - 1 < MAX_PAGE,
     truncated,
     warnings,
   };

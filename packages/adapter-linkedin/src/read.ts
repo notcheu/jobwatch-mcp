@@ -31,6 +31,8 @@ export interface ReadPlan {
 }
 
 export interface ReadOutcome {
+  /** Job pages actually visited (the budget units spent on jobs). */
+  visits: number;
   /** Opened, accepted and stored. */
   opened: OpenedJob[];
   /** Left alone because already stored or listed by the caller. */
@@ -53,7 +55,7 @@ export interface ReadOutcome {
  */
 export async function readNew(ctx: BrowserAdapterContext, cards: readonly Card[], plan: ReadPlan): Promise<ReadOutcome> {
   const now = plan.now ?? Date.now;
-  const outcome: ReadOutcome = { opened: [], knownIds: [], excluded: [], failed: [], remaining: [] };
+  const outcome: ReadOutcome = { visits: 0, opened: [], knownIds: [], excluded: [], failed: [], remaining: [] };
   const stored = await ctx.jobs.known(cards.map((card) => card.id));
 
   const candidates: Card[] = [];
@@ -67,13 +69,12 @@ export async function readNew(ctx: BrowserAdapterContext, cards: readonly Card[]
     else candidates.push(card);
   }
 
-  let visits = 0;
   for (const card of candidates) {
-    if (visits >= plan.maxJobs || now() >= plan.deadline) {
+    if (outcome.visits >= plan.maxJobs || now() >= plan.deadline) {
       outcome.remaining.push(card.id);
       continue;
     }
-    visits += 1;
+    outcome.visits += 1;
     const job = await readJob(ctx, card.id);
     if (job.status !== 'ok') {
       outcome.failed.push({ id: card.id, status: job.status });

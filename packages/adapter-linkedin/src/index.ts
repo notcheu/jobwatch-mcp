@@ -6,7 +6,7 @@ import { classicLayout } from './layouts/classic';
 import type { SearchLayout } from './layouts/layout';
 import { classifyPage, termMatcher } from './parse';
 import { readNew } from './read';
-import { clip, readJob, searchCards, type SearchArgs } from './search';
+import { MAX_PAGE, clip, readJob, searchCards, type SearchArgs } from './search';
 import { extractHints as extractHintsOf } from './parse';
 
 const HOSTS = ['www.linkedin.com', 'media.licdn.com'];
@@ -72,8 +72,22 @@ const searchInput = z
     geo: geo.describe('Location: paris_idf, france, or a numeric LinkedIn geoId.'),
     posted_within: z.enum(['24h', 'any']).default('24h'),
     remote_only: z.boolean().default(false).describe('Keep only cards whose location says Remote (filtered here, not by LinkedIn).'),
-    page: z.number().int().min(1).max(5).default(1).describe('Result page, 25 cards each.'),
-    max_cards: z.number().int().min(1).max(25).default(25),
+    max_results: z
+      .number()
+      .int()
+      .min(1)
+      .max(250)
+      .default(25)
+      .describe('How many search results to examine. 25 per LinkedIn page, so 50 loads pages 1 and 2 and 250 loads ten pages.'),
+    page: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_PAGE)
+      .default(1)
+      .describe(
+        'First result page to load (default 1). Only needed to continue a long search, e.g. page 3 with max_results 50 reads pages 3 and 4.',
+      ),
   })
   .strict();
 
@@ -85,10 +99,10 @@ const termFields = {
     .default([])
     .describe('Whole words or phrases to reject, case-insensitive, e.g. ["frontend", "front-end", "Angular"]. Plain text, not a regex.'),
   disallowed_scope: z
-    .enum(['title', 'title_and_description'])
+    .enum(['title', 'title_then_description'])
     .default('title')
     .describe(
-      'title: reject from the card title before opening (free). title_and_description: also reject after reading the description (the page was already visited).',
+      'title: reject on the card title, before any job page is opened (free). title_then_description: check the title first and drop the job without opening it when a term matches; otherwise open it and check the description, dropping it (not stored) when a term matches there.',
     ),
 };
 const descriptionChars = z
@@ -127,25 +141,35 @@ export function createLinkedinTools(layout: SearchLayout) {
   const search = defineBrowserTool({
     name: 'linkedin_search',
     title: 'LinkedIn job search (read-only)',
-    description: `Read-only. Lists one page (25) of LinkedIn job cards: id, title, company, location, work mode, salary, posted time, and known=true when a previous run already opened and stored that job. Opens no job page. Needs a signed-in session. ${UNTRUSTED}`,
+    description: `Read-only. Lists LinkedIn job cards, 25 per result page (max_results 50 loads two pages): id, title, company, location, work mode, salary, posted time, and known=true when a previous run already opened and stored that job. Opens no job page. Needs a signed-in session. ${UNTRUSTED}`,
     input: searchInput,
-    output: z.object({ cards: z.array(cardSchema), page: z.number(), has_more: z.boolean(), truncated: z.boolean() }),
+    output: z.object({
+      cards: z.array(cardSchema),
+      page: z.number(),
+      pages_loaded: z.number(),
+      has_more: z.boolean(),
+      truncated: z.boolean(),
+    }),
     annotations,
-    limits: { timeoutS: 90, cost: 1, outputMaxBytes: 60_000 },
+    limits: { timeoutS: 180, cost: MAX_PAGE, outputMaxBytes: 120_000 },
     handler: async (args, ctx) => {
       const { warnings, cards, ...rest } = await searchCards(ctx, layout, args);
       const stored = await ctx.jobs.known(cards.map((card) => card.id));
-      return { data: { ...rest, cards: cards.map((card) => ({ ...card, known: stored.has(card.id) })) }, warnings };
+      return {
+        data: { ...rest, cards: cards.map((card) => ({ ...card, known: stored.has(card.id) })) },
+        warnings,
+        cost: rest.pages_loaded,
+      };
     },
   });
 
   const job = defineBrowserTool({
     name: 'linkedin_job',
     title: 'LinkedIn job details (read-only)',
-    description: `Read-only. Returns the description and hints (stack, years, remote, salary) of up to 10 LinkedIn jobs by id. A job already stored comes from memory without visiting LinkedIn (source=stored) unless refresh=true. A job that is opened and accepted is stored; one holding a disallowed term is reported in excluded and not stored. ${UNTRUSTED}`,
+    description: `Read-only. Returns the description and hints (stack, years, remote, salary) of up to 25 LinkedIn jobs by id. A job already stored comes from memory without visiting LinkedIn (source=stored) unless refresh=true. A job that is opened and accepted is stored; one holding a disallowed term is reported in excluded and not stored. ${UNTRUSTED}`,
     input: z
       .object({
-        ids: z.array(jobId).min(1).max(10),
+        ids: z.array(jobId).min(1).max(25),
         refresh: z.boolean().default(false).describe('Visit LinkedIn again even if the job is stored.'),
         description_max_chars: descriptionChars,
         ...termFields,
@@ -157,9 +181,10 @@ export function createLinkedinTools(layout: SearchLayout) {
       failed: z.array(z.object({ id: z.string(), status: z.string() })),
     }),
     annotations,
-    limits: { timeoutS: 240, cost: 10, outputMaxBytes: 120_000 },
+    limits: { timeoutS: 300, cost: 25, outputMaxBytes: 150_000 },
     handler: async (args, ctx) => {
       const matchTerm = termMatcher(args.disallowed_terms);
+      let visits = 0;
       const jobs: z.infer<typeof jobSchema>[] = [];
       const excluded: z.infer<typeof excludedSchema>[] = [];
       const failed: { id: string; status: string }[] = [];
@@ -181,13 +206,14 @@ export function createLinkedinTools(layout: SearchLayout) {
           });
           continue;
         }
+        visits += 1;
         const opened = await readJob(ctx, id);
         if (opened.status !== 'ok') {
           failed.push({ id, status: opened.status });
           continue;
         }
         const title = opened.title ?? '';
-        const term = matchTerm(title) ?? (args.disallowed_scope === 'title_and_description' ? matchTerm(opened.description) : null);
+        const term = matchTerm(title) ?? (args.disallowed_scope === 'title_then_description' ? matchTerm(opened.description) : null);
         if (term !== null) {
           excluded.push({
             id,
@@ -223,14 +249,14 @@ export function createLinkedinTools(layout: SearchLayout) {
         });
       }
       const warnings = [...failed.map((f) => `job ${f.id}: ${f.status}`)];
-      return { data: { jobs, excluded, failed }, warnings };
+      return { data: { jobs, excluded, failed }, warnings, cost: visits };
     },
   });
 
   const searchAndRead = defineBrowserTool({
     name: 'linkedin_search_and_read',
     title: 'LinkedIn search then read the new jobs (read-only)',
-    description: `Read-only. Loads one search page (25 cards) and opens only the jobs worth opening: not already stored, not listed in skip_ids, and no disallowed term in the title. Each opened job is stored with its description right away, so later calls never open it again. Returns the new jobs, the ids it skipped as known, what was excluded and why, and remaining_ids when max_jobs or the time budget stopped it: call again with the same arguments to continue. max_jobs=0 only classifies (nothing is opened or stored). ${UNTRUSTED}`,
+    description: `Read-only. Scans max_results search results (25 per page) and opens only the jobs not already stored, not in skip_ids and without a disallowed term in the title; each opened job is stored with its description. Returns new jobs, known_ids, excluded and remaining_ids: if not empty, call again with the same arguments. max_jobs=0 only classifies. ${UNTRUSTED}`,
     input: searchInput
       .extend({
         skip_ids: z.array(jobId).max(500).default([]).describe('Extra job ids to leave alone, on top of the ones already stored.'),
@@ -246,10 +272,12 @@ export function createLinkedinTools(layout: SearchLayout) {
       failed: z.array(z.object({ id: z.string(), status: z.string() })),
       remaining_ids: z.array(z.string()),
       page: z.number(),
+      pages_loaded: z.number(),
+      scanned: z.number(),
       has_more: z.boolean(),
     }),
     annotations,
-    limits: { timeoutS: 300, cost: 26, outputMaxBytes: 200_000 },
+    limits: { timeoutS: 300, cost: MAX_PAGE + 25, outputMaxBytes: 200_000 },
     handler: async (args, ctx) => {
       const deadline = Date.now() + OPEN_BUDGET_MS;
       const found = await searchCards(ctx, layout, args as SearchArgs);
@@ -258,7 +286,7 @@ export function createLinkedinTools(layout: SearchLayout) {
         known: new Set(args.skip_ids),
         maxJobs: args.max_jobs,
         matchTitle: matchTerm,
-        matchDescription: args.disallowed_scope === 'title_and_description' ? matchTerm : null,
+        matchDescription: args.disallowed_scope === 'title_then_description' ? matchTerm : null,
         deadline,
       });
       const warnings = [...found.warnings, ...outcome.failed.map((f) => `job ${f.id}: ${f.status}`)];
@@ -291,9 +319,12 @@ export function createLinkedinTools(layout: SearchLayout) {
           failed: outcome.failed,
           remaining_ids: outcome.remaining,
           page: found.page,
+          pages_loaded: found.pages_loaded,
+          scanned: found.cards.length,
           has_more: found.has_more,
         },
         warnings,
+        cost: found.pages_loaded + outcome.visits,
       };
     },
   });
@@ -312,6 +343,7 @@ export function createLinkedinAdapter(options: LinkedinOptions = {}) {
     kind: 'browser',
     allowedHosts: HOSTS,
     sessionCheck: checkSession,
+    rate: { perHour: 200, perDay: 400 },
     tools: [search, job, searchAndRead],
   });
 }
