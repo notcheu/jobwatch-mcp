@@ -144,7 +144,6 @@ deploy/.env
 secrets/
 data/
 profiles/
-spikes/host/.env.local
 
 # Nx
 .nx/

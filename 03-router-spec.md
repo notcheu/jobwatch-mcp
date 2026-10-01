@@ -45,7 +45,7 @@ jobwatch-mcp/
                                            (a plain Node script, not an Nx plugin generator: no build pipeline for ten small files)
   images/browser/       Dockerfile, entrypoint.sh, chrome-seccomp.json (see 05)
   deploy/               compose.yml, nginx site files (see 10)
-  docs/  spikes/  Dockerfile (router image, builds apps/mcp)  .dockerignore
+  docs/  Dockerfile (router image, builds apps/mcp)  .dockerignore
   data/                 runtime state (gitignored): router SQLite, adapters.json
 ```
 Dependency rules, enforced by Nx module boundaries (`@nx/enforce-module-boundaries` with tags `type:sdk`, `type:core`, `type:adapter`, `type:adapters`, `type:app`) and by lint:
