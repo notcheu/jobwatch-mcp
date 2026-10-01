@@ -44,7 +44,7 @@ Per-tool budgets in the catalog (`memory.high_mb`, `memory.max_mb`) override the
 Host level: run the whole stack in a systemd slice with `MemoryMax`; enable zram swap on the host to absorb spikes (keep it OFF inside the browser container). VERIFY cgroup v2 delegation for the rootless user (`systemctl --user`, `Delegate=yes`).
 
 ## Watchdog thresholds
-Polling source: `docker stats --no-stream --format json <name>` (or the cgroup `memory.current` file when accessible). Interval 5 s while a runtime is running.
+Polling source: `docker stats --no-stream --format json <name>` (or the cgroup `memory.current` file when accessible). **Use the working set (`memory.current` minus `inactive_file`, which is what `docker stats` reports), not `memory.peak` or raw `memory.current`:** both include reclaimable page cache and would trigger false alarms (measured in S4: `memory.peak` reached the 1100 MB cap on a page that still loaded fine). Interval 5 s while a runtime is running.
 | Level | Condition | Action |
 |---|---|---|
 | warn | ≥ 70% of `memory.max` | close every non-working tab; `HeapProfiler.collectGarbage`; log `mem_warn` |

@@ -63,13 +63,14 @@ check|persist)
     docker rm -f "$BR" >/dev/null 2>&1 || true
     start_browser run
     IP=$(browser_ip); peakfile=$(mktemp); : >"$peakfile"
-    ( while docker exec "$BR" cat /sys/fs/cgroup/memory.peak >>"$peakfile" 2>/dev/null; do sleep 2; done ) &
+    # Two numbers per sample: memory.peak (includes reclaimable page cache) and the working set (current - inactive_file, what `docker stats` shows).
+    ( while docker exec "$BR" sh -c 'p=$(cat /sys/fs/cgroup/memory.peak); c=$(cat /sys/fs/cgroup/memory.current); i=$(awk "/^inactive_file /{print \$2}" /sys/fs/cgroup/memory.stat); echo "$p $((c-i))"' >>"$peakfile" 2>/dev/null; do sleep 2; done ) &
     sampler=$!
     timeout 150 docker run --rm --init --name "$PR" --network "$NET" --read-only --tmpfs /tmp:rw,size=64m,uid=1000,gid=1000 \
       --cap-drop ALL --security-opt no-new-privileges -e BROWSER_IP="$IP" jw-spike-s4-probe || echo "(probe exit $? : 2 means not logged in / unknown state)"
     for _ in $(seq 1 25); do [ "$(docker inspect -f '{{.State.Running}}' "$BR")" = false ] && break; sleep 1; done
     kill "$sampler" 2>/dev/null || true
-    echo "browser running=$(docker inspect -f '{{.State.Running}}' "$BR") exit=$(docker inspect -f '{{.State.ExitCode}}' "$BR"); peak memory seen: $(( $(sort -n "$peakfile" | tail -1 | grep -E '^[0-9]+$' || echo 0) / 1024 / 1024 )) MB"
+    echo "browser running=$(docker inspect -f '{{.State.Running}}' "$BR") exit=$(docker inspect -f '{{.State.ExitCode}}' "$BR"); memory.peak=$(( $(awk 'BEGIN{m=0} $1>m{m=$1} END{print m}' "$peakfile") / 1024 / 1024 )) MB (cap $MEM_MAX), max working set=$(( $(awk 'BEGIN{m=0} $2>m{m=$2} END{print m}' "$peakfile") / 1024 / 1024 )) MB"
     rm -f "$peakfile"
     if [ "$n" -lt "$cycles" ]; then echo "pausing 20 s before the next restart"; sleep 20; fi
   done ;;

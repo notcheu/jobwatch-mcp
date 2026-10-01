@@ -98,3 +98,9 @@ Logged in once through noVNC (login mode), Chrome stopped gracefully, then one `
 
 ### S4 persistence test (3 restarts, 2026-10-01)
 Three cycles, 20 s apart, each a fresh container on the same profile volume: `STATE: ok` and path `/feed/` every time (V5 confirmed). `domcontentloaded` took 7.0 / 11.0 / 7.0 s. Peak memory on `/feed/`: 847 / 967 / 685 MB (cap 1100 MB), so the logged-in feed varies by about 280 MB between runs; budget for the high end. `navigator.languages` stayed `["en-US","en"]`: seeding only `intl.accept_languages` was not enough; the entrypoint now sets `intl.selected_languages` as well and logs what it applied.
+
+### S4 languages and a memory cap hit (2026-10-01)
+- **Languages (G8) fixed:** with `ACCEPT_LANGS` seeded into both `intl.accept_languages` and `intl.selected_languages`, `navigator.languages` equals the everyday Chrome's list exactly. All other signals unchanged (webdriver false, not headless, no Playwright globals).
+- **Three more `/feed/` cycles, all `STATE: ok`:** `memory.peak` 914 / 1001 / **1100 MB**, i.e. the third run reached the 1100 MB cap (`domcontentloaded` 11.7 / 7.8 / 11.3 s). The container was not OOM-killed (Chrome closed with exit 0) and the page still loaded, because `memory.peak` includes reclaimable page cache, which the kernel drops when the cap is reached. It still means the cap has no headroom on this page.
+- **Metric to use:** the watchdog and budgets in `06-…` must use the **working set** (`memory.current - inactive_file`, what `docker stats` reports), not `memory.peak`. `s4-linkedin.sh` now samples both so the next run separates real use from cache.
+- **Conclusion so far:** on a logged-in `/feed/` Chrome uses about 0.7-1.1 GB. Do not raise or lower the 1100 MB cap yet: S5 (search-results and job-detail pages, the pages the adapter actually loads) and the working-set numbers decide.
