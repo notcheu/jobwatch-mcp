@@ -6,7 +6,7 @@ volumes:
   redis-data:
 networks:
   jobwatch-core:     { internal: false }     # front <-> router, front <-> redis (front needs egress to reach Google)
-  jobwatch-browsers: { internal: true }      # router <-> spawned browsers
+  jobwatch-browsers: { internal: false }     # router <-> spawned browsers; egress is OPEN until the Phase 4 allowlist proxy (09, 14)
 services:
   front:                                     # OAuth 2.1 authorization server + reverse proxy (decision D7: babs/mcp-auth-proxy)
     image: ${JW_FRONT_IMAGE:-ghcr.io/babs/mcp-auth-proxy:1.4.1}   # pin by digest once verified (S1)
