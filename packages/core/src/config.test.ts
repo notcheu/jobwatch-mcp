@@ -115,6 +115,24 @@ describe('transport and authentication rules', () => {
   });
 });
 
+describe('browser runtime settings', () => {
+  it('defaults the network and leaves the seccomp profile unset', () => {
+    expect(loadConfig(base).config).toMatchObject({ browserNetwork: 'jobwatch-browsers', browserSeccomp: undefined });
+  });
+
+  it('accepts an absolute seccomp path and a network name, and rejects relative paths and odd names', () => {
+    expect(
+      loadConfig({ ...base, JW_BROWSER_SECCOMP: '/etc/jobwatch/chrome-seccomp.json', JW_BROWSER_NETWORK: 'jobwatch_jobwatch-browsers' })
+        .config,
+    ).toMatchObject({
+      browserSeccomp: '/etc/jobwatch/chrome-seccomp.json',
+      browserNetwork: 'jobwatch_jobwatch-browsers',
+    });
+    expect(problemsOf({ ...base, JW_BROWSER_SECCOMP: 'relative.json' })).not.toEqual([]);
+    expect(problemsOf({ ...base, JW_BROWSER_NETWORK: 'bad name --x' })).not.toEqual([]);
+  });
+});
+
 describe('JW_ADAPTERS', () => {
   it('parses a comma list; an empty string means explicitly none', () => {
     expect(loadConfig({ ...base, JW_ADAPTERS: 'linkedin, apec' }).config.adaptersFromEnv).toEqual(['linkedin', 'apec']);

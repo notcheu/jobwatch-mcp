@@ -44,7 +44,7 @@ Use Node 26 (`nvm use`, `.nvmrc`). Marked "(planned)" = not implemented yet; the
 npm ci                      # install from lockfile (install scripts are denied by default via package.json "allowScripts")
 npm run lint                # nx run-many -t lint   (includes the architecture rules: module boundaries, restricted imports)
 npm run typecheck           # nx run-many -t typecheck (tsc, strict)
-npm test                    # nx run-many -t test (vitest: unit + contract)
+npm test                    # nx run-many -t test (vitest: unit + contract, about 10 s)
 npm run format              # prettier --write . ;  npm run format:check
 npm run ci                  # format:check + lint + typecheck + test
 npx nx run-many -t lint typecheck test   # same targets directly; `nx affected -t ...` for changed projects

@@ -41,6 +41,28 @@ describe('createMetrics', () => {
     expect(await metrics.render()).not.toContain('secret-request-id');
   });
 
+  it('turns runtime events into gauges, counters and histograms', async () => {
+    const metrics = createMetrics({ version: 'x' });
+    metrics.recordRuntime({ type: 'state', platform: 'linkedin', state: 'starting' });
+    metrics.recordRuntime({ type: 'cold_start', platform: 'linkedin', ms: 2500 });
+    metrics.recordRuntime({ type: 'state', platform: 'linkedin', state: 'busy' });
+    metrics.recordRuntime({ type: 'memory', platform: 'linkedin', bytes: 734_003_200, level: 'ok' });
+    metrics.recordRuntime({ type: 'queue_wait', ms: 1500 });
+    let text = await metrics.render();
+    expect(text).toContain('jw_runtime_state{platform="linkedin",state="busy"} 1');
+    expect(text).not.toContain('state="starting"');
+    expect(text).toContain('jw_runtime_cold_starts_total{platform="linkedin"} 1');
+    expect(text).toContain('jw_runtime_cold_start_seconds_sum 2.5');
+    expect(text).toContain('jw_runtime_rss_bytes{platform="linkedin"} 734003200');
+    expect(text).toContain('jw_queue_wait_seconds_sum 1.5');
+    metrics.recordRuntime({ type: 'stopped', platform: 'linkedin', reason: 'idle' });
+    metrics.recordRuntime({ type: 'state', platform: 'linkedin', state: 'cold' });
+    text = await metrics.render();
+    expect(text).toContain('jw_runtime_stops_total{platform="linkedin",reason="idle"} 1');
+    expect(text).not.toContain('jw_runtime_state{');
+    expect(text).not.toContain('jw_runtime_rss_bytes{');
+  });
+
   it('keeps registries independent', async () => {
     const a = createMetrics({ version: 'a' });
     const b = createMetrics({ version: 'b' });
