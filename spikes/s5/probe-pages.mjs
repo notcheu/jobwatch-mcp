@@ -16,6 +16,9 @@ for (let i = 0; i < 80 && !(await ready()); i++) await sleep(500);
 const browser = await chromium.connectOverCDP(`http://${IP}:9222`, { timeout: 15000 });
 const ctx = browser.contexts()[0];
 const page = await ctx.newPage();
+// Optional experiment (BLOCK=image,media,font): abort heavy resource types. Changes the page-load profile; measure, do not assume.
+const BLOCK = (process.env.BLOCK ?? "").split(",").filter(Boolean);
+if (BLOCK.length) { await page.route("**/*", (r) => (BLOCK.includes(r.request().resourceType()) ? r.abort() : r.continue())); out("blocking resource types", BLOCK); }
 
 const classify = async () => {
   const path = new URL(page.url()).pathname;
@@ -69,6 +72,23 @@ await stage("search", SEARCH, async () => {
   });
   ids = r.ids;
   out("  search", r);
+  if (r.cardCount === 0) {
+    // Selector diagnostics (attribute NAMES/VALUES of markers only, never text): which markers does the page actually have?
+    out("  DIAG markers", await page.evaluate(() => {
+      const norm = (s) => s.replace(/\d+/g, "#").slice(0, 60);
+      const keys = {}; document.querySelectorAll("[componentKey]").forEach((e) => { const k = norm(e.getAttribute("componentKey")); keys[k] = (keys[k] || 0) + 1; });
+      const testids = {}; document.querySelectorAll("[data-testid]").forEach((e) => { const k = norm(e.getAttribute("data-testid")); testids[k] = (testids[k] || 0) + 1; });
+      return {
+        componentKeys: Object.entries(keys).sort((a, b) => b[1] - a[1]).slice(0, 25),
+        testIds: Object.entries(testids).sort((a, b) => b[1] - a[1]).slice(0, 15),
+        jobViewAnchors: document.querySelectorAll('a[href*="/jobs/view/"]').length,
+        currentJobIdAnchors: document.querySelectorAll('a[href*="currentJobId"]').length,
+        occludable: document.querySelectorAll("[data-occludable-job-id]").length, dataJobId: document.querySelectorAll("[data-job-id]").length,
+        listItems: document.querySelectorAll("li").length, iframes: document.querySelectorAll("iframe").length, bodyChildren: document.body.children.length,
+        readyState: document.readyState, scrollHeight: document.documentElement.scrollHeight,
+      };
+    }));
+  }
   out("  detail pane on the search page itself", await detailProbe());
 });
 if (!aborted && WANT.includes("view_1") && ids.length < 2) { out("!!! only " + ids.length + " card ids found; cannot run detail stages", "adapter_broken-like (V8)"); aborted = true; }

@@ -16,7 +16,7 @@ CHROME_LANG=${CHROME_LANG:-fr-FR}; MEM_MAX=${MEM_MAX:-1100m}
 NET=jw-s4-net; BR=jw-s4-browser; PR=jw-s4-probe; PROFILE=jw-profile-linkedin
 cmd=${1:-}
 echo "ACCEPT_LANGS: ${ACCEPT_LANGS:-<not set: .env.local missing or empty, image default is used>}"
-echo "MEM_MAX=$MEM_MAX CHROME_EXTRA=${CHROME_EXTRA:-<none>} STAGES=${STAGES:-<all>}"
+echo "MEM_MAX=$MEM_MAX CHROME_EXTRA=${CHROME_EXTRA:-<none>} STAGES=${STAGES:-<all>} BLOCK=${BLOCK:-<none>}"
 if ! info=$(docker info 2>&1) || ! grep -qi rootless <<<"$info"; then echo "ERROR: not the rootless daemon (DOCKER_HOST=${DOCKER_HOST:-<unset>})"; exit 1; fi
 # Graceful stop first (SIGTERM, 25 s) so Chrome flushes cookies, e.g. when you press Ctrl+C during login.
 cleanup() { docker stop -t 25 "$BR" >/dev/null 2>&1 || true; docker rm -f "$BR" "$PR" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true; }
@@ -71,7 +71,7 @@ check|persist|pages)
         echo "$(date +%s%3N) $line" >>"$samples"; sleep 2; done ) &
     sampler=$!
     timeout 240 docker run --rm --init --name "$PR" --network "$NET" --read-only --tmpfs /tmp:rw,size=64m,uid=1000,gid=1000 \
-      --cap-drop ALL --security-opt no-new-privileges -e BROWSER_IP="$IP" ${STAGES:+-e STAGES="$STAGES"} "$PROBE_IMG" | tee "$probeout" | grep -v '^@@' || echo "(probe exit ${PIPESTATUS[0]} : 2 means not logged in / checkpoint / unknown state)"
+      --cap-drop ALL --security-opt no-new-privileges -e BROWSER_IP="$IP" ${STAGES:+-e STAGES="$STAGES"} ${BLOCK:+-e BLOCK="$BLOCK"} "$PROBE_IMG" | tee "$probeout" | grep -v '^@@' || echo "(probe exit ${PIPESTATUS[0]} : 2 means not logged in / checkpoint / unknown state)"
     for _ in $(seq 1 25); do [ "$(docker inspect -f '{{.State.Running}}' "$BR")" = false ] && break; sleep 1; done
     kill "$sampler" 2>/dev/null || true
     echo "browser running=$(docker inspect -f '{{.State.Running}}' "$BR") exit=$(docker inspect -f '{{.State.ExitCode}}' "$BR")"
