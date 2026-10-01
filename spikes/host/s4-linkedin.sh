@@ -3,6 +3,7 @@
 #   ./s4-linkedin.sh login     start Chrome in login mode, print how to reach it, wait for you, then stop it gracefully
 #   ./s4-linkedin.sh check     one cycle: start Chrome -> load /feed/ once -> report state/fingerprint/memory -> Browser.close
 #   ./s4-linkedin.sh persist   three `check` cycles with pauses (login persistence across restarts, V5)
+#   ./s4-linkedin.sh pages     S5: 5 read-only navigations (/jobs/, one search page, 2 job pages, 1 split view), memory per stage
 #   ./s4-linkedin.sh reset     delete the saved profile (asks first)
 # Run as mcpuser against the rootless daemon. You type your credentials yourself in the noVNC window; nothing here sees them.
 # The profile lives in the Docker volume jw-profile-linkedin (outside the repo). Never commit, copy or share it.
@@ -53,29 +54,43 @@ Chrome is up in login mode (profile volume: $PROFILE, UI language: $CHROME_LANG)
 MSG
   read -r -p "Press Enter here when you are on the feed to stop Chrome gracefully and save the session... " _
   stop_graceful ;;
-check|persist)
+check|persist|pages)
   prepare
+  case "$cmd" in pages) PROBE_DIR=s5; PROBE_IMG=jw-spike-s5-probe ;; *) PROBE_DIR=s4; PROBE_IMG=jw-spike-s4-probe ;; esac
   echo "building the probe image (a few minutes the first time)..."
-  docker build -q --build-arg NODE_VERSION="$NODE_VERSION" -t jw-spike-s4-probe "$ROOT/spikes/s4" >/dev/null
+  docker build -q --build-arg NODE_VERSION="$NODE_VERSION" -t "$PROBE_IMG" "$ROOT/spikes/$PROBE_DIR" >/dev/null
   cycles=1; [ "$cmd" = persist ] && cycles=3
   for n in $(seq 1 "$cycles"); do
     echo "=== cycle $n/$cycles"
     docker rm -f "$BR" >/dev/null 2>&1 || true
     start_browser run
-    IP=$(browser_ip); peakfile=$(mktemp); : >"$peakfile"
-    # Two numbers per sample: memory.peak (includes reclaimable page cache) and the working set (current - inactive_file, what `docker stats` shows).
-    ( while docker exec "$BR" sh -c 'p=$(cat /sys/fs/cgroup/memory.peak); c=$(cat /sys/fs/cgroup/memory.current); i=$(awk "/^inactive_file /{print \$2}" /sys/fs/cgroup/memory.stat); echo "$p $((c-i))"' >>"$peakfile" 2>/dev/null; do sleep 2; done ) &
+    IP=$(browser_ip); samples=$(mktemp); probeout=$(mktemp); : >"$samples"
+    # One sample every 2 s: "<epoch ms> <memory.peak> <working set>". Working set = memory.current - inactive_file (what `docker stats` shows).
+    ( while line=$(docker exec "$BR" sh -c 'p=$(cat /sys/fs/cgroup/memory.peak); c=$(cat /sys/fs/cgroup/memory.current); i=$(awk "/^inactive_file /{print \$2}" /sys/fs/cgroup/memory.stat); echo "$p $((c-i))"' 2>/dev/null); do
+        echo "$(date +%s%3N) $line" >>"$samples"; sleep 2; done ) &
     sampler=$!
-    timeout 150 docker run --rm --init --name "$PR" --network "$NET" --read-only --tmpfs /tmp:rw,size=64m,uid=1000,gid=1000 \
-      --cap-drop ALL --security-opt no-new-privileges -e BROWSER_IP="$IP" jw-spike-s4-probe || echo "(probe exit $? : 2 means not logged in / unknown state)"
+    timeout 240 docker run --rm --init --name "$PR" --network "$NET" --read-only --tmpfs /tmp:rw,size=64m,uid=1000,gid=1000 \
+      --cap-drop ALL --security-opt no-new-privileges -e BROWSER_IP="$IP" "$PROBE_IMG" | tee "$probeout" | grep -v '^@@' || echo "(probe exit ${PIPESTATUS[0]} : 2 means not logged in / checkpoint / unknown state)"
     for _ in $(seq 1 25); do [ "$(docker inspect -f '{{.State.Running}}' "$BR")" = false ] && break; sleep 1; done
     kill "$sampler" 2>/dev/null || true
-    echo "browser running=$(docker inspect -f '{{.State.Running}}' "$BR") exit=$(docker inspect -f '{{.State.ExitCode}}' "$BR"); memory.peak=$(( $(awk 'BEGIN{m=0} $1>m{m=$1} END{print m}' "$peakfile") / 1024 / 1024 )) MB (cap $MEM_MAX), max working set=$(( $(awk 'BEGIN{m=0} $2>m{m=$2} END{print m}' "$peakfile") / 1024 / 1024 )) MB"
-    rm -f "$peakfile"
+    echo "browser running=$(docker inspect -f '{{.State.Running}}' "$BR") exit=$(docker inspect -f '{{.State.ExitCode}}' "$BR")"
+    mb() { echo $(( $1 / 1024 / 1024 )); }
+    echo "memory (cap $MEM_MAX): memory.peak=$(mb "$(awk 'BEGIN{m=0} $2>m{m=$2} END{print m}' "$samples")") MB, max working set=$(mb "$(awk 'BEGIN{m=0} $3>m{m=$3} END{print m}' "$samples")") MB"
+    if grep -q '^@@STAGE' "$probeout"; then
+      echo "memory per stage (max working set / memory.peak at end, MB):"
+      awk -v S="$samples" '
+        BEGIN { while ((getline l < S) > 0) { split(l, a, " "); n++; ts[n]=a[1]; pk[n]=a[2]; ws[n]=a[3] } }
+        /^@@STAGE/ { st[$2]=$3 }
+        /^@@END/   { en[$2]=$3; order[++k]=$2 }
+        END { for (i=1;i<=k;i++) { name=order[i]; mw=0; mp=0
+                for (j=1;j<=n;j++) if (ts[j]>=st[name]-1000 && ts[j]<=en[name]+2000) { if (ws[j]>mw) mw=ws[j]; if (pk[j]>mp) mp=pk[j] }
+                printf "  %-14s working set %5d MB   peak %5d MB\n", name, mw/1048576, mp/1048576 } }' "$probeout"
+    fi
+    rm -f "$samples" "$probeout"
     if [ "$n" -lt "$cycles" ]; then echo "pausing 20 s before the next restart"; sleep 20; fi
   done ;;
 reset)
   read -r -p "Delete the saved LinkedIn profile volume $PROFILE? You will have to log in again. Type yes: " a
   [ "$a" = yes ] && docker volume rm "$PROFILE" && echo removed || echo "kept" ;;
-*) echo "usage: $0 login|check|persist|reset"; exit 1 ;;
+*) echo "usage: $0 login|check|persist|pages|reset"; exit 1 ;;
 esac
