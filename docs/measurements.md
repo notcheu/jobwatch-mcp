@@ -123,3 +123,14 @@ Running tally: 6 automated LinkedIn page loads today beyond the sessions checks.
 
 ### S5 root cause found by reading the page (2026-10-01, Matthieu's Chrome, 4 loads of search pages)
 The three container runs had loaded **a "No results found" page** (`/jobs/search-results/` no longer returns results, see `07-…`), so the 1.3-1.6 GB memory figures describe a mostly empty page and **must not be used for budgeting**. In the same Chrome, the classic `/jobs/search/` URL returned real results with the legacy markup (7 cards, 7 `/jobs/view/` links). JS heap in that tab was 146 MB. Next measurement: the probe targets the classic `/jobs/search/` URL (LinkedIn reverted from the AI `/jobs/search-results/` UI; `SEARCH_URL` overrides it), supports both markups, scrolls the list 3 times, and tries more description selectors; run `pages` once. Until then V4 is **open, not failed**.
+
+## S5 run on the classic layout (2026-10-01, cap 1800 MB, five loads, all `STATE: ok`, no checkpoint)
+| Stage | Page | gotoMs | Working set | memory.peak |
+|---|---|---|---|---|
+| `jobs_home` | `/jobs/` | 8.2 s | 774 MB | 860 MB |
+| `search` | `/jobs/search/` (routine OR query, 25 cards) | 25.6 s | **1749 MB** | 1800 MB |
+| `view_1` | `/jobs/view/<id>/` | 12.0 s | 1699 MB | 1800 MB |
+| `view_2` | `/jobs/view/<id>/` | 27.6 s | 1513 MB | 1800 MB |
+| `split_view_1` | search with `currentJobId` | 19.8 s | 1673 MB | 1800 MB |
+No kernel OOM kill, memory.peak sat at the 1800 MB cap throughout. This does **not** show the minimum need: with a high cap Chrome keeps caches and the working set (current - inactive_file) still includes active file pages. The earlier runs at 1100 MB crashed on a "No results found" page, a different page, so they say nothing about this one. Decisive next run: the same flow at `MEM_MAX=1100m` (stages `search,view_1,view_2`) with the new `anon+shmem` metric (process memory without file cache). `/jobs/` alone needed 774 MB.
+Selector results are recorded in `07` (layout A) and V8 in `14`.

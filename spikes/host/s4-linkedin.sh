@@ -66,8 +66,8 @@ check|persist|pages)
     docker rm -f "$BR" >/dev/null 2>&1 || true
     start_browser run
     IP=$(browser_ip); samples=$(mktemp); probeout=$(mktemp); : >"$samples"
-    # One sample every 2 s: "<epoch ms> <memory.peak> <working set>". Working set = memory.current - inactive_file (what `docker stats` shows).
-    ( while line=$(docker exec "$BR" sh -c 'p=$(cat /sys/fs/cgroup/memory.peak); c=$(cat /sys/fs/cgroup/memory.current); i=$(awk "/^inactive_file /{print \$2}" /sys/fs/cgroup/memory.stat); o=$(awk "/^oom_kill /{print \$2}" /sys/fs/cgroup/memory.events); echo "$p $((c-i)) $o"' 2>/dev/null); do
+    # One sample every 2 s: "<epoch ms> <memory.peak> <working set> <oom_kill> <anon+shmem>". Working set = memory.current - inactive_file (what `docker stats` shows).
+    ( while line=$(docker exec "$BR" sh -c 'p=$(cat /sys/fs/cgroup/memory.peak); c=$(cat /sys/fs/cgroup/memory.current); i=$(awk "/^inactive_file /{print \$2}" /sys/fs/cgroup/memory.stat); o=$(awk "/^oom_kill /{print \$2}" /sys/fs/cgroup/memory.events); a=$(awk "/^(anon|shmem) /{s+=\$2} END{print s}" /sys/fs/cgroup/memory.stat); echo "$p $((c-i)) $o $a"' 2>/dev/null); do
         echo "$(date +%s%3N) $line" >>"$samples"; sleep 2; done ) &
     sampler=$!
     timeout 240 docker run --rm --init --name "$PR" --network "$NET" --read-only --tmpfs /tmp:rw,size=64m,uid=1000,gid=1000 \
@@ -76,16 +76,16 @@ check|persist|pages)
     kill "$sampler" 2>/dev/null || true
     echo "browser running=$(docker inspect -f '{{.State.Running}}' "$BR") exit=$(docker inspect -f '{{.State.ExitCode}}' "$BR")"
     mb() { echo $(( $1 / 1024 / 1024 )); }
-    echo "memory (cap $MEM_MAX): memory.peak=$(mb "$(awk 'BEGIN{m=0} $2>m{m=$2} END{print m}' "$samples")") MB, max working set=$(mb "$(awk 'BEGIN{m=0} $3>m{m=$3} END{print m}' "$samples")") MB, kernel oom_kill events=$(awk 'BEGIN{m=0} $4>m{m=$4} END{print m}' "$samples")"
+    echo "memory (cap $MEM_MAX): memory.peak=$(mb "$(awk 'BEGIN{m=0} $2>m{m=$2} END{print m}' "$samples")") MB, max working set=$(mb "$(awk 'BEGIN{m=0} $3>m{m=$3} END{print m}' "$samples")") MB, max anon+shmem (process memory without file cache)=$(mb "$(awk 'BEGIN{m=0} $5>m{m=$5} END{print m}' "$samples")") MB, kernel oom_kill events=$(awk 'BEGIN{m=0} $4>m{m=$4} END{print m}' "$samples")"
     if grep -q '^@@STAGE' "$probeout"; then
       echo "memory per stage (max working set / memory.peak at end, MB):"
       awk -v S="$samples" '
-        BEGIN { while ((getline l < S) > 0) { split(l, a, " "); n++; ts[n]=a[1]; pk[n]=a[2]; ws[n]=a[3] } }
+        BEGIN { while ((getline l < S) > 0) { split(l, a, " "); n++; ts[n]=a[1]; pk[n]=a[2]; ws[n]=a[3]; an[n]=a[5] } }
         /^@@STAGE/ { st[$2]=$3 }
         /^@@END/   { en[$2]=$3; order[++k]=$2 }
-        END { for (i=1;i<=k;i++) { name=order[i]; mw=0; mp=0
-                for (j=1;j<=n;j++) if (ts[j]>=st[name]-1000 && ts[j]<=en[name]+2000) { if (ws[j]>mw) mw=ws[j]; if (pk[j]>mp) mp=pk[j] }
-                printf "  %-14s working set %5d MB   peak %5d MB\n", name, mw/1048576, mp/1048576 } }' "$probeout"
+        END { for (i=1;i<=k;i++) { name=order[i]; mw=0; mp=0; ma=0
+                for (j=1;j<=n;j++) if (ts[j]>=st[name]-1000 && ts[j]<=en[name]+2000) { if (ws[j]>mw) mw=ws[j]; if (pk[j]>mp) mp=pk[j]; if (an[j]>ma) ma=an[j] }
+                printf "  %-14s working set %5d MB   anon+shmem %5d MB   peak %5d MB\n", name, mw/1048576, ma/1048576, mp/1048576 } }' "$probeout"
     fi
     rm -f "$samples" "$probeout"
     if [ "$n" -lt "$cycles" ]; then echo "pausing 20 s before the next restart"; sleep 20; fi
