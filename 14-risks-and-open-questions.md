@@ -7,7 +7,7 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 ## Open questions for Matthieu (ask before the related work)
 1. Machine facts: CPU architecture, total/free RAM when idle, disk, always-on desktop session?
 2. Public hostname for the connector (subdomain on the existing domain behind Nginx, e.g. `mcp.<domain>`). D10 is decided: Nginx + one published port.
-3. Preferred OAuth identity provider for the single-user login (Google account?).
+3. OAuth identity provider for the single-user login: proposed Google OAuth app in "Testing" mode with Matthieu as the only test user (see D7 in `01`), or a tiny self-hosted IdP (Dex/Pocket ID). Confirm.
 4. LinkedIn usage budget (defaults in `07-…`) — approve or adjust.
 5. LinkedIn UI language to standardize on (English vs French).
 6. Should the routine's "seen offers" memory move server-side (Phase 4) or stay in the Claude project?
@@ -17,7 +17,7 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 | # | Assumption | Where used | Spike | Status |
 |---|---|---|---|---|
 | V1 | Custom OAuth connectors are usable from scheduled routines and survive token refresh unattended | `02`, `12` | S1 | open |
-| V2 | R0Wi/mcp-gateway or babs/mcp-auth-proxy can restrict login to a single identity and work with Claude's DCR/PKCE flow | `01` D7 | S2 | open |
+| V2 | R0Wi/mcp-gateway or babs/mcp-auth-proxy can restrict login to a single identity and work with Claude's DCR/PKCE flow | `01` D7 | S2 | **paper-checked (S2)**: both implement DCR + PKCE + RFC 9728 and the Claude callback; (a) has no licence, (b) restricts only through the IdP (`ALLOWED_GROUPS`, no email allowlist). Runtime proof pending in S1 |
 | V3 | Google Chrome stable is available for the host architecture | `05` | S3 | **confirmed** (host is x86_64, `docs/measurements.md`) |
 | V4 | One headful Chrome container fits in ≈1 GB on LinkedIn pages | `06` | S3 | **not at 1 GB; fits at 1.5 GB**: search page needs about 1.04 GB anon+shmem, at a 1100 MB cap the flow completed with one kernel OOM kill. New defaults `max` 1500 MB / `high` 1200 MB. **Host decision pending**: it must have about 2 GB genuinely free at run time (currently 1.0-1.7 GB available, swap full) |
 | V5 | Session cookies persist across graceful restarts with `--restore-last-session` | `05` G4 | S4 | **confirmed**: three consecutive stop/start cycles, `STATE: ok` each time; `li_at` is a persistent cookie (no dependency on session restore) |

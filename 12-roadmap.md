@@ -8,7 +8,7 @@ Work in order. Do not skip Phase 0: several design choices hinge on it. Keep a r
 | # | Spike | Question answered | Output |
 |---|---|---|---|
 | S1 | Echo MCP server behind the Nginx reverse proxy + candidate OAuth front, added as a custom connector; call it from chat AND from a scheduled routine; let the access token expire | Do custom OAuth connectors work unattended from scheduled tasks? How are refreshes handled? | Yes/no + notes; if no → static-header plan B or another approach |
-| S2 | Compare OAuth fronts (R0Wi/mcp-gateway, babs/mcp-auth-proxy) against the checklist in `02-…` | Which one, and how to allow only Matthieu | Decision D7 |
+| S2 | Compare OAuth fronts (R0Wi/mcp-gateway, babs/mcp-auth-proxy) against the checklist in `02-…` | Which one, and how to allow only Matthieu | Decision D7 (**paper comparison done 2026-10-01: recommend babs/mcp-auth-proxy + Google testing-mode IdP; runtime proof in S1**) |
 | S3 | Measure RAM/CPU/cold start of headful Chrome + Xvfb in a container on the real machine | Budgets, TTL, is one browser at ~1 GB OK? | `docs/measurements.md`, updated `06-…` |
 | S4 | Fingerprint self-check + login persistence (manual login via noVNC, stop/start ×3) | Does the session survive restarts? Do automation signals show? | Go/no-go on G3/G4 choices (session restore, Patchright) |
 | S5 | Capture LinkedIn search and **job details** DOMs while logged in (search split view with `currentJobId`, vs `/jobs/view/<id>`) | Which navigation/selectors | Updated `07-…` |

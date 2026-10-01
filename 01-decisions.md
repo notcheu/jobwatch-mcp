@@ -25,11 +25,26 @@ Fallback: Chromium from Debian/Playwright build if Chrome stable is unavailable 
 ## D6 — One persistent profile volume per platform — DECIDED
 `profiles/linkedin`, `profiles/apec`, `profiles/wttj`… mounted only into that platform's runtime. LinkedIn cookies are never visible to other adapters.
 
-## D7 — OAuth front-end: pick in Phase 0 between (a) R0Wi/mcp-gateway and (b) babs/mcp-auth-proxy — OPEN
-- (a) R0Wi/mcp-gateway: OAuth 2.1 authorization server facing clients with DCR (Claude connects without pre-shared credentials), single YAML + encrypted SQLite, runs in compose; proxies to our router as its only backend. Unknowns: how to restrict login to one user; maturity (small project).
-- (b) babs/mcp-auth-proxy: OAuth 2.1 + OIDC bridge with DCR, stateless, needs an OIDC IdP (Google/Keycloak…) and Redis, reverse-proxies to one upstream.
-- (c) Fallback: implement the resource-server side in the router and use a hosted/self-hosted IdP with DCR (more work).
-Evaluation criteria are in `02-claude-connector-requirements.md` (checklist) and Phase 0 spike S2.
+## D7 — OAuth front-end: recommend (b) babs/mcp-auth-proxy — RECOMMENDED after spike S2 (2026-10-01), awaiting Matthieu's confirmation
+Spike S2 compared the candidates on paper (READMEs, specs, configuration docs, repository metadata read on 2026-10-01; nothing was run yet, runtime behaviour is verified in S1). Criteria come from `02-claude-connector-requirements.md`.
+
+| Criterion | (a) R0Wi/mcp-gateway | (b) babs/mcp-auth-proxy | (c) OAuth server in our router (MCP TS SDK) |
+|---|---|---|---|
+| Licence | **none** (open issue "Open license", no LICENSE file): no right to use or redistribute | Apache-2.0 | ours |
+| Maturity | created 2026-08-23, 2 stars, no releases, 7 open issues | created 2026-04-02, 13 stars, releases v1.2.0 to v1.4.1 (latest 2026-09-17), threat model, e2e tests, SECURITY.md | SDK provides the building blocks, we write the rest |
+| Language / footprint | Python (FastAPI + FastMCP + SQLite + Svelte UI) | Go static binary, Prometheus metrics built in | none extra (runs inside the router) |
+| Extra services | none | **Redis** (required by default for replay protection) and an **OIDC IdP** | none |
+| Claude requirements | DCR + CIMD, PKCE S256, RFC 9728/8414, 401 with `resource_metadata`, `https://claude.ai/api/mcp/auth_callback`, loopback port-agnostic | DCR, PKCE S256, RFC 9728/8414/8707, 401 with `resource_metadata`, explicit Claude notes in its specs (callback URL, root PRM with trailing slash) | SDK handlers for authorize/token/register/revoke/metadata and `requireBearerAuth` with `resourceMetadataUrl`; Claude quirks to be handled by us |
+| Single user | local user list in YAML with bcrypt hash (simple) | **no email allowlist, only `ALLOWED_GROUPS`**: restrict at the IdP (an IdP where only Matthieu can sign in) | our own password check |
+| Refresh tokens | rotating, **30 d default, configurable** | rotating with reuse detection, **7 d TTL (not configurable in the docs read)**; each use renews it | ours |
+| Scopes / `offline_access` | advertised scopes | `scopes_supported` is empty (no scope model): Claude will not append `offline_access`, so refresh behaviour must be proven in S1 | ours |
+| Tool names | **namespaced per backend** (`<backend>_<tool>`), would change tool names seen by the routine | transparent reverse proxy, names unchanged | unchanged |
+| Open risk | licence, immaturity, aggregator semantics | needs Redis + IdP (RAM, more moving parts), 7-day refresh window | we own security-sensitive code (rotation, reuse detection, brute force) |
+
+Recommendation: **(b)**. (a) is out unless the author adds a licence; its design is the best fit for one user, so re-check if that changes. (c) stays the fallback if (b) fails S1 (for example if refresh does not survive without `offline_access`), because it avoids extra containers on a RAM-constrained host but costs the most security work.
+How (b) would be deployed (replaces nothing yet, `deploy/compose.yml` is unchanged until confirmed): `front` = `ghcr.io/babs/mcp-auth-proxy` (pinned digest) with `PROXY_BASE_URL=https://mcp.<domain>`, `UPSTREAM_MCP_URL=http://router:8080/mcp`, `TOKEN_SIGNING_SECRET` from a file secret, `REDIS_URL`; a small `redis` service (a few MB) on `jobwatch-core`; `TRUSTED_PROXY_CIDRS` set to the Nginx address; metrics on its own port (`METRICS_ADDR`) for Prometheus. The router then trusts only the front on the private network (shared secret or network isolation, `09-…`).
+**IdP choice (open question 3):** because (b) cannot restrict by email, pick an IdP where only Matthieu can authenticate: (1) **Google** with a Google Cloud OAuth app left in "Testing" mode with Matthieu as the only test user (no extra container; the app shows an "unverified app" screen, fine for one person), or (2) a tiny self-hosted IdP such as Dex with one static user or Pocket ID (one more small container). Keycloak is too heavy for this host. Proposed default: Google in testing mode, verified in S1; the one-account restriction is part of the acceptance checklist in `02-…`.
+**Known consequence:** with a 7-day refresh TTL, a routine that does not run for more than 7 days needs a manual re-sign-in in Claude. Acceptable for a daily routine; note it in the runbook.
 
 ## D8 — Container runtime: rootless Docker; the router gets the rootless socket, never a root socket — DECIDED
 Matthieu already uses Docker, so the stack uses **rootless Docker** under a dedicated `mcpuser` user. A root-level Docker socket is root-equivalent and a socket proxy only filters by API endpoint (not image); with rootless Docker a compromised router is an unprivileged user. Runtime access is behind a `RuntimeBackend` interface with implementations: `DockerCliBackend` (shell out to `docker run/stop/rm/inspect/stats`), later optional `SystemdScopeBackend` (Chrome under `systemd-run --user --scope -p MemoryMax=…`, no container, no network isolation). Podman could be added as another backend later; nothing in the design depends on it.
