@@ -12,7 +12,13 @@ const flag = z.enum(['true', 'false']).transform((value) => value === 'true');
 
 /** Every JW_* variable the router reads (03-router-spec.md, "Configuration"). */
 const envSchema = z.object({
-  JW_BASE_URL: z.url({ protocol: /^https?$/ }),
+  JW_BASE_URL: z.url({
+    protocol: /^https?$/,
+    error: (issue) =>
+      issue.input === undefined
+        ? 'is required: the public URL, e.g. https://mcp.noguetith.fr'
+        : 'must be an http(s) URL, e.g. https://mcp.noguetith.fr',
+  }),
   JW_AUTH: z.enum(['front', 'none']).default('front'),
   JW_FRONT_SHARED_SECRET: z.string().min(16).optional(),
   JW_LISTEN_HOST: z.string().min(1).default('0.0.0.0'),
@@ -146,6 +152,30 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       metrics: { enabled: parsed.JW_METRICS_ENABLED, port: parsed.JW_METRICS_PORT },
     },
   };
+}
+
+/** The only settings the CLI needs. It must work without the public base URL, which only the server requires. */
+export interface StorageSettings {
+  dataDir: string;
+  /** From JW_ADAPTERS; when defined it overrides adapters.json. */
+  adaptersFromEnv: readonly string[] | undefined;
+}
+
+const storageSchema = z.object({ JW_DATA_DIR: z.string().min(1).default('/data') });
+
+/** Parse JW_DATA_DIR and JW_ADAPTERS only. Throws `ConfigError`; same rules as `loadConfig` for these two variables. */
+export function loadStorageSettings(env: Readonly<Record<string, string | undefined>>): StorageSettings {
+  const problems: string[] = [];
+  const result = storageSchema.safeParse({ JW_DATA_DIR: env['JW_DATA_DIR'] === '' ? undefined : env['JW_DATA_DIR'] });
+  if (!result.success) problems.push(...result.error.issues.map((issue) => `${issue.path.join('.') || 'config'}: ${issue.message}`));
+  let adaptersFromEnv: string[] | undefined;
+  if (env['JW_ADAPTERS'] !== undefined) {
+    const list = parseAdapterList(env['JW_ADAPTERS']);
+    problems.push(...list.problems);
+    adaptersFromEnv = list.ids;
+  }
+  if (problems.length > 0 || !result.success) throw new ConfigError(problems);
+  return { dataDir: result.data.JW_DATA_DIR, adaptersFromEnv };
 }
 
 /** A copy of the configuration that is safe to log or print (secrets replaced). */

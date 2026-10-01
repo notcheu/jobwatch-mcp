@@ -1,0 +1,28 @@
+{
+  "name": "@jobwatch/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The router: stateless Streamable HTTP MCP server. Composition root of core and the enabled adapters.",
+  "type": "module",
+  "dependencies": {
+    "@jobwatch/adapters": "*",
+    "@jobwatch/core": "*",
+    "@jobwatch/sdk": "*",
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "express": "5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6"
+  },
+  "scripts": {
+    "build": "esbuild src/main.ts --log-level=warning --bundle --platform=node --format=esm --target=node26 --sourcemap --outfile=../../dist/apps/mcp/main.js --banner:js=\"import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\"",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "nx": {
+    "tags": [
+      "type:app"
+    ]
+  }
+}

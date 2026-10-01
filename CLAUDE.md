@@ -47,12 +47,12 @@ npm test                    # nx run-many -t test (vitest: unit + contract)
 npm run format              # prettier --write . ;  npm run format:check
 npm run ci                  # format:check + lint + typecheck + test
 npx nx run-many -t lint typecheck test   # same targets directly; `nx affected -t ...` for changed projects
-npm run build               # (planned) bundle apps/mcp and apps/cli with esbuild
+npm run build               # nx run-many -t build: bundle apps/mcp and apps/cli with esbuild into dist/apps/*/main.js
 npm run test:integration    # (planned) needs the browser runtime (rootless Docker)
 npm run catalog:gen         # regenerate every adapter's catalog/ snapshot (runs the adapter contract tests in update mode); commit the result
 npm run new:adapter -- <id> [--kind http|browser]   # scaffold a new adapter package, register it in packages/adapters, first snapshot
-npx jobwatch adapters list|enable|disable ...   # (planned) which installed adapters the router plugs in
-docker build -t jobwatch-router:dev .   # (planned, Dockerfile untested until apps/mcp exists)
+npm run jobwatch -- adapters list|enable|disable <id...>   # which installed adapters the router plugs in (JW_DATA_DIR=./data for local use)
+docker build -t jobwatch-router:dev .   # the router image (multi-arch in CI)
 docker compose -f deploy/compose.yml --env-file deploy/.env up -d      # as mcpuser
 ```
 Pinned versions: TypeScript 5.9.3 on purpose (`typescript-eslint` 8.71 supports TypeScript below 6.1 only; revisit before moving to TypeScript 7). After adding or removing a package, the Nx project graph cache can be stale for direct `eslint` runs: run any `nx` command (for example `npx nx show projects`) first. After changing any tool definition, run `catalog:gen` (a contract test fails on drift).
