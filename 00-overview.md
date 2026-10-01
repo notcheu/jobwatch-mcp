@@ -52,7 +52,7 @@ Always-on: OAuth front, router (Nginx is your existing one, outside this stack) 
 3. Router validates arguments against the catalog schema, checks the rate limiter and circuit breaker.
 4. Router acquires the global browser semaphore; if another platform's browser is idle in its grace period it is stopped immediately (preemption).
 5. Router ensures the platform's browser container is running (spawn from the shared image with the platform's profile volume), waits until the DevTools endpoint answers.
-6. Router opens ONE working tab, runs the adapter (navigate to an allowlisted URL, run extraction JS in the page, parse), closes the tab.
+6. Router uses the browser's ONE tab (there is never a second), runs the adapter (navigate to an allowlisted URL, run extraction JS in the page, parse), then parks the tab on `about:blank`.
 7. Router returns structured JSON + a compact text summary; starts/refreshes the idle timer (default 120 s).
 8. After the idle timer expires: graceful close → SIGTERM → SIGKILL → container removed. Profile volume stays.
 

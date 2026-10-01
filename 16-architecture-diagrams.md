@@ -89,7 +89,7 @@ flowchart TB
   Decide -- "yes" --> Lease["Runtime manager<br/>global semaphore = 1, FIFO queue<br/>busy after 60 s"]
   Lease --> Backend["RuntimeBackend<br/>DockerCliBackend"]
   Backend --> Container[["Chrome container"]]
-  Lease --> CDP["browser/cdp.ts<br/>connectOverCDP, ONE working tab,<br/>host allowlist, closed in finally"]
+  Lease --> CDP["browser/cdp.ts<br/>connectOverCDP, exactly ONE tab,<br/>host allowlist, parked on about:blank in finally"]
   Container --- CDP
   Watchdog["Watchdog, every 5 s<br/>warn 70 %, critical 90 %, OOM"] -. monitors .-> Container
   FP["fingerprint.ts<br/>startup self-check"] -. gates .-> CDP
@@ -150,11 +150,11 @@ sequenceDiagram
     M->>B: wait for DevTools, fingerprint self-check
   end
   M-->>R: lease granted
-  R->>B: open ONE working tab over CDP
+  R->>B: take the single tab over CDP
   R->>L: goto allowlisted URL, run extract.js
   L-->>R: raw cards
   R->>R: parse.ts normalize, post-filter, cap output
-  R->>B: close working tab
+  R->>B: park the tab on about:blank
   R->>M: release, start idle timer 120 s
   R-->>F: structured JSON + compact text
   F-->>C: result

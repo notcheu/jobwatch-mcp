@@ -2,7 +2,7 @@
 
 > **Related docs:** Load for RAM policy and runtime lifecycle. Also load: `05` (image flags), `03` (runtime manager and leases), `10` (host cgroups, slices), `11` (measurement and soak tests), `14` (open VERIFY items). Follow a link only if the task needs it.
 
-The host has limited RAM. Policy: **nothing runs when idle; one browser at a time; one tab at a time; hard caps enforced by cgroups; every limit observable.** All numbers below are starting guesses to be replaced by measurements (Phase 0 spike S3).
+The host has limited RAM. Policy: **nothing runs when idle; one browser at a time; exactly one tab, always; hard caps enforced by cgroups; every limit observable.** All numbers below are starting guesses to be replaced by measurements (Phase 0 spike S3).
 
 ## Per-platform runtime state machine
 ```
@@ -13,16 +13,17 @@ COLD ──call──▶ STARTING ──ready──▶ BUSY ──call done─�
 BUSY/IDLE_GRACE ──watchdog >90%──▶ STOPPING(kill) ; max_lifetime reached while IDLE_GRACE ──▶ STOPPING
 ```
 - **STARTING**: `docker run` with limits; wait for DevTools (timeout 30 s); fingerprint self-check; logged-in check is done by the adapter, not here.
-- **BUSY**: a lease is held; exactly one working tab open.
-- **IDLE_GRACE**: no lease; timer `idle_ttl` (default 120 s) runs; the blank tab remains. Any new call for the same platform cancels the timer.
+- **BUSY**: a lease is held; the single tab is in use.
+- **IDLE_GRACE**: no lease; timer `idle_ttl` (default 120 s) runs; the single tab is parked on `about:blank`. Any new call for the same platform cancels the timer.
 - **STOPPING**: `Browser.close` via DevTools → wait 10 s → SIGTERM → wait to 20 s → SIGKILL → `docker rm`. Profile volume untouched.
 - **Preemption**: if a call for platform B arrives while platform A is IDLE_GRACE, stop A immediately (do not wait for the TTL), then start B. If A is BUSY, B queues (FIFO) up to `queue_timeout` (default 60 s), else `busy`.
 - **Max lifetime**: a runtime older than `max_lifetime` (default 30 min) is recycled at the next IDLE_GRACE/lease boundary, never mid-call.
 
-## Tab policy
-- One working tab per lease; closed in `finally` via `Target.closeTarget`/`page.close()`.
-- A blank tab stays so the Chrome window never closes.
-- Watchdog (every 5 s while running): close any page that is neither the blank tab nor the working tab (popups, redirects opening new tabs); log it.
+## Tab policy (decided by Matthieu, 2026-10-01): exactly one tab, always
+- The browser always has **exactly one tab**. The router never opens a second one (no `newPage`, no `window.open`, no `target=_blank`) and never closes the last one (closing it would close Chrome).
+- The single tab is the one Chrome starts with. At lease start the router takes `context.pages()[0]`; the adapter navigates it with `goto`. At lease end it **navigates the tab to `about:blank`** (not `close()`), which releases the page's renderer memory.
+- Between steps of one call (for example the search page, then each job page) the adapter just navigates the same tab; it may park on `about:blank` between phases to drop memory (measured: the job page after a search used 640 MB vs 1040 MB for the search page).
+- Watchdog (every 5 s while running): if `context.pages().length > 1` (popups, redirects opening new tabs), close every page except the one the router is using and log `stray_tab`. Block `window.open`/popups in Chrome policy as well.
 - Adapters must set explicit timeouts on every wait (`networkidle` waits on chatty pages keep renderers alive forever).
 
 ## Hard limits (per browser container)
@@ -46,7 +47,7 @@ Host level: run the whole stack in a systemd slice with `MemoryMax`; enable zram
 ## Measured budget (spikes S3/S5, 2026-10-01; details in `docs/measurements.md`)
 - Chrome + Xvfb idle: 200-360 MB. Public sites (Wikipedia, Le Monde, WTTJ, APEC): peak 490-630 MB. Logged-in LinkedIn: `/jobs/` about 775 MB working set; **search page with 25 cards: about 1.04 GB of process memory (anon+shmem)**, job pages (`/jobs/view/<id>/`) 640-960 MB. At a 1100 MB cap the same flow completed but the kernel killed a process once (`oom_kill` = 1) and the working set reached 1091 MB: too close to the cap, and the 90 % watchdog threshold (990 MB) would have aborted the call with `budget_exceeded`.
 - Therefore defaults are **`memory.max` 1500 MB, `high` 1200 MB** (about 30 % margin over the measured peak; watchdog warn at 70 % = 1050 MB, critical at 90 % = 1350 MB). The host must have at least cap + 300 MB genuinely free when a runtime starts. On the 3.8 GB home machine that is not guaranteed (1.0-1.7 GB available, swap full): see `10-…` host prerequisites.
-- Tuning ideas to verify in Phase 1: open a fresh tab per detail page and close the search tab first (the view stage after the search used 641 MB anon vs 1036 MB), keep `--renderer-process-limit=2`, `--js-flags=--max-old-space-size=512`. Not effective in S5: site isolation off, blocking images/media/fonts.
+- Tuning ideas to verify in Phase 1: navigate the single tab to `about:blank` between the search page and the detail pages (the detail stage after the search used 641 MB anon vs 1036 MB), keep `--renderer-process-limit=2`, `--js-flags=--max-old-space-size=512`. Not effective in S5: site isolation off, blocking images/media/fonts.
 
 ## Watchdog thresholds
 Polling source: `docker stats --no-stream --format json <name>` (or the cgroup `memory.current` file when accessible). **Use the working set (`memory.current` minus `inactive_file`, which is what `docker stats` reports), not `memory.peak` or raw `memory.current`:** both include reclaimable page cache and would trigger false alarms (measured in S4: `memory.peak` reached the 1100 MB cap on a page that still loaded fine). Interval 5 s while a runtime is running.
@@ -66,7 +67,7 @@ The idle TTL (120 s) must be longer than the typical gap between a routine's con
 ## Measurement plan (Phase 0, S3) — record results in `docs/measurements.md`
 On the real machine, with the pinned Chrome image:
 1. Idle RAM and free RAM of the host before anything runs (`free -m`).
-2. RSS (container `memory.current`) for: Chrome+Xvfb idle; LinkedIn search page; job details page; after 10 job pages; after closing the working tab; after 20 minutes idle.
+2. RSS (container `memory.current`) for: Chrome+Xvfb idle; LinkedIn search page; job details page; after 10 job pages; after parking the tab on `about:blank`; after 20 minutes idle.
 3. Cold-start time: `docker run` → DevTools ready → logged-in check.
 4. With/without resource blocking; with `--renderer-process-limit` 1 vs 2.
 5. Derive: `memory.high`/`max`, `idle_ttl`, `max_lifetime`, warn/critical thresholds. Update this file.

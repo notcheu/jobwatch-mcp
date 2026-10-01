@@ -142,7 +142,7 @@ Rules the SDK enforces, so adapter authors cannot break the ground rules:
 - **Auto-discovery.** `registry.ts` imports every `src/adapters/*/index.ts` default export. Startup fails on duplicate tool names, a missing `readOnlyHint: true`, `additionalProperties` not false (`.strict()`), strings without `max()`, arrays without `max()`, or a description shorter than the read-only statement.
 - **Catalog snapshot.** `npm run catalog:gen` writes `catalog/*.json` from the registry. It is committed, and a contract test fails if the snapshot differs from the registry, so every change to what Claude can see shows up in review. `04-…` describes the snapshot format.
 - **Sandboxed surface.** Handlers get only `AdapterContext`. `BrowserSession` and `HttpClient` enforce `allowedHosts`; there is no click, type or generic navigation exposed to clients, and handlers cannot return values outside their `output` schema (validated before `shapeOutput`).
-- **Lifecycle is not the adapter's job.** Leasing, tab open/close, timeouts, rate limiting, breaker, memory policy and error mapping stay in the router. An adapter signals problems by throwing `SessionInvalid`, `Checkpoint` or `AdapterBroken`.
+- **Lifecycle is not the adapter's job.** Leasing, tab parking (single tab), timeouts, rate limiting, breaker, memory policy and error mapping stay in the router. An adapter signals problems by throwing `SessionInvalid`, `Checkpoint` or `AdapterBroken`.
 - **Testable offline.** `@jobwatch/testkit` (in-repo) provides a `FakeBrowserSession` that replays saved, **logged-out or synthetic** HTML from `fixtures/` (never real logged-in pages), plus a contract test that runs every registered tool against its schemas.
 
 Checklist for a new browser adapter: create `src/adapters/<platform>/index.ts`; add a profile name to the login CLI; add fixtures and a test; run `npm run catalog:gen`; add the platform's pacing and budget to `07-…`/`08-…`. Shared parsing helpers go in `adapters/_shared/`.
@@ -159,7 +159,7 @@ async function handleCall(toolName: string, rawArgs: unknown, request: Request) 
   let res: AdapterResult;
   if (spec.needsBrowser) {
     await using lease = await runtimes.lease(spec.platform, spec.budget);  // global semaphore=1, preempts idle others
-    const ctx = await browser.openWorkingTab(spec.platform);               // one tab, host allowlist enforced
+    const ctx = await browser.useSingleTab(spec.platform);                // the ONE tab (never a second), host allowlist enforced
     try {
       res = await withTimeout(spec.handler(args, ctx), spec.timeoutS * 1000);
     } catch (e) {
@@ -167,7 +167,7 @@ async function handleCall(toolName: string, rawArgs: unknown, request: Request) 
       if (e instanceof Checkpoint) breaker.open(spec.platform, "checkpoint", { ttlS: 6 * 3600 });
       throw e;
     } finally {
-      await ctx.closeTab();                               // always
+      await ctx.parkTab();                                // always: goto about:blank, never close
     }
     runtimes.touch(spec.platform);                        // (re)start idle timer, default 120 s
   } else {

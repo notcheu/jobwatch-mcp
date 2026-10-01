@@ -57,7 +57,7 @@ Behaviour: opens each job page **by navigation** (not synthetic card clicks) wit
 
 ### `linkedin_search_and_read` (Phase 1, convenience)
 Input: union of search args + `{ "skip_ids": [...] (maxItems 500), "open": "unseen_matching|none", "title_exclude_regex": "…", "max_jobs": 15, "description_max_chars": 1200 }`.
-Output: cards + details for opened ones. Mirrors what `linkedin-extract.js` did in one call; server-side it reuses the same tab and pacing.
+Output: cards + details for opened ones. Mirrors what `linkedin-extract.js` did in one call; server-side it reuses the single tab and the same pacing.
 
 ### `apec_search` (HTTP), `apec_job` (browser), `wttj_matches`, `free_work_search`, `ats_jobs` (Phase 3)
 `wttj_company_jobs` was dropped in v1 (WTTJ `robots.txt`, see `08`): company jobs come from `ats_jobs`.

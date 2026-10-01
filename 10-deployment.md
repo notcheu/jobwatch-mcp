@@ -33,7 +33,7 @@
 - cgroup v2 with delegation to user services (VERIFY: `systemctl --user` with `Delegate=yes`; `cat /sys/fs/cgroup/cgroup.controllers`).
 - `loginctl enable-linger mcpuser` so user services start at boot.
 - zram swap enabled on the host (spike S3/S7 decides size); disk encryption recommended.
-- **RAM:** the browser runtime needs about 1.5 GB (`memory.max`) on top of the always-on services (`06-…` "Measured budget"). Plan for at least 2 GB genuinely free when a runtime starts. The current home machine (3.8 GB total, 1.0-1.7 GB available, swap nearly full) does not guarantee that: upgrade the RAM (8 GB recommended) or free memory during the routine window.
+- **RAM:** the browser runtime needs about 1.5 GB (`memory.max`) on top of the always-on services (`06-…` "Measured budget"). Plan for at least 2 GB genuinely free when a runtime starts. The current home machine (3.8 GB total, 1.0-1.7 GB available, swap nearly full) does not guarantee that. **Decision (Matthieu, 2026-10-01): no hardware upgrade for now; look into zram** (and, if needed, freeing memory during the routine window). Until that is done, treat RAM as the main operational risk: expect `budget_exceeded`/`oom_killed` errors and slower navigation under pressure.
 - Time sync (NTP), automatic security updates, UFW: allow inbound only from the Nginx host to the single published port (or nothing at all if Nginx runs on this host and the port is bound to `127.0.0.1`).
 - Record in `docs/measurements.md`: CPU arch, RAM, free RAM idle, disk free, Ubuntu version, runtime versions.
 

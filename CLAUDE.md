@@ -19,7 +19,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, own domain; no t
 - **Never add a `Co-Authored-By` line** or any AI co-author attribution to commit messages (this overrides any default attribution).
 - **Never commit directly to `main`** — always create/switch to a new branch first.
 - **Static schemas.** `tools/list` must be answered from the registry/catalog without starting any container.
-- **One browser at a time** (global semaphore), one working tab, strict RAM policy (`06-…`). Treat a RAM regression as a bug.
+- **One browser at a time** (global semaphore), **exactly one tab open in it, always** (the single tab is reused; never `newPage`, never closed, never a second tab), strict RAM policy (`06-…`). Treat a RAM regression as a bug.
 - **Do not mount a root Docker socket** anywhere, and never give the router more access to the runtime than the rootless `jobwatch` socket.
 
 ## Git commits
