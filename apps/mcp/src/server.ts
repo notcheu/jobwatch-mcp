@@ -1,14 +1,21 @@
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
 import {
+  CircuitBreaker,
   ConfigError,
+  RateLimiter,
   RegistryError,
+  Store,
+  StoreError,
+  createGuard,
   createLogger,
   createMetrics,
   describeConfig,
   loadAdapters,
   loadConfig,
   noRuntime,
+  policyFor,
   resolveEnabledAdapters,
+  type Clock,
   type ContextProvider,
   type InstalledAdapters,
 } from '@jobwatch/core';
@@ -16,7 +23,14 @@ import { installed } from '@jobwatch/adapters';
 import { createApp } from './app';
 import { createMetricsServer } from './metrics-server';
 
+/** The call log keeps 30 days and usage events 2 days: tidy up at startup and every six hours. */
+const PRUNE_INTERVAL_MS = 6 * 3600 * 1000;
+
 export interface RunningServer {
+  /** The persistent state (usage, breakers, call log). Exposed for tests and for the CLI-style commands of later steps. */
+  store: Store;
+  limiter: RateLimiter;
+  breaker: CircuitBreaker;
   /** The MCP listener. */
   mcp: HttpServer;
   /** The metrics listener, when enabled. */
@@ -33,6 +47,8 @@ export interface StartOptions {
   contexts?: ContextProvider;
   /** Where log lines go; defaults to stdout. */
   logDestination?: NodeJS.WritableStream;
+  /** Time source for rate limits and breakers; tests pass a controllable one. */
+  clock?: Clock;
   /** Overrides JW_PORT (tests pass 0 for a free port). */
   port?: number;
   metricsPort?: number;
@@ -80,7 +96,53 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const metrics = config.metrics.enabled ? createMetrics({ version: options.version }) : undefined;
   metrics?.setEnabledAdapters(registry.adapters.length);
 
-  const app = createApp({ registry, contexts: options.contexts ?? noRuntime, logger, metrics, version: options.version, config });
+  // Persistent state. Fails fast (the process exits) when the database cannot be opened: running without a rate limiter or
+  // breaker would mean nothing stops us from hammering a platform after a checkpoint.
+  const clock = options.clock ?? Date.now;
+  const store = Store.open(config.dbPath);
+  const breaker = new CircuitBreaker(store, clock, (platform, row) => {
+    metrics?.setBreaker(platform, row?.reason);
+    if (row !== undefined)
+      logger.warn({ platform, reason: row.reason, until: row.until === null ? null : new Date(row.until).toISOString() }, 'breaker_opened');
+    else logger.info({ platform }, 'breaker_closed');
+  });
+  const limiter = new RateLimiter(store, clock, policyFor(registry.adapters));
+  for (const open of breaker.all()) {
+    metrics?.setBreaker(open.platform, open.reason);
+    logger.warn({ platform: open.platform, reason: open.reason, since: new Date(open.openedAt).toISOString() }, 'breaker_still_open');
+  }
+  const pruneNow = (): void => {
+    try {
+      const removed = store.prune(clock());
+      if (removed.calls > 0 || removed.usage > 0) logger.info(removed, 'pruned');
+    } catch (error) {
+      logger.error({ err: error }, 'prune_failed');
+    }
+  };
+  pruneNow();
+  const pruneTimer = setInterval(pruneNow, PRUNE_INTERVAL_MS);
+  pruneTimer.unref();
+
+  const app = createApp({
+    registry,
+    contexts: options.contexts ?? noRuntime,
+    logger,
+    metrics,
+    version: options.version,
+    config,
+    guard: createGuard(limiter, breaker),
+    record: (outcome) =>
+      store.recordCall({
+        ts: clock(),
+        requestId: outcome.requestId,
+        tool: outcome.tool,
+        adapter: outcome.adapter,
+        platform: outcome.platform,
+        outcome: outcome.code,
+        durationMs: outcome.durationMs,
+        argsHash: outcome.argsHash,
+      }),
+  });
   const mcpServer = createHttpServer(app);
   await listen(mcpServer, options.port ?? config.port, config.listenHost);
 
@@ -93,19 +155,28 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     'listening',
   );
 
+  let closing: Promise<void> | undefined;
   return {
+    store,
+    limiter,
+    breaker,
     mcp: mcpServer,
     metrics: metricsServer,
-    close: async (graceMs = 10_000) => {
-      await Promise.all([closeServer(mcpServer, graceMs), metricsServer ? closeServer(metricsServer, graceMs) : Promise.resolve()]);
-      logger.info('stopped');
+    close: (graceMs = 10_000) => {
+      closing ??= (async () => {
+        clearInterval(pruneTimer);
+        await Promise.all([closeServer(mcpServer, graceMs), metricsServer ? closeServer(metricsServer, graceMs) : Promise.resolve()]);
+        store.close();
+        logger.info('stopped');
+      })();
+      return closing;
     },
   };
 }
 
 /** Print configuration and registry problems as readable text. Returns true when the error was one of those. */
 export function reportStartupError(error: unknown, write: (text: string) => void): boolean {
-  if (error instanceof ConfigError || error instanceof RegistryError) {
+  if (error instanceof ConfigError || error instanceof RegistryError || error instanceof StoreError) {
     write(`${error.message}\n`);
     return true;
   }

@@ -313,6 +313,12 @@ describe('lifecycle', () => {
     await expect(startTestServer({ JW_PORT: 'abc' })).rejects.toThrow(/JW_PORT/);
   });
 
+  it('can be closed twice (two shutdown signals) without error', async () => {
+    server = await startTestServer();
+    await server.stop();
+    await expect(server.stop()).resolves.toBeUndefined();
+  });
+
   it('stops listening on close', async () => {
     server = await startTestServer();
     const url = new URL('/healthz', server.url);

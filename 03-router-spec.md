@@ -50,7 +50,7 @@ jobwatch-mcp/
 ```
 Dependency rules, enforced by Nx module boundaries (`@nx/enforce-module-boundaries` with tags `type:sdk`, `type:core`, `type:adapter`, `type:adapters`, `type:app`) and by lint:
 - `sdk` depends on nothing in the workspace. `core` depends only on `sdk`.
-- **`adapter-*` may depend only on `sdk`.** They cannot import `core`, other adapters, `playwright-core`, `better-sqlite3`, or Node's `fs`, `net`, `child_process`, `http(s)` (lint rule `no-restricted-imports`). Network and browser access exist only through `AdapterContext`.
+- **`adapter-*` may depend only on `sdk`.** They cannot import `core`, other adapters, `playwright-core`, `node:sqlite`, or Node's `fs`, `net`, `child_process`, `http(s)` (lint rule `no-restricted-imports`). Network and browser access exist only through `AdapterContext`.
 - `adapters` depends on every `adapter-*` and on `sdk`. `apps/*` may depend on `core`, `sdk` and `adapters`.
 - `playwright-core` is imported in exactly one file: `packages/core/src/browser/session.ts`.
 
@@ -87,6 +87,13 @@ interface RuntimeBackend {
 - **CLI** (`jobwatch`, `apps/cli`): `adapters list [--json]`, `adapters enable|disable <id...>`, `--help`, `--version`. It needs only `JW_DATA_DIR` and `JW_ADAPTERS`, never the public base URL. Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is broken. Output has no colour codes (safe to pipe); `--json` is clean JSON (the build step is silent). Run it as `npm run jobwatch -- adapters list` in the repository, or `jobwatch adapters list` inside the router container.
 - **Build:** `nx run-many -t build -p @jobwatch/mcp @jobwatch/cli` bundles each app into one ESM file with esbuild (`dist/apps/mcp/main.js` 3.6 MB, `dist/apps/cli/main.js` 1.0 MB). The unscoped name `nx build mcp` does not resolve; use the scoped project names.
 
+## Implemented in `packages/core`: store, rate limits, breaker (Phase 1, step 5a)
+- **Store** (`store/store.ts`, `node:sqlite`): the router's only persistent state, in `<JW_DATA_DIR>/jobwatch.sqlite` (override `JW_DB_PATH`; `:memory:` in tests). WAL, `busy_timeout`, file mode 0600, parent directory created. Schema versioned with `PRAGMA user_version` and forward-only migrations; a database written by a NEWER build is refused. Tables: `usage` (rate-limit events), `breaker`, `call_log` (ts, request id, tool, adapter, platform, outcome, duration, 12-character arguments hash: no column can hold arguments, cookies or page content). Retention: call log 30 days, usage events 2 days, pruned at startup and every six hours. `Store.close()` is idempotent. `seen_ids` is not created yet (needed only by the `seen_filter` tool of Phase 4).
+- **Rate limiter** (`limits/ratelimit.ts`): two sliding windows per platform, one hour and 24 hours, from the adapter's `rate` (`perHour`, `perDay`) or the engine default (browser 120/300, http 600/3000: the LinkedIn numbers are defaults pending Matthieu's approval, `09-security.md`). A tool's `limits.cost` is taken up front, in one transaction with the check, so concurrent calls can never overshoot (tested: 6 simultaneous calls against a budget of 3 give exactly 3 successes). A refused call is not charged; a call whose handler fails is (the request reached the platform). `rate_limited` carries `retry_after_s`: the time until enough of the oldest events leave the window for the call to fit (the longer of the two windows when both block). The budget survives a restart.
+- **Circuit breaker** (`limits/breaker.ts`): per platform, persisted, so a router restart never forgets a checkpoint. `needs_login` stays open until closed (by a successful `session_status` after a manual login, step 7); `checkpoint` closes by itself after six hours. A checkpoint is never downgraded to `needs_login`. The breaker opens when a handler throws `SessionInvalid` or `Checkpoint`; while open the platform is neither called nor charged.
+- **Order around a call** (`limits/guard.ts`, used by `callTool`): validate arguments, then breaker, then rate limiter, then the handler. (Reverse of the early sketch: checking the breaker first means a platform that asked for a login spends no budget.) Every outcome, including refusals, goes to the call log through a recorder; a recorder that throws never fails the call.
+- **Metrics:** `jw_breaker_open{platform,reason}` (1 while open). Server wiring in `apps/mcp/src/server.ts`; a database that cannot be opened stops startup, because running without limits would mean nothing stops us from hammering a platform after a checkpoint.
+
 ## Adapter SDK (adding a platform)
 Goal: a new platform is one generated package plus one registration line, with no engine change.
 
@@ -116,6 +123,7 @@ export default defineAdapter({
   platform: "apec",                        // profile name, rate-limit and breaker key
   kind: "http",                            // "browser" => leased single-tab Chrome + BrowserSession; "http" => HttpClient, no container
   allowedHosts: ["www.apec.fr"],           // bare hostnames, exact match, https only
+  rate: { perHour: 600, perDay: 3000 },    // optional budget for the platform; omit for the default of the adapter kind
   tools: [searchTool],
 });
 ```
@@ -214,6 +222,7 @@ JW_BROWSER_IMAGE=localhost/jobwatch-browser:1
 JW_PROFILE_VOLUME_PREFIX=jw-profile-         # browser profiles are named Docker volumes jw-profile-<platform> (no host paths: works on Linux and macOS)
 JW_AUTH=front                                # front | none (none only for local development, loopback only; see compose.dev.yml)
 JW_DATA_DIR=/srv/jobwatch/data                # router SQLite, adapters.json (enabled adapters)
+JW_DB_PATH=                                   # optional: SQLite file; default <JW_DATA_DIR>/jobwatch.sqlite
 JW_ADAPTERS=                                  # optional comma list, e.g. linkedin,apec; overrides adapters.json when set; default: none enabled
 JW_IDLE_TTL_S=120  JW_MAX_LIFETIME_S=1800  JW_QUEUE_TIMEOUT_S=60
 JW_MEM_HIGH_MB=1200 JW_MEM_MAX_MB=1500        # defaults, measured in S5 (see 06); per-tool budgets override

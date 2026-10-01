@@ -1,6 +1,6 @@
 {
   "name": "jobwatch-router-runtime-deps",
   "private": true,
-  "description": "Packages kept OUT of the esbuild bundle (native addons, browser driver). Empty until the store and browser layer land (steps 5 and 6).",
+  "description": "Packages kept OUT of the esbuild bundle. Empty until the browser layer adds playwright-core (step 6); SQLite is built into Node.",
   "dependencies": {}
 }

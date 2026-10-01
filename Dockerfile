@@ -2,8 +2,8 @@
 # No `# syntax` directive on purpose: the BuildKit built-in frontend supports everything used here (cache mounts, named
 # stages), and the directive costs an extra Docker Hub round-trip (and dependency) on every build.
 # `nx run-many -t build` bundles apps/mcp and apps/cli to dist/apps/{mcp,cli}/main.js with esbuild. Packages that must stay
-# out of the bundle (native addons, the browser driver: better-sqlite3, playwright-core in steps 5-6) are listed, pinned, in
-# apps/mcp/external-deps.package.json and installed in the prod-deps stage.
+# out of the bundle (the browser driver `playwright-core`, step 6) are listed, pinned, in apps/mcp/external-deps.package.json
+# and installed in the prod-deps stage. The SQLite store uses Node's built-in `node:sqlite`: nothing native to build or ship.
 ARG NODE_VERSION=26
 ARG DOCKER_CLI_VERSION=27
 
@@ -25,7 +25,6 @@ RUN npx nx run-many -t build -p @jobwatch/mcp @jobwatch/cli
 
 FROM node:${NODE_VERSION}-bookworm-slim AS prod-deps
 WORKDIR /app
-# better-sqlite3 has a native addon: if no prebuilt binary exists for this Node/arch, add a build toolchain HERE only.
 COPY apps/mcp/external-deps.package.json ./package.json
 # `mkdir`: with an empty dependency list npm creates no node_modules, and the runtime stage copies the folder.
 RUN --mount=type=cache,target=/root/.npm npm install --omit=dev --no-audit --no-fund && mkdir -p node_modules

@@ -45,6 +45,25 @@ describe('validateAdapter: adapter-level rules', () => {
     }
   });
 
+  it('accepts a valid rate policy and rejects nonsense', () => {
+    expect(rules({ ...httpAdapter, rate: { perHour: 120, perDay: 300 } })).toEqual([]);
+    for (const rate of [
+      { perHour: 0, perDay: 10 },
+      { perHour: 10, perDay: 5 },
+      { perHour: 1.5, perDay: 10 },
+      { perHour: 10, perDay: 1_000_000 },
+      { perHour: -1, perDay: 10 },
+    ]) {
+      expect(rules({ ...httpAdapter, rate }), JSON.stringify(rate)).toContain('rate');
+    }
+  });
+
+  it('rejects a tool whose cost is above the hourly budget (it could never run)', () => {
+    const expensive = withTool({ limits: { timeoutS: 30, cost: 50, outputMaxBytes: 4096 } });
+    expect(rules({ ...expensive, rate: { perHour: 40, perDay: 300 } })).toContain('rate');
+    expect(rules({ ...expensive, rate: { perHour: 50, perDay: 300 } })).toEqual([]);
+  });
+
   it('rejects an adapter without tools', () => {
     expect(rules({ ...httpAdapter, tools: [] })).toContain('tools');
   });
