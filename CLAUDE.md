@@ -26,6 +26,9 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.nog
 ## Git commits
 - Always create and switch to a new branch before starting work if the current branch is `main`.
 - Commit after each big implementation step (a completed feature module, an adapter, a migration, or a self-contained chunk of a plan), unless Matthieu asks to work differently (e.g. pausing for manual review between steps).
+- **One branch and one pull request per roadmap step** (`phase-N/step-M-<name>`), opened as soon as the step is validated. Fill `.github/pull_request_template.md`: start with "This PR adds/implements/fixes/drops ..." and include any specific direction taken.
+- **PR title follows semantic release naming:** `<type>(<optional scope>): <summary>` with type `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf` or `wip`, imperative and lowercase after the colon.
+- **Merge with SQUASH, never a merge commit** (`gh pr merge --squash`), using the PR title as the subject and the PR description as the body. Wait for CI (`gh pr checks --watch`) before merging; never merge over a red check.
 - Every phase ends with its exit criteria met and documented.
 
 ## Secrets and sensitive files
