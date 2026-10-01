@@ -19,7 +19,7 @@ Only **how sources are read**. Profile, criteria, triage, mail template/rules, m
 | APEC searches | `apec_search`, then `apec_job` for plausible offers (Phase 3) |
 | Career pages | `ats_jobs` (Phase 3) |
 | Indeed | unchanged (separate Claude connector) |
-| Dedup vs memory | the router remembers every job it opened and accepted (`JW_JOB_RETENTION_DAYS`, default 30) and skips it in later calls; `skip_ids` (e.g. built from `claude/offres-vues.md`) stays available for ids the router never opened |
+| Dedup vs memory | the router remembers every job whose page it read (`JW_JOB_RETENTION_DAYS`, default 30) and never reads that page again, judging it from the database with each call's terms (`new` and `first_seen` tell the routine what is fresh; `stored_jobs: "skip"` hides stored jobs); `skip_ids` (e.g. built from `claude/offres-vues.md`) stays available for ids the router never opened |
 | Triage, mail, memory update, notification | unchanged |
 
 ## Documentation updates at cutover (Phase 5)

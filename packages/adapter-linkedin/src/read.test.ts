@@ -29,7 +29,14 @@ const make = () =>
   });
 
 describe('readNew', () => {
-  const base = { known: new Set<string>(), maxJobs: 25, matchTitle: termMatcher([]), matchDescription: null };
+  const base = {
+    skip: new Set<string>(),
+    stored: 'evaluate' as const,
+    maxJobs: 25,
+    maxReturned: 50,
+    matchTitle: termMatcher([]),
+    matchDescription: null,
+  };
 
   it('stops opening when the time budget is spent and reports the rest as remaining', async () => {
     const { ctx, jobs } = make();
@@ -39,7 +46,7 @@ describe('readNew', () => {
       ids.map((id) => card(id)),
       { ...base, deadline: 25, now: () => (clock += 10) },
     );
-    expect(outcome.opened.map((j) => j.id)).toEqual(['4000000001', '4000000002']);
+    expect(outcome.accepted.map((j) => j.id)).toEqual(['4000000001', '4000000002']);
     expect(outcome.remaining).toEqual(['4000000003']);
     expect([...jobs.jobs.keys()]).toEqual(['4000000001', '4000000002']);
   });
@@ -60,7 +67,7 @@ describe('readNew', () => {
       { ...base, maxJobs: 2, deadline: Infinity },
     );
     expect(outcome.failed).toHaveLength(1);
-    expect(outcome.opened).toHaveLength(1);
+    expect(outcome.accepted).toHaveLength(1);
     expect(outcome.remaining).toEqual(['4000000003']);
   });
 

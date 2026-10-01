@@ -127,21 +127,23 @@ describe('linkedin_job', () => {
   it('opens, stores and returns a job, truncating what it returns but not what it stores', async () => {
     const c = context({ '4000000001': 'A'.repeat(4000) });
     const result = await run(c.ctx, { description_max_chars: 500 });
-    expect(result.data.jobs[0]).toMatchObject({ id: '4000000001', source: 'fetched', description_truncated: true });
+    expect(result.data.jobs[0]).toMatchObject({ id: '4000000001', source: 'fetched', new: true, description_truncated: true });
     expect(result.data.jobs[0]?.description).toHaveLength(500);
     expect((await c.jobs.get('4000000001'))?.description).toHaveLength(4000);
     expect(visitedJobs(c.session.visited)).toEqual(['4000000001']);
   });
 
-  it('serves a stored job from memory without visiting LinkedIn, unless refresh is set', async () => {
+  it('serves a stored job from the database without visiting LinkedIn, unless refresh is set', async () => {
     const c = context({ '4000000001': 'Original text' });
     await run(c.ctx, {});
     c.session.visited.length = 0;
     const again = await run(c.ctx, {});
-    expect(again.data.jobs[0]).toMatchObject({ source: 'stored', description: 'Original text' });
+    expect(again.data.jobs[0]).toMatchObject({ source: 'stored', new: false, description: 'Original text' });
+    expect(again.cost).toBe(0);
     expect(c.session.visited).toEqual([]);
-    await run(c.ctx, { refresh: true });
+    const refreshed = await run(c.ctx, { refresh: true });
     expect(visitedJobs(c.session.visited)).toEqual(['4000000001']);
+    expect(refreshed.data.jobs[0]).toMatchObject({ source: 'fetched', new: false });
   });
 
   it('does not store a closed or unloaded page, and reports it as failed', async () => {
@@ -154,7 +156,7 @@ describe('linkedin_job', () => {
     expect(c.jobs.jobs.size).toBe(0);
   });
 
-  it('applies the caller disallowed terms and stores nothing for a rejected job', async () => {
+  it('stores a job as soon as its title passes, even when its description then matches a term', async () => {
     const c = context({
       '4000000001': jobPage('We use Angular', { title: 'Backend Engineer | Acme | LinkedIn' }),
       '4000000002': jobPage('Fine', { title: 'Frontend Engineer | Beta | LinkedIn' }),
@@ -165,41 +167,88 @@ describe('linkedin_job', () => {
       disallowed_scope: 'title_then_description',
     });
     expect(byDescription.data.excluded).toEqual([{ id: '4000000001', title: 'Backend Engineer', reason: 'description', term: 'Angular' }]);
+    expect(byDescription.data.jobs).toEqual([]);
+    expect(c.jobs.jobs.has('4000000001')).toBe(true);
+    // a title with a term is excluded and NOT stored
     const byTitle = await run(c.ctx, { ids: ['4000000002'], disallowed_terms: ['frontend'] });
     expect(byTitle.data.excluded[0]).toMatchObject({ id: '4000000002', reason: 'title', term: 'frontend' });
-    expect(c.jobs.jobs.size).toBe(0);
-    const titleOnly = await run(c.ctx, { ids: ['4000000001'], disallowed_terms: ['Angular'] });
-    expect(titleOnly.data.jobs).toHaveLength(1);
+    expect(c.jobs.jobs.has('4000000002')).toBe(false);
+  });
+
+  it('judges a stored job again with new terms, from the database', async () => {
+    const c = context({ '4000000001': jobPage('We use Angular', { title: 'Backend Engineer | Acme | LinkedIn' }) });
+    await run(c.ctx, { disallowed_terms: ['Angular'], disallowed_scope: 'title_then_description' });
+    c.session.visited.length = 0;
+    const other = await run(c.ctx, { disallowed_terms: ['Java'], disallowed_scope: 'title_then_description' });
+    expect(other.data.jobs.map((j) => [j.id, j.source])).toEqual([['4000000001', 'stored']]);
+    expect(c.session.visited).toEqual([]);
+    const again = await run(c.ctx, { disallowed_terms: ['angular'], disallowed_scope: 'title_then_description' });
+    expect(again.data.excluded[0]).toMatchObject({ reason: 'description' });
+    expect(c.session.visited).toEqual([]);
   });
 });
 
 describe('linkedin_search_and_read', () => {
-  it('"full stack, ignore frontend": drops excluded titles without opening them, opens and stores the rest', async () => {
+  it('"full stack, ignore frontend": drops excluded titles without opening or storing them, opens and stores the rest', async () => {
     const c = context();
     const result = await tools.searchAndRead.handler(read({ disallowed_terms: ['frontend', 'intern'] }), c.ctx);
     expect(result.data.excluded.map((e) => [e.id, e.reason, e.term])).toEqual([
       ['4000000001', 'title', 'frontend'],
       ['4000000002', 'title', 'intern'],
     ]);
-    expect(result.data.jobs.map((j) => j.id)).toEqual(['4000000003', '4000000004']);
+    expect(result.data.jobs.map((j) => [j.id, j.source, j.new])).toEqual([
+      ['4000000003', 'fetched', true],
+      ['4000000004', 'fetched', true],
+    ]);
     expect(visitedJobs(c.session.visited)).toEqual(['4000000003', '4000000004']);
     expect([...c.jobs.jobs.keys()].sort()).toEqual(['4000000003', '4000000004']);
-    expect(result.data.jobs[0]).toMatchObject({ company: 'Gamma', location: 'France (Remote)', source: 'fetched' });
+    expect(result.data.jobs[0]).toMatchObject({ company: 'Gamma', location: 'France (Remote)' });
   });
 
-  it('never opens a stored job again, in a later call or another search', async () => {
+  it('a second search with other terms re-reads stored jobs from the database and only visits what was never read', async () => {
     const c = context();
     await tools.searchAndRead.handler(read({ disallowed_terms: ['frontend', 'intern'] }), c.ctx);
     c.session.visited.length = 0;
-    const second = await tools.searchAndRead.handler(read({ disallowed_terms: ['frontend', 'intern'] }), c.ctx);
-    expect(second.data.known_ids).toEqual(['4000000003', '4000000004']);
-    expect(second.data.jobs).toEqual([]);
+    // "backend, ignore staff": 3 and 4 come from the database (3 is excluded by its title now), 1 and 2 were never read
+    const backend = await tools.searchAndRead.handler(read({ keywords: 'backend', disallowed_terms: ['staff'] }), c.ctx);
+    expect(visitedJobs(c.session.visited)).toEqual(['4000000001', '4000000002']);
+    expect(backend.data.excluded.map((e) => [e.id, e.reason])).toEqual([['4000000003', 'title']]);
+    expect(backend.data.jobs.map((j) => [j.id, j.source, j.new])).toEqual([
+      ['4000000001', 'fetched', true],
+      ['4000000002', 'fetched', true],
+      ['4000000004', 'stored', false],
+    ]);
+    expect(backend.cost).toBe(1 + 2);
+  });
+
+  it('a job whose description matched the terms is stored, so another list reads it from the database', async () => {
+    const c = context({ '4000000003': 'Our stack is Angular and Java.' });
+    const first = read({
+      disallowed_terms: ['angular'],
+      disallowed_scope: 'title_then_description',
+      skip_ids: ['4000000001', '4000000002'],
+    });
+    const one = await tools.searchAndRead.handler(first, c.ctx);
+    expect(one.data.excluded).toEqual([{ id: '4000000003', title: 'Staff Engineer', reason: 'description', term: 'angular' }]);
+    expect(c.jobs.jobs.has('4000000003')).toBe(true);
+    c.session.visited.length = 0;
+    const two = await tools.searchAndRead.handler(read({ disallowed_terms: ['golang'], skip_ids: ['4000000001', '4000000002'] }), c.ctx);
+    // job 4 was stored by the first call too (it passed), so neither is read from the page again
+    expect(two.data.jobs.map((j) => [j.id, j.source])).toEqual([
+      ['4000000003', 'stored'],
+      ['4000000004', 'stored'],
+    ]);
     expect(visitedJobs(c.session.visited)).toEqual([]);
-    // "backend, ignore fullstack": a different list. The title the first search rejected is not remembered as rejected.
-    const backend = await tools.searchAndRead.handler(read({ keywords: 'backend', disallowed_terms: ['intern', 'staff'] }), c.ctx);
-    expect(backend.data.jobs.map((j) => j.id)).toEqual(['4000000001']);
-    expect(backend.data.known_ids).toEqual(['4000000003', '4000000004']);
-    expect(backend.data.excluded.map((e) => e.id)).toEqual(['4000000002']);
+  });
+
+  it('stored_jobs=skip lists stored jobs in known_ids instead of judging them', async () => {
+    const c = context();
+    await tools.searchAndRead.handler(read(), c.ctx);
+    c.session.visited.length = 0;
+    const again = await tools.searchAndRead.handler(read({ stored_jobs: 'skip' }), c.ctx);
+    expect(again.data.known_ids).toEqual(IDS);
+    expect(again.data.jobs).toEqual([]);
+    expect(visitedJobs(c.session.visited)).toEqual([]);
   });
 
   it('has no built-in disallowed terms: without any, an Intern title is opened', async () => {
@@ -209,7 +258,7 @@ describe('linkedin_search_and_read', () => {
     expect(result.data.excluded).toEqual([]);
   });
 
-  it('honours skip_ids on top of the store', async () => {
+  it('honours skip_ids entirely: not judged, not visited', async () => {
     const c = context();
     const result = await tools.searchAndRead.handler(read({ skip_ids: ['4000000001', '4000000002'] }), c.ctx);
     expect(result.data.known_ids).toEqual(['4000000001', '4000000002']);
@@ -222,35 +271,49 @@ describe('linkedin_search_and_read', () => {
     expect(first.data.jobs).toHaveLength(3);
     expect(first.data.remaining_ids).toEqual(['4000000004']);
     expect(first.warnings.join(' ')).toMatch(/call again/);
+    c.session.visited.length = 0;
     const second = await tools.searchAndRead.handler(read({ max_jobs: 3 }), c.ctx);
-    expect(second.data.jobs.map((j) => j.id)).toEqual(['4000000004']);
-    expect(second.data.known_ids).toEqual(['4000000001', '4000000002', '4000000003']);
+    expect(visitedJobs(c.session.visited)).toEqual(['4000000004']);
+    expect(second.data.jobs.map((j) => [j.id, j.source])).toEqual([
+      ['4000000004', 'fetched'],
+      ['4000000001', 'stored'],
+      ['4000000002', 'stored'],
+      ['4000000003', 'stored'],
+    ]);
     expect(second.data.remaining_ids).toEqual([]);
   });
 
-  it('max_jobs=0 only classifies: nothing is opened or stored', async () => {
+  it('max_jobs=0 judges what the database knows and visits nothing', async () => {
     const c = context();
+    await c.jobs.put({
+      id: '4000000004',
+      title: 'Principal Engineer',
+      company: 'Delta',
+      location: null,
+      url: jobUrl('4000000004'),
+      description: 'stored',
+    });
     const result = await tools.searchAndRead.handler(read({ max_jobs: 0, disallowed_terms: ['frontend'] }), c.ctx);
-    expect(result.data.remaining_ids).toEqual(['4000000002', '4000000003', '4000000004']);
+    expect(result.data.remaining_ids).toEqual(['4000000002', '4000000003']);
     expect(result.data.excluded.map((e) => e.id)).toEqual(['4000000001']);
+    expect(result.data.jobs.map((j) => j.id)).toEqual(['4000000004']);
     expect(visitedJobs(c.session.visited)).toEqual([]);
-    expect(c.jobs.jobs.size).toBe(0);
   });
 
-  it('with title_then_description a rejected description is not stored, so it is opened again next time', async () => {
-    const c = context({ '4000000003': 'Our stack is Angular and Java.' });
-    const input = read({
-      disallowed_terms: ['angular'],
-      disallowed_scope: 'title_then_description',
-      skip_ids: ['4000000001', '4000000002'],
+  it('max_returned caps the answer, newly read jobs first, and names the rest', async () => {
+    const c = context();
+    await c.jobs.put({
+      id: '4000000001',
+      title: 'Senior Frontend Engineer',
+      company: 'Acme',
+      location: null,
+      url: jobUrl('4000000001'),
+      description: 'old',
     });
-    const first = await tools.searchAndRead.handler(input, c.ctx);
-    expect(first.data.excluded).toEqual([{ id: '4000000003', title: 'Staff Engineer', reason: 'description', term: 'angular' }]);
-    expect(first.data.jobs.map((j) => j.id)).toEqual(['4000000004']);
-    expect(c.jobs.jobs.has('4000000003')).toBe(false);
-    c.session.visited.length = 0;
-    await tools.searchAndRead.handler(input, c.ctx);
-    expect(visitedJobs(c.session.visited)).toEqual(['4000000003']);
+    const result = await tools.searchAndRead.handler(read({ max_returned: 2 }), c.ctx);
+    expect(result.data.jobs.map((j) => j.id)).toEqual(['4000000002', '4000000003']);
+    expect(result.data.not_returned_ids).toEqual(['4000000004', '4000000001']);
+    expect(result.warnings.join(' ')).toMatch(/not returned/);
   });
 
   it('keeps going after an unusable page, which is reported and not stored', async () => {
@@ -264,6 +327,8 @@ describe('linkedin_search_and_read', () => {
   it('rejects out-of-range arguments', () => {
     const input = tools.searchAndRead.input;
     expect(input.safeParse({ keywords: 'x', max_jobs: 26 }).success).toBe(false);
+    expect(input.safeParse({ keywords: 'x', max_returned: 51 }).success).toBe(false);
+    expect(input.safeParse({ keywords: 'x', stored_jobs: 'maybe' }).success).toBe(false);
     expect(input.safeParse({ keywords: 'x', disallowed_terms: Array.from({ length: 61 }, (_, i) => `t${i}`) }).success).toBe(false);
     expect(input.safeParse({ keywords: 'x', disallowed_scope: 'everywhere' }).success).toBe(false);
   });
@@ -365,12 +430,41 @@ describe('max_results and several pages', () => {
     });
     const input = tools.searchAndRead.input.parse({ keywords: 'x', max_results: 50, disallowed_terms: ['Engineer 1'] });
     const result = await tools.searchAndRead.handler(input, c.ctx);
-    expect(result.data).toMatchObject({ pages_loaded: 2, scanned: 50, known_ids: ['5000000002'] });
+    expect(result.data).toMatchObject({ pages_loaded: 2, scanned: 50 });
     expect(result.data.excluded.map((e) => e.id)).toEqual(['5000000001']);
+    // 25 newly read jobs plus the stored one pass; max_returned (25) keeps the new ones and names the stored one
     expect(result.data.jobs).toHaveLength(25);
+    expect(result.data.jobs.every((job) => job.source === 'fetched')).toBe(true);
+    expect(result.data.not_returned_ids).toEqual(['5000000002']);
     expect(result.data.remaining_ids).toHaveLength(50 - 1 - 1 - 25);
     expect(result.cost).toBe(2 + 25);
     expect(c.jobs.jobs.size).toBe(26);
+  });
+});
+
+describe('result size', () => {
+  it('hands back fewer jobs rather than failing when 25 long descriptions do not fit, and names the others', async () => {
+    const many = Array.from({ length: 25 }, (_, n) => ({
+      id: String(6_000_000_000 + n),
+      lines: [`Engineer ${n}`, 'Co', 'Paris', '1 hour ago'],
+    }));
+    const pages: Record<string, FakePage> = { [SEARCH_URL]: searchPage({ cards: many }) };
+    for (const card of many) pages[jobUrl(card.id)] = jobPage('x'.repeat(20_000));
+    const c = createBrowserTestContext({ allowedHosts: adapter.allowedHosts, pages });
+    const result = await tools.searchAndRead.handler(read({ description_max_chars: 6000, max_returned: 50 }), c.ctx);
+    const returned = result.data.jobs.length;
+    expect(returned).toBeGreaterThan(5);
+    expect(returned).toBeLessThan(25);
+    expect(result.data.not_returned_ids).toHaveLength(25 - returned);
+    expect(c.jobs.jobs.size).toBe(25);
+    expect(JSON.stringify(result.data).length * 2).toBeLessThan(262_144);
+    // the ones that did not fit are free to read afterwards, from the database
+    const rest = await tools.job.handler(
+      tools.job.input.parse({ ids: result.data.not_returned_ids.slice(0, 5), description_max_chars: 500 }),
+      c.ctx,
+    );
+    expect(rest.data.jobs).toHaveLength(5);
+    expect(rest.cost).toBe(0);
   });
 });
 

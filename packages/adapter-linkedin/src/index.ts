@@ -5,9 +5,8 @@ import { aiSearchResultsLayout } from './layouts/aiSearchResults';
 import { classicLayout } from './layouts/classic';
 import type { SearchLayout } from './layouts/layout';
 import { classifyPage, termMatcher } from './parse';
-import { readNew } from './read';
-import { MAX_PAGE, clip, readJob, searchCards, type SearchArgs } from './search';
-import { extractHints as extractHintsOf } from './parse';
+import { readByIds, readNew, type AcceptedJob } from './read';
+import { MAX_PAGE, clip, searchCards, type SearchArgs } from './search';
 
 const HOSTS = ['www.linkedin.com', 'media.licdn.com'];
 
@@ -54,8 +53,12 @@ const jobSchema = z.object({
   description: z.string(),
   description_truncated: z.boolean(),
   url: z.string(),
-  source: z.enum(['fetched', 'stored']),
-  fetched_at: z.string().nullable(),
+  source: z
+    .enum(['fetched', 'stored'])
+    .describe('fetched: read from LinkedIn in this call. stored: read from the router database, LinkedIn not visited.'),
+  new: z.boolean().describe('true when this call stored the job for the first time.'),
+  first_seen: z.string(),
+  fetched_at: z.string(),
   ...hints,
 });
 
@@ -105,6 +108,12 @@ const termFields = {
       'title: reject on the card title, before any job page is opened (free). title_then_description: check the title first and drop the job without opening it when a term matches; otherwise open it and check the description, dropping it (not stored) when a term matches there.',
     ),
 };
+const storedJobs = z
+  .enum(['evaluate', 'skip'])
+  .default('evaluate')
+  .describe(
+    'evaluate: a job already stored is judged again with THESE terms, from the database (no visit), and returned if it passes. skip: stored jobs are only listed in known_ids.',
+  );
 const descriptionChars = z
   .number()
   .int()
@@ -112,6 +121,50 @@ const descriptionChars = z
   .max(6000)
   .default(3000)
   .describe('Description characters returned per job; the full text is stored.');
+
+function toOutput(job: AcceptedJob, maxChars: number): z.infer<typeof jobSchema> {
+  const text = clip(job.description, maxChars);
+  return {
+    id: job.id,
+    title: job.title,
+    company: job.company,
+    location: job.location,
+    description: text.text,
+    description_truncated: text.truncated,
+    url: job.url,
+    source: job.source,
+    new: job.isNew,
+    first_seen: job.firstSeen,
+    fetched_at: job.fetchedAt,
+    stack_hints: job.stack_hints,
+    years_hints: job.years_hints,
+    remote_hints: job.remote_hints,
+    salary_text: job.salary_text,
+  };
+}
+
+/**
+ * Room for the job list in one result. The engine counts the payload twice (text plus structured content) against a 256 KiB
+ * ceiling, so about 128 KiB of JSON fit; the rest of the result needs little. Better to hand back fewer jobs than to fail a
+ * call whose work (visits, storing) is already done: the others are named and cost nothing to read from the database.
+ */
+const JOBS_JSON_BUDGET = 100_000;
+
+function fitJobs(jobs: readonly z.infer<typeof jobSchema>[]): { fit: z.infer<typeof jobSchema>[]; rest: string[] } {
+  const fit: z.infer<typeof jobSchema>[] = [];
+  const rest: string[] = [];
+  let bytes = 0;
+  for (const job of jobs) {
+    const size = new TextEncoder().encode(JSON.stringify(job)).length;
+    if (rest.length === 0 && (bytes + size <= JOBS_JSON_BUDGET || fit.length === 0)) {
+      fit.push(job);
+      bytes += size;
+    } else {
+      rest.push(job.id);
+    }
+  }
+  return { fit, rest };
+}
 
 const annotations = { readOnlyHint: true, openWorldHint: true, idempotentHint: true } as const;
 
@@ -166,7 +219,7 @@ export function createLinkedinTools(layout: SearchLayout) {
   const job = defineBrowserTool({
     name: 'linkedin_job',
     title: 'LinkedIn job details (read-only)',
-    description: `Read-only. Returns the description and hints (stack, years, remote, salary) of up to 25 LinkedIn jobs by id. A job already stored comes from memory without visiting LinkedIn (source=stored) unless refresh=true. A job that is opened and accepted is stored; one holding a disallowed term is reported in excluded and not stored. ${UNTRUSTED}`,
+    description: `Read-only. Returns the description and hints (stack, years, remote, salary) of up to 25 LinkedIn jobs by id. A stored job is read from the router database, never from LinkedIn (source=stored), unless refresh=true. A job opened here is stored as soon as its title passes, even if its description then matches a disallowed term (reported in excluded). ${UNTRUSTED}`,
     input: z
       .object({
         ids: z.array(jobId).min(1).max(25),
@@ -177,89 +230,46 @@ export function createLinkedinTools(layout: SearchLayout) {
       .strict(),
     output: z.object({
       jobs: z.array(jobSchema),
+      not_returned_ids: z.array(z.string()),
       excluded: z.array(excludedSchema),
       failed: z.array(z.object({ id: z.string(), status: z.string() })),
     }),
     annotations,
-    limits: { timeoutS: 300, cost: 25, outputMaxBytes: 150_000 },
+    limits: { timeoutS: 300, cost: 25, outputMaxBytes: 262_144 },
     handler: async (args, ctx) => {
       const matchTerm = termMatcher(args.disallowed_terms);
-      let visits = 0;
-      const jobs: z.infer<typeof jobSchema>[] = [];
-      const excluded: z.infer<typeof excludedSchema>[] = [];
-      const failed: { id: string; status: string }[] = [];
-      for (const id of [...new Set(args.ids)]) {
-        const stored = args.refresh ? null : await ctx.jobs.get(id);
-        if (stored !== null) {
-          const text = clip(stored.description, args.description_max_chars);
-          jobs.push({
-            id,
-            title: stored.title,
-            company: stored.company,
-            location: stored.location,
-            description: text.text,
-            description_truncated: text.truncated,
-            url: stored.url,
-            source: 'stored',
-            fetched_at: stored.fetchedAt,
-            ...extractHintsOf(stored.description),
-          });
-          continue;
-        }
-        visits += 1;
-        const opened = await readJob(ctx, id);
-        if (opened.status !== 'ok') {
-          failed.push({ id, status: opened.status });
-          continue;
-        }
-        const title = opened.title ?? '';
-        const term = matchTerm(title) ?? (args.disallowed_scope === 'title_then_description' ? matchTerm(opened.description) : null);
-        if (term !== null) {
-          excluded.push({
-            id,
-            title,
-            reason: matchTerm(title) !== null ? 'title' : 'description',
-            term,
-          });
-          continue;
-        }
-        await ctx.jobs.put({
-          id,
-          title: opened.title,
-          company: opened.company,
-          location: null,
-          url: opened.url,
-          description: opened.description,
-        });
-        const text = clip(opened.description, args.description_max_chars);
-        jobs.push({
-          id,
-          title: opened.title,
-          company: opened.company,
-          location: null,
-          description: text.text,
-          description_truncated: text.truncated,
-          url: opened.url,
-          source: 'fetched',
-          fetched_at: new Date().toISOString(),
-          stack_hints: opened.stack_hints,
-          years_hints: opened.years_hints,
-          remote_hints: opened.remote_hints,
-          salary_text: opened.salary_text,
-        });
-      }
-      const warnings = [...failed.map((f) => `job ${f.id}: ${f.status}`)];
-      return { data: { jobs, excluded, failed }, warnings, cost: visits };
+      const outcome = await readByIds(ctx, args.ids, {
+        refresh: args.refresh,
+        matchTitle: matchTerm,
+        matchDescription: args.disallowed_scope === 'title_then_description' ? matchTerm : null,
+      });
+      const { fit, rest } = fitJobs(outcome.accepted.map((job) => toOutput(job, args.description_max_chars)));
+      const warnings = outcome.failed.map((f) => `job ${f.id}: ${f.status}`);
+      if (rest.length > 0)
+        warnings.push(`${rest.length} job(s) did not fit in the result: ask for them again with a lower description_max_chars.`);
+      return {
+        data: { jobs: fit, not_returned_ids: rest, excluded: outcome.excluded, failed: outcome.failed },
+        warnings,
+        cost: outcome.visits,
+      };
     },
   });
 
   const searchAndRead = defineBrowserTool({
     name: 'linkedin_search_and_read',
     title: 'LinkedIn search then read the new jobs (read-only)',
-    description: `Read-only. Scans max_results search results (25 per page) and opens only the jobs not already stored, not in skip_ids and without a disallowed term in the title; each opened job is stored with its description. Returns new jobs, known_ids, excluded and remaining_ids: if not empty, call again with the same arguments. max_jobs=0 only classifies. ${UNTRUSTED}`,
+    description: `Read-only. Scans max_results search results (25 per page). Drops titles with a disallowed term, judges stored jobs from the database, and opens only the rest (stored at once, then judged). Returns passing jobs, excluded, known_ids and remaining_ids: if not empty, call again with the same arguments. ${UNTRUSTED}`,
     input: searchInput
       .extend({
-        skip_ids: z.array(jobId).max(500).default([]).describe('Extra job ids to leave alone, on top of the ones already stored.'),
+        skip_ids: z.array(jobId).max(500).default([]).describe('Job ids to leave alone entirely, e.g. the ones you already reported.'),
+        stored_jobs: storedJobs,
+        max_returned: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .default(25)
+          .describe('Most jobs handed back; the others are named in not_returned_ids and cost nothing to read with linkedin_job.'),
         max_jobs: z.number().int().min(0).max(25).default(25).describe('Most job pages to visit in this call (0 = classify only).'),
         description_max_chars: descriptionChars,
         ...termFields,
@@ -268,6 +278,7 @@ export function createLinkedinTools(layout: SearchLayout) {
     output: z.object({
       jobs: z.array(jobSchema),
       known_ids: z.array(z.string()),
+      not_returned_ids: z.array(z.string()),
       excluded: z.array(excludedSchema),
       failed: z.array(z.object({ id: z.string(), status: z.string() })),
       remaining_ids: z.array(z.string()),
@@ -277,14 +288,16 @@ export function createLinkedinTools(layout: SearchLayout) {
       has_more: z.boolean(),
     }),
     annotations,
-    limits: { timeoutS: 300, cost: MAX_PAGE + 25, outputMaxBytes: 200_000 },
+    limits: { timeoutS: 300, cost: MAX_PAGE + 25, outputMaxBytes: 262_144 },
     handler: async (args, ctx) => {
       const deadline = Date.now() + OPEN_BUDGET_MS;
       const found = await searchCards(ctx, layout, args as SearchArgs);
       const matchTerm = termMatcher(args.disallowed_terms);
       const outcome = await readNew(ctx, found.cards, {
-        known: new Set(args.skip_ids),
+        skip: new Set(args.skip_ids),
+        stored: args.stored_jobs,
         maxJobs: args.max_jobs,
+        maxReturned: args.max_returned,
         matchTitle: matchTerm,
         matchDescription: args.disallowed_scope === 'title_then_description' ? matchTerm : null,
         deadline,
@@ -292,29 +305,17 @@ export function createLinkedinTools(layout: SearchLayout) {
       const warnings = [...found.warnings, ...outcome.failed.map((f) => `job ${f.id}: ${f.status}`)];
       if (outcome.remaining.length > 0)
         warnings.push(`${outcome.remaining.length} job(s) not opened yet: call again with the same arguments to continue.`);
-      const fetchedAt = new Date().toISOString();
-      const jobs = outcome.opened.map((opened) => {
-        const text = clip(opened.description, args.description_max_chars);
-        return {
-          id: opened.id,
-          title: opened.title,
-          company: opened.company,
-          location: opened.location,
-          description: text.text,
-          description_truncated: text.truncated,
-          url: opened.url,
-          source: 'fetched' as const,
-          fetched_at: fetchedAt,
-          stack_hints: opened.stack_hints,
-          years_hints: opened.years_hints,
-          remote_hints: opened.remote_hints,
-          salary_text: opened.salary_text,
-        };
-      });
+      const { fit, rest } = fitJobs(outcome.accepted.map((job) => toOutput(job, args.description_max_chars)));
+      const notReturned = [...rest, ...outcome.notReturned];
+      if (notReturned.length > 0)
+        warnings.push(
+          `${notReturned.length} more job(s) passed but were not returned (max_returned or size): read them with linkedin_job.`,
+        );
       return {
         data: {
-          jobs,
+          jobs: fit,
           known_ids: outcome.knownIds,
+          not_returned_ids: notReturned,
           excluded: outcome.excluded,
           failed: outcome.failed,
           remaining_ids: outcome.remaining,

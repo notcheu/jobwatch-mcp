@@ -54,26 +54,26 @@ Navigate to `https://www.linkedin.com/jobs/` (allowed host only), wait for the m
 5. Return cards (+ `warnings`). One page view = 1 rate-limit cost unit.
 
 ### `linkedin_job`
-Reads up to 10 jobs by id. A job that is already stored is answered from memory (`source: "stored"`, no visit, no pacing) unless `refresh: true`. Otherwise: navigate to the details URL, wait for the About-the-job element (12 s), read the full text, compute hints (stack/years/remote), pace 2.5-5 s between jobs. `not_loaded` (element never appeared) and `closed` ("No longer accepting applications") go to `failed` and are **not stored**. With `disallowed_terms`, a job whose page title (and, with `disallowed_scope: "title_then_description"`, description) holds a term goes to `excluded` and is not stored; every other job is stored. The text returned is cut to `description_max_chars` (500-6000, default 3000); the stored text is the full description (max 20 000 characters).
+Reads up to 25 jobs by id with the same rules as the search tool. A job that is already stored is **judged from the database** with this call's terms (`source: "stored"`, no visit, no pacing, cost 0) unless `refresh: true`. Otherwise: navigate to the details URL, wait for the About-the-job element (12 s), read the full text, pace 2.5-5 s between jobs. `not_loaded` and `closed` go to `failed` and are **not stored**. Once the page is read and its title passes the terms, the job is **stored at once** (full description, max 20 000 characters); then, with `disallowed_scope: "title_then_description"`, a description match puts it in `excluded` (`reason: description`) but it stays in the database. A title match is excluded and **not stored**. The text returned is cut to `description_max_chars` (500-6000, default 3000) and the list is trimmed to fit the result size (the others come back in `not_returned_ids`).
 
 ### `linkedin_search_and_read`
-The tool for the daily routine. One call scans `max_results` search results (25 per LinkedIn page, so 50 = pages 1 and 2, 250 = ten pages) and makes the visits they deserve:
-1. Load the pages needed, one after the other with pacing, and stop early when a page is not full (the end of the results). Duplicates across pages are dropped; `remote_only` is applied last. `page` is only the first page to load (default 1, max 10): you pass a number of results, not a page, except to continue a long search from further down.
-2. **Already stored** (opened and accepted by an earlier call, any search) or listed in `skip_ids`: left alone, reported in `known_ids`. Never opened again.
-3. **Disallowed term in the card title**: dropped without opening (costs nothing), reported in `excluded` (`reason: title`) with the term that matched.
-4. Everything else is opened one by one, up to `max_jobs` (default 25, the most job pages visited in one call; `0` = classify only) and a soft 200 s time budget.
-5. With `disallowed_scope: "title_then_description"`, the title is checked first (step 3, no page loaded). Only a job that survives it is opened, and then its description is checked: a match is reported in `excluded` (`reason: description`) and **not stored**.
-6. Each accepted job is **stored right after it is read** (title, company, location, url, full description), so a call that dies half way loses nothing.
-7. Jobs not visited because of `max_jobs` or the time budget come back in `remaining_ids`: **call again with the same arguments** (the pages are scanned again, 1 unit each; stored jobs are skipped), or pass the ids to `linkedin_job` (25 per call), which skips the scan.
+The tool for the daily routine. One call scans `max_results` search results (25 per LinkedIn page, so 50 = pages 1 and 2, 250 = ten pages). For every search card, in order, cheapest check first:
+1. **In `skip_ids`** (your own "already reported" list): left alone entirely, reported in `known_ids`.
+2. **Disallowed term in the card title**: `excluded` (`reason: title`), **not stored, not opened**. Reading the search page already gave us the card (id, title, company, location), so judging it again with other terms next time costs nothing; there is nothing worth storing.
+3. **Already stored** (read by an earlier call, whatever terms it had then): judged **from the database** with this call's terms. No visit, no pacing, no budget. With `disallowed_scope: "title_then_description"` a description match goes to `excluded`; otherwise the job is returned with `source: "stored"`. (`stored_jobs: "skip"` lists them in `known_ids` instead, for a plain "only what is new" run.)
+4. **Otherwise it is visited** (up to `max_jobs`, default 25, and a soft 200 s time budget): the page is read, the job is **stored immediately**, and only then judged on its description. A description that matches a disallowed term does not undo the storing, so a search with another list reads the job from the database, never from the page again.
+5. Jobs not visited because of `max_jobs` or the time budget come back in `remaining_ids`: **call again with the same arguments** (the pages are scanned again, 1 unit each; stored jobs cost nothing), or pass the ids to `linkedin_job` (25 per call), which skips the scan.
 
-`disallowed_terms` has no built-in default and no environment variable: the caller sends the list with every call (whole words or phrases, case-insensitive, plain text, never a regex, which also rules out ReDoS). That is what lets one run search "full stack" and ignore "frontend", and another search "backend" and ignore "fullstack". A job rejected by one list is **not** remembered as rejected, so it can still be opened by a search with another list.
+Passing jobs are returned newly read first (`new: true`), then stored ones, at most `max_returned` (default 25, max 50) and at most what fits the result size; the others are named in `not_returned_ids` and are free to read with `linkedin_job`. Every returned job carries `source` (`fetched` or `stored`), `new`, `first_seen` and `fetched_at`, so the routine can tell what it has not seen before. The router does not remember what it has already **reported**: to hide those, pass them in `skip_ids` or use `stored_jobs: "skip"`.
+
+`disallowed_terms` has no built-in default and no environment variable: the caller sends the list with every call (whole words or phrases, case-insensitive, plain text, never a regex, which also rules out ReDoS). That is what lets one run search "full stack" and ignore "frontend", and another search "backend" and ignore "fullstack". A job rejected by a list is **not** remembered as rejected: it is judged again by every call, from the cheapest source available.
 
 ### Usage guide (what each tool is for)
 | Tool | Use it to | Reserved | Spent |
 |---|---|---|---|
 | `session_status` | check the LinkedIn session before a run (`ok`, `needs_login`, `checkpoint`) | 1 | 1 |
 | `linkedin_search` | peek at results: `max_results` cards over as many pages as needed, with `known` flags. Opens and stores nothing | 10 | search pages loaded |
-| `linkedin_job` | read specific jobs by id (up to 25). Stored ones come from memory with no visit | 25 | job pages visited, 0 for stored jobs |
+| `linkedin_job` | read specific jobs by id (up to 25). Stored ones come from the database with no visit | 25 | job pages visited, 0 for stored jobs |
 | `linkedin_search_and_read` | the routine: scan `max_results` results, read every job that is new and acceptable | 35 | search pages + job pages visited |
 
 Typical run, two searches over 50 results each (2 calls):
@@ -87,7 +87,7 @@ For a deep sweep use `max_results: 250` (ten pages). If a result has `remaining_
 **Budget accounting.** A call reserves its maximum up front (so two concurrent calls cannot both pass the last units) and the engine hands back what the handler did not use (`AdapterResult.cost`, `03-router-spec.md`). The reservation is what must fit in the hour: with 200 per hour a `linkedin_search_and_read` (35) can start 5 times at once. What counts afterwards is the real spend: 2 search pages + 25 job pages = 27.
 
 ### Job memory and retention
-Accepted jobs live in the router's SQLite `jobs` table (`03-router-spec.md`, "Job store") and are evicted `JW_JOB_RETENTION_DAYS` (default 30) after their last fetch. After eviction a posting counts as new again and is opened again.
+Jobs whose page was read (and whose title was accepted) live in the router's SQLite `jobs` table (`03-router-spec.md`, "Job store") and are evicted `JW_JOB_RETENTION_DAYS` (default 30) after their last fetch. After eviction a posting counts as new again and is opened again.
 
 ## Hints dictionaries (`parse.ts`)
 - Stack: React, Next.js, TypeScript, JavaScript, Angular/AngularJS, Vue/Vue.js/Nuxt, Node.js, Java, Kotlin, PHP/Symfony, Python, Svelte, GraphQL, Storybook, Design System, micro-frontends. Use **case-sensitive word-boundary** matching for `Vue` (the French word "vue" otherwise matches everywhere).

@@ -87,7 +87,9 @@ export interface StoredJob extends NewJob {
 /**
  * The adapter's memory of jobs it already opened, scoped to its platform by the engine (an adapter cannot read another
  * platform's rows). Stored jobs are evicted after `JW_JOB_RETENTION_DAYS`; a later search then treats them as new again.
- * Store only a job that was opened AND accepted: that is what makes "already seen" mean "do not open it again".
+ * Convention (LinkedIn, `07-adapter-linkedin.md`): store a job as soon as its page was read and its title was accepted, whether or
+ * not its description then matched the caller's terms. A stored job is never read from the page again: it is judged from here,
+ * with whatever terms the next call brings. Do not store what you only saw on a search card: that read is free to repeat.
  */
 export interface JobStore {
   /** Which of `ids` are stored. Order and duplicates are irrelevant. */
