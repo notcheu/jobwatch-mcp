@@ -46,7 +46,7 @@ flowchart LR
   ATS["Public ATS APIs<br/>Greenhouse, Lever, Ashby ..."]
 
   Routine -- "HTTPS + OAuth, MCP tools/call" --> Nginx
-  Nginx -- "proxy_pass to 127.0.0.1:8080" --> Front
+  Nginx -- "proxy_pass to 127.0.0.1:18931" --> Front
   Front -- "authenticated MCP" --> Router
   Front --- Redis
   Front -. "OIDC login at /callback" .-> Google

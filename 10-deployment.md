@@ -29,7 +29,7 @@
   export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock     # persist in ~/.bashrc
   docker info | grep -i rootless                              # must list "rootless"
   ```
-  The daemon socket is `/run/user/<uid>/docker.sock` (`$XDG_RUNTIME_DIR/docker.sock`). Rootless limits to know: no ports below 1024 (we use 8080/9464), slower networking (slirp4netns/pasta), and cgroup limits need cgroup v2 delegation (next line).
+  The daemon socket is `/run/user/<uid>/docker.sock` (`$XDG_RUNTIME_DIR/docker.sock`). Rootless limits to know: no ports below 1024 (we use 18931/9464 on the host), slower networking (slirp4netns/pasta), and cgroup limits need cgroup v2 delegation (next line).
 - cgroup v2 with delegation to user services (VERIFY: `systemctl --user` with `Delegate=yes`; `cat /sys/fs/cgroup/cgroup.controllers`).
 - `loginctl enable-linger mcpuser` so user services start at boot.
 - zram swap enabled on the host (spike S3/S7 decides size); disk encryption recommended.
@@ -48,7 +48,7 @@
 Browser profiles are **not** host directories: they are named Docker volumes `jw-profile-<platform>` in the `mcpuser` rootless daemon's storage (`~/.local/share/docker/volumes`), created by the router. This keeps the compose file and the router identical on Linux and macOS. Never in git, never in plain backups.
 
 ## Services declared in compose (always-on)
-1. **front** — `ghcr.io/babs/mcp-auth-proxy` (decision D7): OAuth 2.1 authorization server (DCR, PKCE, RFC 9728/8414) that signs users in with **Google** and reverse-proxies `/mcp` to the router. The only service with a published host port (`${JW_BIND}:${JW_PORT}`, default `127.0.0.1:8080`).
+1. **front** — `ghcr.io/babs/mcp-auth-proxy` (decision D7): OAuth 2.1 authorization server (DCR, PKCE, RFC 9728/8414) that signs users in with **Google** and reverse-proxies `/mcp` to the router. The only service with a published host port (`${JW_BIND}:${JW_HOST_PORT}`, default `127.0.0.1:18931`).
 2. **redis** — small (32 MB cap) store the front needs for single-use authorization codes and refresh-token rotation. Not published.
 3. **router** — this project; built from the repo-root `Dockerfile`; mounts the rootless runtime socket, `data/router`. No published MCP port (only the optional metrics port).
 4. **watchtower** — updates the labelled router image.
@@ -78,12 +78,12 @@ Notes: the front only uses Google to authenticate the person; it does not keep G
 ## Nginx for `mcp.noguetith.fr` (your existing reverse proxy; not running yet)
 Files in `deploy/nginx/`: `mcp.noguetith.fr.bootstrap.conf` (port 80 only, for the certificate) and `mcp.noguetith.fr.conf` (final site). Both pass `nginx -t` (tested in the `nginx:alpine` image with throwaway certificates; the real certificate and the live proxying are untested). Paths below assume Nginx installed on the Ubuntu host (Debian layout); adapt if it runs in a container.
 1. **DNS:** create `mcp.noguetith.fr` as an `A` record (and `AAAA` only if your IPv6 forwards to the host) pointing at your home public IP, or a CNAME to the dynamic-DNS name you already use for other hosts. Check: `dig +short mcp.noguetith.fr`.
-2. **Port redirection on the home router:** forward TCP **80 and 443** to the machine running Nginx (static LAN IP or DHCP reservation). If your other sites already work from the internet, these rules exist and nothing changes. Allow them in UFW (`sudo ufw allow 80,443/tcp`). The MCP port (8080) is **never** forwarded: it stays on `127.0.0.1`.
+2. **Port redirection on the home router:** forward TCP **80 and 443** to the machine running Nginx (static LAN IP or DHCP reservation). If your other sites already work from the internet, these rules exist and nothing changes. Allow them in UFW (`sudo ufw allow 80,443/tcp`). The MCP host port (18931) is **never** forwarded: it stays on `127.0.0.1`.
 3. **Bootstrap site:** `sudo mkdir -p /var/www/certbot && sudo cp deploy/nginx/mcp.noguetith.fr.bootstrap.conf /etc/nginx/sites-available/mcp.noguetith.fr && sudo ln -s /etc/nginx/sites-available/mcp.noguetith.fr /etc/nginx/sites-enabled/ && sudo nginx -t && sudo systemctl reload nginx`.
 4. **Certificate:** `sudo certbot certonly --webroot -w /var/www/certbot -d mcp.noguetith.fr` (renewal is handled by certbot's timer; the final site keeps the same ACME location).
-5. **Final site:** `sudo cp deploy/nginx/mcp.noguetith.fr.conf /etc/nginx/sites-available/mcp.noguetith.fr && sudo nginx -t && sudo systemctl reload nginx`. If Nginx runs in a container, change `proxy_pass http://127.0.0.1:8080` to the Docker host address and set `JW_BIND` to an interface that address can reach (never `0.0.0.0` without a firewall rule).
+5. **Final site:** `sudo cp deploy/nginx/mcp.noguetith.fr.conf /etc/nginx/sites-available/mcp.noguetith.fr && sudo nginx -t && sudo systemctl reload nginx`. If Nginx runs in a container, change `proxy_pass http://127.0.0.1:18931` to the Docker host address and set `JW_BIND` to an interface that address can reach (never `0.0.0.0` without a firewall rule).
 6. **Smoke test** (after `docker compose up -d`): `curl -i https://mcp.noguetith.fr/mcp` must return `401` with `WWW-Authenticate: Bearer resource_metadata="https://mcp.noguetith.fr/.well-known/oauth-protected-resource"`; `curl -s https://mcp.noguetith.fr/.well-known/oauth-authorization-server` returns JSON with `registration_endpoint` and `code_challenge_methods_supported: ["S256"]`.
-**Expected state before the stack runs: `502 Bad Gateway`** (Nginx resolves and proxies, but nothing listens on 8080 yet). Once the front is up, the same URL returns `401`.
+**Expected state before the stack runs: `502 Bad Gateway`** (Nginx resolves and proxies, but nothing listens on 18931 yet). Once the front is up, the same URL returns `401`.
 Rules: route every path to the front; do not rewrite paths; no login page, WAF challenge or rate-limit rule in front of the OAuth endpoints; if you allowlist `160.79.104.0/21`, keep `/.well-known/*`, `/register` and `/token` reachable from it (an example `location = /mcp` allowlist is commented in the site file). Set `JW_BASE_URL` to exactly `https://mcp.noguetith.fr`.
 
 ## Other hosts: macOS (Apple Silicon) and other Linux (decided 2026-10-01)
@@ -92,7 +92,7 @@ The images may run on something other than the Ubuntu NUC, typically Matthieu's 
 - **Browser image:** amd64 uses Google Chrome stable; **arm64 uses Debian Chromium** (Google ships no Linux arm64 Chrome). Build locally with `docker build -t jobwatch-browser:dev images/browser` (the Dockerfile selects the browser from `TARGETARCH`). **Do not use the arm64 image for the LinkedIn session:** Chromium reports a different brand list and other signals, so the logged-in profile and the daily routine stay on the amd64 NUC. Emulating amd64 Chrome on Apple Silicon is slow and crash-prone; not supported.
 - **Runtime:** Docker Desktop (or OrbStack/Colima) instead of rootless Docker. Set `JW_DOCKER_SOCKET=/var/run/docker.sock`. Its socket is root-equivalent inside the VM and the router then runs as `user: "0:0"`; acceptable for local development, **not for the production host**.
 - **No host paths:** profiles are named volumes and the seccomp profile is passed by file to the Docker CLI, so nothing depends on `/srv/...` or `XDG_RUNTIME_DIR`.
-- **Development without OAuth:** `docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up router` runs only the router on `http://127.0.0.1:8080/mcp` with `JW_AUTH=none` (accepted only on loopback). Test with the MCP Inspector or `claude mcp add --transport http jobwatch-dev http://127.0.0.1:8080/mcp`. The full front needs the public hostname and cannot run on a laptop without a tunnel; test it on the NUC.
+- **Development without OAuth:** `docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up router` runs only the router on `http://127.0.0.1:18932/mcp` with `JW_AUTH=none` (accepted only on loopback). Test with the MCP Inspector or `claude mcp add --transport http jobwatch-dev http://127.0.0.1:18932/mcp`. The full front needs the public hostname and cannot run on a laptop without a tunnel; test it on the NUC.
 - **Memory:** Docker Desktop's VM has its own memory limit (Settings → Resources); give it at least 3 GB to run Chromium plus the router. The Linux-only spike scripts (`spikes/host/*.sh`, GNU `date`, `hostname -I`, rootless checks) are NUC tools, not portable.
 - **Never** treat a Mac run as evidence for the budgets in `06-…`: those were measured on the amd64 NUC with Google Chrome.
 

@@ -20,7 +20,7 @@ services:
       # LISTEN_ADDR defaults to :8080; metrics/readyz listen on 127.0.0.1:9090 inside the container (not published)
     depends_on: [ redis ]
     ports:
-      - "${JW_BIND:-127.0.0.1}:${JW_PORT:-8080}:8080"   # the ONLY published MCP port; Nginx proxy_pass target
+      - "${JW_BIND:-127.0.0.1}:${JW_HOST_PORT:-18931}:8080"   # the ONLY published MCP port; Nginx proxy_pass target
     networks: [ jobwatch-core ]
     mem_limit: 128m
     read_only: true
