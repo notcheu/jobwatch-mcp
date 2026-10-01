@@ -1,5 +1,5 @@
 import { AdapterBroken, Checkpoint, SessionInvalid, type BrowserAdapterContext } from '@jobwatch/sdk';
-import { DESCRIPTION_SELECTOR, EXTRACT_CARDS, EXTRACT_JOB, type ExtractedCards, type ExtractedJob } from './extract';
+import { EXTRACT_CARDS, EXTRACT_JOB, type ExtractedCards, type ExtractedJob } from './extract';
 import type { SearchLayout } from './layouts/layout';
 import { PAGE_SIZE, classifyPage, extractHints, jobUrl, parseCard, type Card, type Hints } from './parse';
 
@@ -41,7 +41,6 @@ export interface JobDetail extends Hints {
 
 const NAVIGATION_TIMEOUT_MS = 45_000;
 const CARDS_WAIT_MS = 15_000;
-const DESCRIPTION_WAIT_MS = 12_000;
 
 /** Throw the right engine error when LinkedIn shows a login wall or a security check instead of the page we asked for. */
 export function assertSignedIn(url: string, hasLoginForm: boolean): void {
@@ -158,7 +157,6 @@ export async function readJob(ctx: BrowserAdapterContext, id: string): Promise<J
   const { session } = ctx;
   await ctx.pace('detail');
   await session.goto(jobUrl(id), { timeoutMs: NAVIGATION_TIMEOUT_MS });
-  await session.waitForSelector(DESCRIPTION_SELECTOR, DESCRIPTION_WAIT_MS);
   const page = await session.evaluate<ExtractedJob>(EXTRACT_JOB);
   assertSignedIn(session.url(), page.loginForm);
   const { title, company } = titleParts(page.title);
