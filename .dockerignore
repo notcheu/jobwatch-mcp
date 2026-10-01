@@ -1,0 +1,13 @@
+.git
+.idea
+.claude
+node_modules
+dist
+data
+profiles
+secrets
+*.md
+!catalog/**
+.env*
+**/*.har
+**/*.log
