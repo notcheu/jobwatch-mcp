@@ -26,7 +26,7 @@ flowchart LR
       Router["Router, Node 26 + TypeScript<br/>MCP Streamable HTTP, stateless<br/>optional /metrics on :9464"]
     end
 
-    subgraph Browsers["network jobwatch-browsers, internal, on-demand, max 1 running"]
+    subgraph Browsers["network jobwatch-browsers, open egress until Phase 4, on-demand, max 1 running"]
       BLI[["Chrome container<br/>profile: linkedin"]]
       BAP[["Chrome container<br/>profile: apec / wttj"]]
     end
@@ -52,8 +52,8 @@ flowchart LR
   Front -. "OIDC login at /callback" .-> Google
   Router --- Catalog
   Router --- Data
-  Router -- "docker run / stop, CDP over internal net" --> BLI
-  Router -- "docker run / stop, CDP over internal net" --> BAP
+  Router -- "docker run / stop, CDP by container IP" --> BLI
+  Router -- "docker run / stop, CDP by container IP" --> BAP
   BLI --- Profiles
   BAP --- Profiles
   BLI -- "allowlisted hosts only" --> Sites

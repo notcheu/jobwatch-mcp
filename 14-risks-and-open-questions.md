@@ -47,7 +47,7 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 | Maintenance burden (Chrome upgrades, image rebuilds) | high | low/medium | monthly routine, tests, rollback tag |
 
 ## Open findings
-- **Browser network is internal (found 2026-10-01, step 8):** `jobwatch-browsers` is `internal: true` in `deploy/compose.yml`, which also blocks the browsers' own internet access. Phase 0 spikes ran with open egress, so the first live LinkedIn call would fail with `upstream_error`. Options: (a) `internal: false` now and accept open egress until the Phase 4 allowlist proxy (browsers could then reach the home LAN, see `09`), (b) build the proxy first. Not changed without Matthieu's decision. The manual login container uses `bridge` and is not affected.
+- **Browser egress (decided 2026-10-01, Matthieu):** `jobwatch-browsers` was `internal: true`, which blocked the browsers' internet access. It is now `internal: false`; open egress is accepted until the Phase 4 allowlist proxy (see `09`). Existing deployments must recreate the network: `docker compose down` then `up -d` (an existing network keeps its old setting).
 
 ## Decisions log (append)
 - 2026-09-30: custom router chosen over off-the-shelf gateways (D1). Static schemas (D2). Shared browser image (D4). Headful Chrome preferred (D5, pending S3/S4). Rootless runtime (D8).
