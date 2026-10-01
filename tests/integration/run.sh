@@ -11,6 +11,7 @@ SOCK=${DOCKER_SOCKET:-/var/run/docker.sock}
 NET=jw-it-net
 cleanup() {
   docker ps -aq --filter label=jobwatch.managed=true --filter name=jw-it | xargs -r docker rm -f >/dev/null 2>&1 || true
+  docker ps -aq --filter label=jobwatch.login=true --filter name=jw-login-it | xargs -r docker rm -f >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
   docker volume ls -q --filter name=jw-it- | xargs -r docker volume rm >/dev/null 2>&1 || true
 }

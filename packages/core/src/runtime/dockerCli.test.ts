@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BackendError, type RuntimeSpec } from './backend';
-import { DockerCliBackend, MANAGED_LABEL, runArgs, type CliResult, type DockerRunner } from './dockerCli';
+import { DockerCliBackend, MANAGED_LABEL, loginRunArgs, runArgs, type CliResult, type DockerRunner } from './dockerCli';
 
 const spec: RuntimeSpec = {
   platform: 'linkedin',
@@ -244,5 +244,23 @@ describe('DockerCliBackend.inspect, memory and listing', () => {
     await expect(new DockerCliBackend(fakeDocker({ inspect: () => ({ stdout: '[]' }) }).run, 'n').start(spec)).rejects.toThrow(
       /no container/,
     );
+  });
+});
+
+describe('loginRunArgs', () => {
+  const login = { ...spec, name: 'jw-login-linkedin', env: { ...spec.env, MODE: 'login', VNC_PASSWORD: 'abc12345' } };
+
+  it('is the hardened run plus a loopback-only noVNC port and its own label', () => {
+    const args = loginRunArgs(login, 6080);
+    expect(args).toContain('jobwatch.login=true');
+    expect(args).not.toContain('jobwatch.managed=true');
+    const publish = args[args.indexOf('-p') + 1];
+    expect(publish).toBe('127.0.0.1:6080:6080');
+    for (const flag of ['--read-only', '--cap-drop', '--memory']) expect(args).toContain(flag);
+    expect(args.at(-2)).toBe('--');
+  });
+
+  it('refuses privileged or invalid host ports', () => {
+    for (const port of [0, 80, 1023, 70_000, 6080.5]) expect(() => loginRunArgs(login, port)).toThrow(BackendError);
   });
 });
