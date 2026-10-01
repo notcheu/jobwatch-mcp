@@ -1,5 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { JobwatchError, type AdapterModule, type AdapterResult, type BaseContext, type ErrorBody, type ErrorCode } from '@jobwatch/sdk';
+import {
+  JobwatchError,
+  type AdapterModule,
+  type AdapterResult,
+  type BaseContext,
+  type ErasedTool,
+  type ErrorBody,
+  type ErrorCode,
+} from '@jobwatch/sdk';
 import type { EngineLogger } from './logging';
 import type { Registry } from './registry';
 
@@ -13,10 +21,25 @@ export const noRuntime: ContextProvider = {
   acquire: () => Promise.reject(new JobwatchError('internal', 'No runtime is available in this build, so tools cannot run yet.')),
 };
 
+/**
+ * Protections around a call. `admit` runs after the arguments are valid and before anything reaches the platform: it
+ * throws a `JobwatchError` (`needs_login`, `checkpoint`, `rate_limited`) to refuse the call. `failed` is told about every
+ * error the handler raised, so a lost session or a checkpoint can open the circuit breaker.
+ */
+export interface CallGuard {
+  admit(adapter: AdapterModule, tool: ErasedTool<BaseContext>): void;
+  failed(adapter: AdapterModule, error: JobwatchError): void;
+}
+
+/** Receives the outcome of every call (the call log). A recorder that throws never affects the call. */
+export type CallRecorder = (outcome: ToolOutcome) => void;
+
 export interface CallDeps {
   registry: Registry;
   contexts: ContextProvider;
   logger: EngineLogger;
+  guard?: CallGuard;
+  record?: CallRecorder;
   /** Overridable for tests. */
   newRequestId?: () => string;
 }
@@ -42,6 +65,8 @@ export interface ToolOutcome {
   code: 'ok' | ErrorCode;
   durationMs: number;
   requestId: string;
+  /** Hash of the arguments, for correlating calls without storing them. */
+  argsHash: string;
 }
 
 export class UnknownToolError extends Error {
@@ -96,8 +121,24 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
 
   const finish = (result: ToolCallResult, code: ToolOutcome['code']): { result: ToolCallResult; outcome: ToolOutcome } => {
     const durationMs = Math.round(performance.now() - started);
-    log.info({ outcome: code, duration_ms: durationMs, args_hash: argsHash(rawArgs) }, 'tool_call');
-    return { result, outcome: { tool: name, adapter: adapter.id, platform: adapter.platform, code, durationMs, requestId } };
+    const hash = argsHash(rawArgs);
+    log.info({ outcome: code, duration_ms: durationMs, args_hash: hash }, 'tool_call');
+    const outcome: ToolOutcome = {
+      tool: name,
+      adapter: adapter.id,
+      platform: adapter.platform,
+      code,
+      durationMs,
+      requestId,
+      argsHash: hash,
+    };
+    try {
+      deps.record?.(outcome);
+    } catch (error) {
+      // A broken call log must never turn a good result into a failure.
+      log.error({ err: error }, 'call_record_failed');
+    }
+    return { result, outcome };
   };
   const fail = (body: ErrorBody) => finish(errorResult(body, requestId), body.code);
 
@@ -110,6 +151,13 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
       retry_after_s: null,
       details: { issues },
     });
+  }
+
+  try {
+    deps.guard?.admit(adapter, tool);
+  } catch (error) {
+    if (error instanceof JobwatchError) return fail(error.toBody());
+    throw error;
   }
 
   let lease: Awaited<ReturnType<ContextProvider['acquire']>> | undefined;
@@ -154,7 +202,10 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
     };
     return finish(result, 'ok');
   } catch (error) {
-    if (error instanceof JobwatchError) return fail(error.toBody());
+    if (error instanceof JobwatchError) {
+      deps.guard?.failed(adapter, error);
+      return fail(error.toBody());
+    }
     log.error({ err: error }, 'tool_call_failed');
     return fail({ code: 'internal', message: 'Internal error.', retry_after_s: null, details: {} });
   } finally {

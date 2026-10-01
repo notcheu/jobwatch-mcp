@@ -1,6 +1,16 @@
 import type { BrowserAdapterContext, BrowserSession, HttpAdapterContext, SessionStatus } from './context';
 import type { ErasedTool } from './tool';
 
+/**
+ * How much of a platform the router may use. The unit is a "cost point": each tool declares the `cost` of one call
+ * (limits.cost), taken from these budgets before the call runs, so the budget is counted per platform across all tools.
+ * Sliding windows of one hour and 24 hours.
+ */
+export interface RatePolicy {
+  perHour: number;
+  perDay: number;
+}
+
 interface AdapterBase {
   /** The name used by `jobwatch adapters enable <id>` and in adapters.json, e.g. `linkedin`. Lowercase, digits, hyphens. */
   id: string;
@@ -12,6 +22,8 @@ interface AdapterBase {
   platform: string;
   /** Bare hostnames this adapter may reach (exact match, https only). Enforced by `BrowserSession` and `HttpClient`. */
   allowedHosts: readonly string[];
+  /** Budget for this platform. Omit to get the engine default for the adapter kind (browser: 120/hour, 300/day; http: 600/hour, 3000/day). */
+  rate?: RatePolicy;
 }
 
 /** An adapter that needs the leased, single-tab Chrome of its platform. */

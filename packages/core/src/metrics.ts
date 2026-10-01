@@ -5,6 +5,8 @@ export interface Metrics {
   /** Count and time one finished tool call. */
   record(outcome: ToolOutcome): void;
   setEnabledAdapters(count: number): void;
+  /** Reflect a circuit breaker: pass the reason when it opens, undefined when it closes. */
+  setBreaker(platform: string, reason: 'needs_login' | 'checkpoint' | undefined): void;
   /** Prometheus text exposition format. */
   render(): Promise<string>;
   readonly contentType: string;
@@ -32,6 +34,12 @@ export function createMetrics(info: { version: string }): Metrics {
     registers: [registry],
   });
   const enabled = new Gauge({ name: 'jw_enabled_adapters', help: 'Number of enabled adapters.', registers: [registry] });
+  const breaker = new Gauge({
+    name: 'jw_breaker_open',
+    help: 'Circuit breaker state per platform (1 = open).',
+    labelNames: ['platform', 'reason'],
+    registers: [registry],
+  });
   new Gauge({ name: 'jw_build_info', help: 'Build information.', labelNames: ['version'], registers: [registry] })
     .labels(info.version)
     .set(1);
@@ -42,6 +50,11 @@ export function createMetrics(info: { version: string }): Metrics {
       duration.labels(outcome.tool).observe(outcome.durationMs / 1000);
     },
     setEnabledAdapters: (count) => enabled.set(count),
+    setBreaker: (platform, reason) => {
+      breaker.remove(platform, 'needs_login');
+      breaker.remove(platform, 'checkpoint');
+      if (reason !== undefined) breaker.labels(platform, reason).set(1);
+    },
     render: () => registry.metrics(),
     contentType: registry.contentType,
   };

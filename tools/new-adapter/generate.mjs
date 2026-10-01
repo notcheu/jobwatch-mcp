@@ -143,7 +143,7 @@ describeAdapterContract(adapter, {
     {
       path: `${dir}/vitest.config.ts`,
       content:
-        "import { defineConfig } from 'vitest/config';\n\nexport default defineConfig({\n  test: { include: ['src/**/*.test.ts'], environment: 'node' },\n});\n",
+        "import { defineConfig } from 'vitest/config';\n\nexport default defineConfig({\n  test: { include: ['src/**/*.test.ts'], environment: 'node', testTimeout: 10_000, hookTimeout: 10_000 },\n});\n",
     },
     { path: `${dir}/src/index.ts`, content: index },
     { path: `${dir}/src/index.test.ts`, content: test },

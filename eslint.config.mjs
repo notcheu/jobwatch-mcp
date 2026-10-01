@@ -23,6 +23,7 @@ const NODE_IO = [
   'cluster',
   'vm',
   'module',
+  'sqlite',
 ];
 const nodeIoPatterns = NODE_IO.flatMap((m) => [m, `node:${m}`]);
 
@@ -33,7 +34,6 @@ const PLAYWRIGHT = {
 const ENGINE = [
   { name: '@jobwatch/core', message: 'Adapters depend on @jobwatch/sdk only.' },
   { name: '@jobwatch/adapters', message: 'Adapters depend on @jobwatch/sdk only.' },
-  { name: 'better-sqlite3', message: 'Adapters have no database access; state belongs to core.' },
 ];
 
 export default [

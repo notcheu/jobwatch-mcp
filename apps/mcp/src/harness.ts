@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import type { InstalledAdapters } from '@jobwatch/core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { start, type RunningServer } from './server';
+import { start, type RunningServer, type StartOptions } from './server';
 import { fakeContexts, other, probe } from './fixtures';
 
 export const installedFixtures: InstalledAdapters = { probe: async () => probe, other: async () => other };
@@ -17,7 +17,11 @@ export interface TestServer {
 }
 
 /** Start the real server on free ports with the fixture adapters. `env` overrides the defaults (loopback, no auth). */
-export async function startTestServer(env: Record<string, string> = {}, enabled: string[] = ['probe', 'other']): Promise<TestServer> {
+export async function startTestServer(
+  env: Record<string, string> = {},
+  enabled: string[] = ['probe', 'other'],
+  extra: Partial<StartOptions> = {},
+): Promise<TestServer> {
   let buffer = '';
   const sink = new Writable({
     write(chunk, _encoding, done) {
@@ -31,6 +35,7 @@ export async function startTestServer(env: Record<string, string> = {}, enabled:
     JW_LISTEN_HOST: '127.0.0.1',
     JW_ADAPTERS: enabled.join(','),
     JW_DATA_DIR: '/nonexistent-never-read',
+    JW_DB_PATH: ':memory:',
     ...env,
   };
   const running = await start({
@@ -41,6 +46,7 @@ export async function startTestServer(env: Record<string, string> = {}, enabled:
     logDestination: sink,
     port: 0,
     metricsPort: 0,
+    ...extra,
   });
   const address = running.mcp.address() as AddressInfo;
   const metricsAddress = running.metrics?.address() as AddressInfo | null | undefined;

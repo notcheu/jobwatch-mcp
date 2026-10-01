@@ -8,6 +8,7 @@ export type Rule =
   | 'id'
   | 'platform'
   | 'hosts'
+  | 'rate'
   | 'tools'
   | 'tool-name'
   | 'tool-unique'
@@ -51,6 +52,22 @@ export function validateAdapter(adapter: AdapterModule): Violation[] {
   for (const host of adapter.allowedHosts) {
     if (!isBareHostname(host))
       add('hosts', 'adapter', `allowedHosts entry "${host}" must be a bare lowercase hostname (no scheme, port, path, wildcard or IP)`);
+  }
+
+  if (adapter.rate !== undefined) {
+    const { perHour, perDay } = adapter.rate;
+    if (!Number.isInteger(perHour) || !Number.isInteger(perDay) || perHour < 1 || perDay < perHour || perDay > 100_000) {
+      add('rate', 'adapter', 'rate needs integers with 1 <= perHour <= perDay <= 100000');
+    } else {
+      for (const tool of adapter.tools) {
+        if (tool.limits.cost > perHour)
+          add(
+            'rate',
+            `tool:${tool.name}`,
+            `limits.cost (${tool.limits.cost}) is above rate.perHour (${perHour}): the tool could never run`,
+          );
+      }
+    }
   }
 
   if (adapter.tools.length === 0) add('tools', 'adapter', 'an adapter must define at least one tool');

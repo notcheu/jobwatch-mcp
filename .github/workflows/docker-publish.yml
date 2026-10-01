@@ -11,6 +11,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,7 +21,10 @@ jobs:
       - run: npm ci
       # format check + lint (incl. architecture rules) + typecheck + unit/contract tests.
       # Integration tests need the browser runtime and run on the NUC only (see 11-testing-and-validation.md).
+      # The whole suite must stay under 5 minutes (CLAUDE.md). A test that spins the CPU defeats vitest's own timeouts, so
+      # this step cap is what turns a hang into a quick failure instead of a 12-minute stall.
       - run: npm run ci
+        timeout-minutes: 5
 
   build-and-push:
     needs: test

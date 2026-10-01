@@ -30,6 +30,7 @@ const envSchema = z.object({
     .regex(/^[a-z0-9][a-z0-9_.-]*$/)
     .default('jw-profile-'),
   JW_DATA_DIR: z.string().min(1).default('/data'),
+  JW_DB_PATH: z.string().min(1).optional(),
   JW_ADAPTERS: z.string().optional(),
   JW_IDLE_TTL_S: integer(10, 3600, 120),
   JW_MAX_LIFETIME_S: integer(60, 86_400, 1800),
@@ -55,6 +56,8 @@ export interface Config {
   browserImage: string;
   profileVolumePrefix: string;
   dataDir: string;
+  /** SQLite file (rate-limit usage, circuit breakers, call log). `:memory:` only in tests. */
+  dbPath: string;
   /** From JW_ADAPTERS. When defined it overrides adapters.json and the CLI refuses to edit the file. */
   adaptersFromEnv: readonly string[] | undefined;
   idleTtlS: number;
@@ -142,6 +145,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       browserImage: parsed.JW_BROWSER_IMAGE,
       profileVolumePrefix: parsed.JW_PROFILE_VOLUME_PREFIX,
       dataDir: parsed.JW_DATA_DIR,
+      dbPath: parsed.JW_DB_PATH ?? `${parsed.JW_DATA_DIR.replace(/\/+$/, '')}/jobwatch.sqlite`,
       adaptersFromEnv,
       idleTtlS: parsed.JW_IDLE_TTL_S,
       maxLifetimeS: parsed.JW_MAX_LIFETIME_S,

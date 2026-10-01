@@ -9,6 +9,7 @@ const outcome = (over: Partial<ToolOutcome> = {}): ToolOutcome => ({
   code: 'ok',
   durationMs: 250,
   requestId: 'r',
+  argsHash: 'abcdef012345',
   ...over,
 });
 
