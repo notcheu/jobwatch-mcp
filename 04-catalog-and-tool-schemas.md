@@ -1,8 +1,8 @@
 # 04 — Catalog and v1 tool schemas
 
-> **Related docs:** Load for tool definitions and schemas. Also load: `03` (Adapter SDK, `defineTool`), `07`/`08` (platform behaviour behind each tool), `13` (how the routine calls the tools). Follow a link only if the task needs it.
+> **Related docs:** Load for tool definitions and schemas. Also load: `03` (Adapter SDK, `defineHttpTool` or `defineBrowserTool`), `07`/`08` (platform behaviour behind each tool), `13` (how the routine calls the tools). Follow a link only if the task needs it.
 
-> **Source of truth.** Tool definitions are authored in code next to their handler (`defineTool`, see `03-…` "Adapter SDK"). The JSON below is the **generated, committed snapshot** (`jobwatch catalog gen`, one `catalog/` folder per adapter package, e.g. `packages/adapter-linkedin/catalog/`) that `tools/list` mirrors and that reviewers diff. Do not hand-edit it; a contract test fails on drift.
+> **Source of truth.** Tool definitions are authored in code next to their handler (`defineHttpTool` or `defineBrowserTool`, see `03-…` "Adapter SDK"). The JSON below is the **generated, committed snapshot** (`jobwatch catalog gen`, one `catalog/` folder per adapter package, e.g. `packages/adapter-linkedin/catalog/`) that `tools/list` mirrors and that reviewers diff. Do not hand-edit it; a contract test fails on drift.
 
 ## Catalog entry format (`catalog/<tool>.json`)
 ```json

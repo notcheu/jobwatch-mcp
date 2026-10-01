@@ -123,7 +123,7 @@ flowchart TB
 
 To add a platform (diagram 7 shows the packages):
 1. `nx g @jobwatch/tools:adapter <id>` creates `packages/adapter-<id>` and adds one line to `packages/adapters`.
-2. Write the tools with `defineTool`, add fixtures and a contract test using `@jobwatch/sdk/testkit`.
+2. Write the tools with `defineHttpTool` or `defineBrowserTool`, add fixtures and a contract test using `@jobwatch/sdk/testkit`.
 3. `jobwatch catalog gen`, commit the snapshot, then `jobwatch adapters enable <id>` and restart the router.
 
 Only enabled adapters reach `tools/list`. Handlers only receive `AdapterContext` (`BrowserSession`, `HttpClient`, `pace`, `log`), so no generic `navigate` or `evaluate` tool is ever exposed and the host allowlist cannot be bypassed.
@@ -262,7 +262,7 @@ flowchart TB
   subgraph Pkgs["packages/"]
     Core["core<br/>engine: registry, pipeline, limits, store,<br/>runtime, browser, obs, ops tools"]
     Installed["adapters<br/>installed map: id to import"]
-    SDK["sdk<br/>defineAdapter, defineTool, AdapterContext,<br/>testkit, SDK_API_VERSION"]
+    SDK["sdk<br/>defineAdapter, defineHttpTool/defineBrowserTool, AdapterContext,<br/>testkit, SDK_API_VERSION"]
     AL["adapter-linkedin"]
     AA["adapter-apec"]
     AT["adapter-ats"]

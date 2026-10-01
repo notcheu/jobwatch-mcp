@@ -22,7 +22,7 @@ npm workspaces + Nx (same setup as TraderTavern). Packages are private to the wo
 jobwatch-mcp/
   nx.json  package.json  package-lock.json  tsconfig.base.json  .nvmrc  eslint.config.js
   packages/
-    sdk/                @jobwatch/sdk      THE CONTRACT adapters build on: defineAdapter, defineTool, AdapterContext,
+    sdk/                @jobwatch/sdk      THE CONTRACT adapters build on: defineAdapter, defineHttpTool/defineBrowserTool, AdapterContext,
                                            BrowserSession, HttpClient, SearchLayout, error classes, SDK_API_VERSION.
                                            Subpath @jobwatch/sdk/testkit: FakeBrowserSession, contract-test runner.
                                            Light dependencies (zod only).
@@ -53,7 +53,7 @@ Dependency rules, enforced by Nx module boundaries (`@nx/enforce-module-boundari
 - `adapters` depends on every `adapter-*` and on `sdk`. `apps/*` may depend on `core`, `sdk` and `adapters`.
 - `playwright-core` is imported in exactly one file: `packages/core/src/browser/session.ts`.
 
-## Core interfaces (sketch)
+## Engine interfaces (sketch) and where the adapter contract lives
 
 ```ts
 interface RuntimeBackend {
@@ -64,46 +64,10 @@ interface RuntimeBackend {
   cdpUrl(handle: RuntimeHandle): Promise<string>;               // internal ws/http endpoint
 }
 
-// One adapter = one module that declares everything about a platform in one place (see "Adapter SDK" below).
-interface AdapterModule {
-  platform: string;                      // also the profile name and the rate-limit/breaker key
-  kind: "browser" | "http";              // browser => leased Chrome + BrowserSession; http => HttpClient, no container
-  allowedHosts: string[];                // enforced by the SDK, adapters cannot bypass it
-  sessionCheck?(s: BrowserSession): Promise<SessionStatus>;   // browser adapters: logged in / needs_login / checkpoint
-  tools: ToolDefinition[];               // built with defineTool()
-}
-
-interface ToolDefinition<I = unknown, O = unknown> {
-  name: string; title: string; description: string;           // description states read-only, no side effects
-  input: z.ZodType<I>; output: z.ZodType<O>;                  // zod; converted to JSON Schema for tools/list
-  annotations: { readOnlyHint: true; openWorldHint: boolean; idempotentHint: boolean };   // readOnlyHint is literal true
-  limits: { timeoutS: number; memory?: { highMb: number; maxMb: number }; cost: number; outputMaxBytes: number };
-  handler(args: I, ctx: AdapterContext): Promise<AdapterResult>;
-}
-
-// Everything a handler may touch. No Playwright types, no raw CDP, no Node fs/net access by convention (lint rule).
-interface AdapterContext {
-  session: BrowserSession;               // browser adapters only (kind: "browser")
-  http: HttpClient;                      // fetch wrapper: allowlist, timeout, size cap, per-host pacing
-  log: Logger;                           // redacted structured logger
-  pace(kind: "page" | "detail"): Promise<void>;   // human-like delay from the platform's pacing policy
-}
-
-// The ONLY browser surface adapters see. Implemented once over Playwright/CDP (browser/session.ts), so swapping
-// Playwright for Patchright or raw CDP never touches an adapter.
-interface BrowserSession {
-  goto(url: string, opts?: { waitFor?: string; timeoutMs: number }): Promise<void>;   // host allowlist enforced
-  evaluate<T>(script: string | (() => T), arg?: unknown): Promise<T>;                // runs in the page, result is JSON-serializable
-  waitForSelector(selector: string, timeoutMs: number): Promise<boolean>;
-  text(selector: string): Promise<string | null>;
-  url(): string;
-}
-
-interface AdapterResult {
-  data: Record<string, unknown>;  // structured payload matching the tool's output schema
-  text?: string;                  // compact markdown view (optional)
-  warnings: string[];             // e.g. "remote filter not applied; post-filtered"
-}
+// Adapter-facing types (AdapterModule, ToolDefinition, AdapterContext, BrowserSession, HttpClient, AdapterResult, errors)
+// are implemented in packages/sdk/src. THE CODE IS THE SOURCE OF TRUTH for them; read it instead of a sketch here:
+//   version.ts  errors.ts  hosts.ts  context.ts  tool.ts  adapter.ts  schema.ts  validate.ts  catalog.ts
+// Only the engine-side interface below is still a sketch until Phase 1 step 5.
 ```
 
 ## Adapter SDK (adding a platform)
@@ -111,28 +75,34 @@ Goal: a new platform is one generated package plus one registration line, with n
 
 ```ts
 // packages/adapter-apec/src/index.ts  (imports ONLY @jobwatch/sdk)
-import { defineAdapter, defineTool, z } from "@jobwatch/sdk";
+import { SDK_API_VERSION, defineAdapter, defineHttpTool, z } from "@jobwatch/sdk";
+
+const searchTool = defineHttpTool({
+  name: "apec_search", title: "APEC job search (read-only)",
+  description: "Searches APEC job offers by keywords. Read-only, no side effects.",
+  input: z.object({ keywords: z.string().max(200), page: z.number().int().min(1).max(5).default(1) }).strict(),
+  output: CardsOutput,
+  annotations: { readOnlyHint: true, openWorldHint: true, idempotentHint: true },
+  limits: { timeoutS: 60, cost: 1, outputMaxBytes: 60_000 },
+  handler: async ({ keywords, page }, { http, pace }) => {
+    const res = await http.postJson("https://www.apec.fr/cms/webservices/rechercheOffre", body(keywords, page));
+    const parsed = res.json(ApecSearchResponse);        // a changed response shape throws AdapterBroken, never an empty list
+    return { data: normalize(parsed), warnings: [] };
+  },
+});
 
 export default defineAdapter({
   id: "apec",                              // the name used by `jobwatch adapters enable apec` and in adapters.json
   displayName: "APEC",
   description: "APEC job search (read-only).",
-  sdkApi: 1,                               // SDK_API_VERSION this adapter was written against
+  sdkApi: SDK_API_VERSION,                 // the contract version this adapter was written against
   platform: "apec",                        // profile name, rate-limit and breaker key
-  kind: "http",                            // "browser" => leased Chrome + BrowserSession; "http" => HttpClient, no container
-  allowedHosts: ["www.apec.fr"],
-  tools: [
-    defineTool({
-      name: "apec_search", title: "APEC job search (read-only)", description: "...read-only, no side effects...",
-      input: z.object({ keywords: z.string().max(200), page: z.number().int().min(1).max(5).default(1) }).strict(),
-      output: CardsOutput,
-      annotations: { readOnlyHint: true, openWorldHint: true, idempotentHint: true },
-      limits: { timeoutS: 60, cost: 1, outputMaxBytes: 60_000 },
-      handler: async ({ keywords, page }, { http, pace }) => { /* POST the search API, normalize */ },
-    }),
-  ],
+  kind: "http",                            // "browser" => leased single-tab Chrome + BrowserSession; "http" => HttpClient, no container
+  allowedHosts: ["www.apec.fr"],           // bare hostnames, exact match, https only
+  tools: [searchTool],
 });
 ```
+Tools are built with `defineHttpTool` (handler context: `{ http, log, pace }`) or `defineBrowserTool` (adds `session`). The compiler rejects a browser tool inside an HTTP adapter, `readOnlyHint: false`, a handler result that does not match the `output` schema, and any use of `ctx.session` in an HTTP tool (type tests in `packages/sdk/src/validate.test.ts`).
 
 ### Registration and enable / disable
 1. **Installed**: `packages/adapters/src/index.ts` is the one place that lists adapter packages:
@@ -165,6 +135,9 @@ The CLI ships inside the router image too, so on the host: `docker compose exec 
 - **Sandboxed surface.** Handlers get only `AdapterContext` (`session`, `http`, `log`, `pace`). `BrowserSession` and `HttpClient` enforce `allowedHosts`; no click, type or generic navigation is ever exposed; handler results are validated against the tool's `output` schema before `shapeOutput`.
 - **Lifecycle is not the adapter's job.** Leasing, the single tab (`06`), timeouts, rate limiting, breaker, memory policy and error mapping stay in core. An adapter signals problems by throwing `SessionInvalid`, `Checkpoint` or `AdapterBroken`.
 - **Honest limit:** adapters run in-process, so an adapter is trusted code. The SDK narrows what it is handed and lint forbids dangerous imports, but it is not a sandbox. Only adapters from this repository are installed; loading external packages by name is deliberately not supported (`JW_EXTRA_ADAPTERS` rejected, 2026-10-01).
+- **Entry points of `@jobwatch/sdk`:** `.` (the contract; imports nothing from Node), `./testkit` (fakes and the contract runner; tests only), `./catalog-fs` (read/write catalog snapshots; Node only, used by the CLI and the contract test).
+- **Implemented checks (`validateAdapter`, a pure function the registry, `doctor` and the contract test all call):** `sdk-api`, `id`, `platform`, `hosts`, `tools`, `tool-name`, `tool-unique`, `read-only`, `description` (title 1-80, description 20-600 characters and the word "read-only"), `limits` (timeout 1-300 s, cost 1-100, output 1 KB-256 KB, memory `128 <= high < max <= 4096`), `schema` (must be expressible as JSON Schema), `schema-strict` (every object `additionalProperties: false`), `schema-bounded` (every string `maxLength` unless enum/const, every array `maxItems`, including strings hidden in unions and nullable values). Cross-adapter checks (duplicate tool names or ids across adapters) belong to the registry in core.
+- **Host allowlist (`isUrlAllowed` / `assertUrlAllowed`):** https only, no credentials in the URL, default port only, hostname must EQUAL a listed host (no subdomain or suffix matching, no IP literals). Core's real `BrowserSession` and `HttpClient` must call it on every navigation and request, including redirects; the fakes already do.
 - **Testable offline.** `@jobwatch/sdk/testkit` provides `FakeBrowserSession` (replays saved, **logged-out or synthetic** HTML from the adapter's `fixtures/`, never real logged-in pages), a fake `HttpClient`, and `runAdapterContract(adapter)` which checks the startup rules, the snapshot, and every tool's output against its schema.
 
 Checklist for a new adapter: `nx g @jobwatch/tools:adapter <id>`; write tools, fixtures and tests; `jobwatch catalog gen`; the generator already added the line to `packages/adapters`; add its pacing and budget to `07-…`/`08-…`; for a browser adapter, add its profile name to the login CLI; `jobwatch adapters enable <id>` on the host.
