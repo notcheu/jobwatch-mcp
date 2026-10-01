@@ -6,7 +6,8 @@ import http from "node:http";
 import { chromium } from "playwright-core";
 
 const IP = process.env.BROWSER_IP;
-const SEARCH = "https://www.linkedin.com/jobs/search-results/?keywords=Staff%20Frontend%20Engineer%20OR%20Lead%20Frontend%20OR%20Frontend%20Tech%20Lead&geoId=104246759&distance=0.0&f_TPR=r86400";
+// 2026-10-01: /jobs/search-results/ returns "No results found"; the classic /jobs/search/ works. Past-week filter so results exist.
+const SEARCH = "https://www.linkedin.com/jobs/search/?keywords=Frontend%20Tech%20Lead&geoId=104246759&distance=0&f_TPR=r604800";
 const out = (k, v) => console.log(`${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pace = () => sleep(6000 + Math.floor(Math.random() * 5000)); // human-like gap between page loads
@@ -47,7 +48,9 @@ const detailProbe = () => page.evaluate(() => {
   const len = (sel) => { const e = document.querySelector(sel); return e ? (e.textContent || "").trim().length : null; };
   return {
     splitDesc: len("[componentKey^=JobDetails_AboutTheJob_] [data-testid=expandable-text-box]"),
-    legacyDesc: len(".jobs-description__content"),
+    legacyDesc: len(".jobs-description__content"), descText: len(".jobs-description-content__text"), boxHtml: len(".jobs-box__html-content"), jobDetailsId: len("#job-details"),
+    aboutHeading: !![...document.querySelectorAll("h2")].find((h) => /about the job/i.test(h.textContent || "")),
+    detailWrapper: !!document.querySelector(".jobs-search__job-details--wrapper, .jobs-details"), unifiedTopCard: !!document.querySelector("[class*=job-details-jobs-unified-top-card]"),
     publicDesc: len(".show-more-less-html__markup"),
     anyAboutBox: !!document.querySelector("[componentKey^=JobDetails_AboutTheJob_]"),
     h1: !!document.querySelector("h1"), applyButtonsPresent: !!document.querySelector("[componentKey*=Apply], button[aria-label*=Apply]"),
@@ -60,41 +63,34 @@ await stage("jobs_home", "https://www.linkedin.com/jobs/", async () => {
   out("  markers", await page.evaluate(() => ({ nav: !!document.querySelector("nav, header"), htmlLang: document.documentElement.lang, title: document.title.replace(/\d+/g, "#").slice(0, 40) })));
 });
 await stage("search", SEARCH, async () => {
-  await page.waitForSelector("[componentKey=SearchResultsMainContent]", { timeout: 15000 }).catch(() => {});
-  await sleep(2000);
-  const r = await page.evaluate(() => {
-    const els = [...document.querySelectorAll('[componentKey^="job-card-component-ref-"]')];
-    const seen = new Set(), cards = [];
-    for (const e of els) { const id = e.getAttribute("componentKey").split("-").pop(); if (!seen.has(id)) { seen.add(id); cards.push({ id, lines: e.innerText.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 3) }); } }
-    return { container: !!document.querySelector("[componentKey=SearchResultsMainContent]"), cardCount: cards.length, ids: cards.map((c) => c.id).slice(0, 5), sample: cards.slice(0, 3),
-      detailPane: !!document.querySelector("[componentKey^=JobDetails_AboutTheJob_]"),
-      noResultsText: /No matching jobs|Aucun/i.test(document.body.innerText.slice(0, 3000)) };
+  await page.waitForSelector("li[data-occludable-job-id], [componentKey^=job-card-component-ref-]", { timeout: 15000 }).catch(() => {});
+  const collect = () => page.evaluate(() => {
+    const seen = new Map();
+    for (const e of document.querySelectorAll("li[data-occludable-job-id]")) { const id = e.getAttribute("data-occludable-job-id"); if (id && !seen.has(id)) seen.set(id, e.innerText.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 3)); }
+    for (const e of document.querySelectorAll('[componentKey^="job-card-component-ref-"]')) { const id = e.getAttribute("componentKey").split("-").pop(); if (!seen.has(id)) seen.set(id, e.innerText.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 3)); }
+    return { ids: [...seen.keys()], sample: [...seen.entries()].slice(0, 3).map(([id, lines]) => ({ id, lines })),
+      legacy: document.querySelectorAll("li[data-occludable-job-id]").length, newLayout: document.querySelectorAll("[componentKey^=job-card-component-ref-]").length,
+      container: { newMain: !!document.querySelector("[componentKey=SearchResultsMainContent]"), scaffoldList: !!document.querySelector(".scaffold-layout__list") },
+      viewAnchors: document.querySelectorAll('a[href*="/jobs/view/"]').length, pagination: !!document.querySelector(".jobs-search-pagination"),
+      noResults: /no results found/i.test(document.body.innerText.slice(0, 3000)) };
   });
-  ids = r.ids;
-  out("  search", r);
-  if (r.cardCount === 0) {
-    // Selector diagnostics (attribute NAMES/VALUES of markers only, never text): which markers does the page actually have?
-    out("  DIAG markers", await page.evaluate(() => {
-      const norm = (s) => (s ?? "(null)").replace(/\d+/g, "#").slice(0, 60);
-      const keys = {}; document.querySelectorAll("[componentKey]").forEach((e) => { const k = norm(e.getAttribute("componentKey") ?? e.getAttribute("componentkey")); keys[k] = (keys[k] || 0) + 1; });
-      const testids = {}; document.querySelectorAll("[data-testid]").forEach((e) => { const k = norm(e.getAttribute("data-testid")); testids[k] = (testids[k] || 0) + 1; });
-      return {
-        componentKeys: Object.entries(keys).sort((a, b) => b[1] - a[1]).slice(0, 25),
-        testIds: Object.entries(testids).sort((a, b) => b[1] - a[1]).slice(0, 15),
-        jobViewAnchors: document.querySelectorAll('a[href*="/jobs/view/"]').length,
-        currentJobIdAnchors: document.querySelectorAll('a[href*="currentJobId"]').length,
-        occludable: document.querySelectorAll("[data-occludable-job-id]").length, dataJobId: document.querySelectorAll("[data-job-id]").length,
-        listItems: document.querySelectorAll("li").length, iframes: document.querySelectorAll("iframe").length, bodyChildren: document.body.children.length,
-        readyState: document.readyState, scrollHeight: document.documentElement.scrollHeight,
-      };
-    }));
+  const first = await collect();
+  out("  search before scrolling", { cards: first.ids.length, legacy: first.legacy, newLayout: first.newLayout, container: first.container, viewAnchors: first.viewAnchors, pagination: first.pagination, noResults: first.noResults });
+  out("  first 3 cards (public job info)", first.sample);
+  // Gentle, human-like scrolling of the results list (lazy loading), 3 steps.
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => { const el = document.querySelector(".scaffold-layout__list") ?? document.scrollingElement; (el.scrollBy ? el : window).scrollBy(0, 900); });
+    await sleep(1800);
   }
+  const after = await collect();
+  ids = after.ids;
+  out("  search after 3 scroll steps", { cards: after.ids.length });
   out("  detail pane on the search page itself", await detailProbe());
 });
 if (!aborted && WANT.includes("view_1") && ids.length < 2) { out("!!! only " + ids.length + " card ids found; cannot run detail stages", "adapter_broken-like (V8)"); aborted = true; }
-await stage("view_1", `https://www.linkedin.com/jobs/view/${ids[0]}`, async () => { await page.waitForSelector("h1, [componentKey^=JobDetails_AboutTheJob_]", { timeout: 12000 }).catch(() => {}); out("  detail", await detailProbe()); });
-await stage("view_2", `https://www.linkedin.com/jobs/view/${ids[1]}`, async () => { await page.waitForSelector("h1, [componentKey^=JobDetails_AboutTheJob_]", { timeout: 12000 }).catch(() => {}); out("  detail", await detailProbe()); });
-await stage("split_view_1", `${SEARCH}&currentJobId=${ids[0]}`, async () => { await page.waitForSelector("[componentKey^=JobDetails_AboutTheJob_]", { timeout: 15000 }).catch(() => {}); out("  detail", await detailProbe()); });
+await stage("view_1", `https://www.linkedin.com/jobs/view/${ids[0]}`, async () => { await page.waitForSelector("h1, #job-details, .jobs-description__content, [componentKey^=JobDetails_AboutTheJob_]", { timeout: 12000 }).catch(() => {}); out("  detail", await detailProbe()); });
+await stage("view_2", `https://www.linkedin.com/jobs/view/${ids[1]}`, async () => { await page.waitForSelector("h1, #job-details, .jobs-description__content, [componentKey^=JobDetails_AboutTheJob_]", { timeout: 12000 }).catch(() => {}); out("  detail", await detailProbe()); });
+await stage("split_view_1", `${SEARCH}&currentJobId=${ids[0]}`, async () => { await page.waitForSelector("#job-details, .jobs-description__content, [componentKey^=JobDetails_AboutTheJob_]", { timeout: 15000 }).catch(() => {}); out("  detail", await detailProbe()); });
 
 await page.close().catch(() => {});
 const s = await browser.newBrowserCDPSession();

@@ -7,7 +7,12 @@ The proven extraction logic is `../linkedin-extract.js` (and the procedure in `.
 ## Scope (read-only)
 Search results pages and job details pages only. No messaging, no profile views, no Easy Apply, no saving, no following.
 
-## URLs
+## URL and DOM drift found on 2026-10-01 (spike S5, read in Matthieu's own logged-in Chrome and in the container)
+- **`/jobs/search-results/?keywords=…&geoId=…` now answers "No results found" for every query tried** (the routine's boolean `OR` keywords with and without `f_TPR`, and a plain `Frontend Tech Lead` in Paris). It served no `SearchResultsMainContent`, no `job-card-component-ref-*` cards and no `/jobs/view/` links; the page showed a `semanticSearchBox` and `JobsSearchFilters`. The selectors below that depend on it are stale. (It worked on 2026-09-30, so this is probably a LinkedIn UI rollout; re-test before relying on either.)
+- **`/jobs/search/?keywords=…&geoId=…&distance=0` works** and shows results with the **classic markup**: `h1`/`h2` "Jobs search", job cards as `li[data-occludable-job-id]` (7 initially, more after scrolling; 7 unique ids, each with an `a[href*="/jobs/view/"]` and 3 text lines title / company / location), a list container `.scaffold-layout__list`, pagination `.jobs-search-pagination`, a promoted label in the list. LinkedIn adds `currentJobId=<first id>` to the URL on load. Description selectors for this variant are still unconfirmed (the detail wrapper existed but the description box was empty at read time).
+- Consequence: the adapter must not assume one layout. Detect which variant loaded (`SearchResultsMainContent` vs `.scaffold-layout__list` / `li[data-occludable-job-id]`), prefer `/jobs/search/`, and map "No results found" **on a search that should have results** to `adapter_broken` (not an empty list) once a known-good query has returned results (keep a canary query). Open question for Matthieu: is the routine's boolean `OR` query still valid on `/jobs/search/`?
+
+## URLs (as documented before the 2026-10-01 drift; re-verify)
 - Search results: `https://www.linkedin.com/jobs/search-results/?keywords=<urlencoded>&geoId=<id>&distance=0.0[&f_TPR=r86400][&start=<N>]`
   - `geoId=104246759` — the Paris / Île-de-France search used by the routine; `geoId=105015875` — France.
   - `f_TPR=r86400` = posted in the last 24 h. Omit for the Wednesday sweep and for `posted_within=any`.
