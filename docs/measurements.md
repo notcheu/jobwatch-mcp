@@ -1,5 +1,7 @@
 # Measurements (Phase 0)
 
+> The `spikes/` directory (Phase 0 scripts and prototypes) was removed from the tree after Phase 1. Every `spikes/...` path below can be recovered from git history: `git show dddea88:spikes/<path>`.
+
 ## Host facts (Nuc-desktop), recorded 2026-10-01
 | Item | Value | Note |
 |---|---|---|

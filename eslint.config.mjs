@@ -37,7 +37,7 @@ const ENGINE = [
 ];
 
 export default [
-  { ignores: ['**/dist', '**/node_modules', '**/.nx', '**/coverage', '**/tmp', 'spikes/**', 'docs/**', 'images/**', 'deploy/**'] },
+  { ignores: ['**/dist', '**/node_modules', '**/.nx', '**/coverage', '**/tmp', 'docs/**', 'images/**', 'deploy/**'] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   ...nx.configs['flat/base'],
