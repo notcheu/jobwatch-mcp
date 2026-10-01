@@ -6,7 +6,7 @@
 import { Writable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createLogger } from '../logging';
-import { DockerCliBackend } from '../runtime/dockerCli';
+import { DockerCliBackend, loginRunArgs, spawnDocker } from '../runtime/dockerCli';
 import { RuntimeManager } from '../runtime/manager';
 import type { RuntimeHandle, RuntimeSpec } from '../runtime/backend';
 import { createBrowserHooks, waitForDevTools } from './hooks';
@@ -232,5 +232,38 @@ describe.skipIf(!enabled)('runtime manager with the real backend', () => {
     );
     expect(await manager.reapOrphans()).toContain('jw-it-orphan');
     expect(await backend.listManaged()).not.toContain('jw-it-orphan');
+  });
+});
+
+describe.skipIf(!enabled)('manual login container', () => {
+  const name = 'jw-login-it';
+  const docker = (args: string[]) => spawnDocker(args, { timeoutMs: 60_000 });
+  afterAll(async () => {
+    await docker(['rm', '-f', name]);
+  });
+
+  it('serves noVNC behind the password, published on loopback only', async () => {
+    const login: RuntimeSpec = {
+      ...spec,
+      name,
+      profileVolume: 'jw-it-login-profile',
+      network: 'bridge',
+      env: { ...spec.env, MODE: 'login', VNC_PASSWORD: 'it-pass1' },
+    };
+    const started = await docker(loginRunArgs(login, 16_080));
+    expect(started.code, started.stderr).toBe(0);
+    const published = await docker(['port', name, '6080/tcp']);
+    expect(published.stdout.trim()).toMatch(/^127\.0\.0\.1:16080$/);
+    let status = '';
+    for (let attempt = 0; attempt < 40 && status !== '200'; attempt += 1) {
+      status = (
+        await docker(['exec', name, 'curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', 'http://127.0.0.1:6080/vnc.html'])
+      ).stdout.trim();
+      if (status !== '200') await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    expect(status).toBe('200');
+    const label = await docker(['inspect', '-f', '{{json .Config.Labels}}', name]);
+    expect(label.stdout).toContain('jobwatch.login');
+    expect(label.stdout).not.toContain('jobwatch.managed');
   });
 });

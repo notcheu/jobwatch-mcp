@@ -8,7 +8,10 @@ import {
   adaptersFilePath,
 } from '@jobwatch/core';
 import { describeInstalled, type InstalledEntry } from '@jobwatch/adapters';
-import type { InstalledAdapters } from '@jobwatch/core';
+import type { DockerRunner, InstalledAdapters } from '@jobwatch/core';
+import { catalog } from './catalog';
+import { doctor } from './doctor';
+import { login } from './login';
 
 export interface Io {
   out: (text: string) => void;
@@ -20,6 +23,10 @@ export interface Deps {
   env: Readonly<Record<string, string | undefined>>;
   installed: InstalledAdapters;
   version: string;
+  /** Runs `docker <args>`; commands that need the daemon (login, doctor) fail cleanly without it. */
+  docker?: DockerRunner;
+  /** Test seam for the one-time VNC password of `login`. */
+  randomPassword?: () => string;
 }
 
 const USAGE = `jobwatch: manage which adapters the router plugs in
@@ -28,6 +35,10 @@ Usage:
   jobwatch adapters list [--json]      every installed adapter and whether it is enabled
   jobwatch adapters enable <id...>     enable adapters (written to adapters.json)
   jobwatch adapters disable <id...>    disable adapters
+  jobwatch login <platform>            start a visible browser to sign in by hand (noVNC on loopback)
+  jobwatch login <platform> --done     stop it again
+  jobwatch catalog [--all]             print the static tool catalog of the enabled adapters (JSON lines)
+  jobwatch doctor                      check configuration, data directory, Docker, image, network, profiles
   jobwatch --help | --version
 
 Settings (environment): JW_DATA_DIR (default /data) holds adapters.json;
@@ -141,6 +152,17 @@ export async function run(argv: readonly string[], deps: Deps): Promise<number> 
       deps.io.err(`Unknown adapters command: ${subcommand ?? '(none)'}\n\n${USAGE}`);
       return EXIT.usage;
     }
+    if (command === 'login')
+      return await login(
+        deps,
+        [subcommand, ...rest].filter((part): part is string => part !== undefined),
+      );
+    if (command === 'catalog')
+      return await catalog(
+        deps,
+        [subcommand, ...rest].filter((part): part is string => part !== undefined),
+      );
+    if (command === 'doctor') return await doctor(deps);
     deps.io.err(`Unknown command: ${command}\n\n${USAGE}`);
     return EXIT.usage;
   } catch (error) {

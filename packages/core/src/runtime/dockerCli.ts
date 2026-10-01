@@ -118,6 +118,26 @@ export function runArgs(spec: RuntimeSpec): string[] {
   return args;
 }
 
+export const LOGIN_LABEL = 'jobwatch.login=true';
+export const LOGIN_PORT = 6080;
+
+/**
+ * `docker run` arguments of the manual-login container (05-browser-runtime.md, "Login procedure"): the same hardening as a
+ * run container plus noVNC published on the host's loopback ONLY, and a label of its own so the orphan reaper (which only
+ * knows `jobwatch.managed`) never kills a login in progress. The caller puts `MODE=login` and `VNC_PASSWORD` in `spec.env`.
+ */
+export function loginRunArgs(spec: RuntimeSpec, hostPort: number): string[] {
+  if (!Number.isInteger(hostPort) || hostPort < 1024 || hostPort > 65_535)
+    throw new BackendError('Refusing to run docker: invalid login port');
+  const args = runArgs(spec);
+  const label = args.indexOf(MANAGED_LABEL);
+  if (label === -1) throw new BackendError('internal: managed label missing from the docker arguments');
+  args[label] = LOGIN_LABEL;
+  const end = args.lastIndexOf('--');
+  args.splice(end, 0, '-p', `127.0.0.1:${hostPort}:${LOGIN_PORT}`);
+  return args;
+}
+
 /** Reads `memory.current - inactive_file` inside the container: the working set `docker stats` shows (06). */
 const WORKING_SET_SCRIPT =
   "c=$(cat /sys/fs/cgroup/memory.current); i=$(awk '/^inactive_file /{print $2}' /sys/fs/cgroup/memory.stat); echo $((c-i))";

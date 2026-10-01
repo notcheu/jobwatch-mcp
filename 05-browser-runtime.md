@@ -96,9 +96,9 @@ After a runtime becomes ready, on `about:blank` evaluate and compare to a baseli
 `navigator.webdriver` (must be false/undefined), `navigator.userAgent` (no `HeadlessChrome`), `navigator.languages`, `navigator.plugins.length`, `window.chrome` present, `Notification.permission`, `Intl.DateTimeFormat().resolvedOptions().timeZone`, screen size, presence of `__playwright*`/`__pw*` globals (must be absent). On failure: log `fingerprint_mismatch` with the diff, return `adapter_broken`-like warning, and refuse LinkedIn calls until fixed (configurable).
 
 ## Login procedure (MODE=login)
-1. `jobwatch login linkedin` (CLI of the router or a script) starts the runtime in `login` mode with the platform profile, prints an SSH-tunnel command.
+1. `docker compose exec router jobwatch login linkedin` starts a `jw-login-linkedin` container in `login` mode on the platform profile, with a random 8-character VNC password (x11vnc reads only 8), on Docker's default `bridge` network (an internal network cannot publish ports and the person signing in needs the internet), noVNC published on the host's `127.0.0.1:6080` only (`--port` changes it), label `jobwatch.login` so the orphan reaper leaves it alone. It refuses while the router's own browser is running on the same profile. It prints the SSH-tunnel command, the URL and the password.
 2. From the laptop: `ssh -L 6080:localhost:6080 <home-host>`, open `http://localhost:6080/vnc.html`, log in to LinkedIn manually (handle captcha/phone confirmation), browse once to a jobs page.
-3. `jobwatch login --done` stops the runtime gracefully; the router runs `session_status` in `run` mode to confirm.
+3. `jobwatch login linkedin --done` stops it gracefully; the router runs `session_status` in `run` mode to confirm.
 The login viewer is never exposed publicly and never started by a tool call.
 
 ## Image and profile maintenance

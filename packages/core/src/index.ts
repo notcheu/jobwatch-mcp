@@ -33,7 +33,7 @@ export { connectBrowser } from './browser/session';
 export type { BrowserConnection, ConnectBrowser } from './browser/session';
 export { BackendError } from './runtime/backend';
 export type { ContainerState, RuntimeBackend, RuntimeHandle, RuntimeSpec } from './runtime/backend';
-export { DockerCliBackend, MANAGED_LABEL, runArgs, spawnDocker } from './runtime/dockerCli';
+export { DockerCliBackend, LOGIN_LABEL, LOGIN_PORT, MANAGED_LABEL, loginRunArgs, runArgs, spawnDocker } from './runtime/dockerCli';
 export type { CliResult, DockerRunner } from './runtime/dockerCli';
 export { RuntimeManager } from './runtime/manager';
 export type {
