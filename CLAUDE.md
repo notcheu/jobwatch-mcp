@@ -3,7 +3,7 @@
 ## Overview
 Self-hosted **MCP orchestrator** ("jobwatch-mcp") running on Matthieu's home Ubuntu machine (limited RAM). It exposes a small set of **read-only, task-level MCP tools** (LinkedIn search/job details, APEC, WTTJ, public ATS job boards…) to Claude over a **public HTTPS endpoint protected by OAuth**. Browser-based tools run in an **on-demand, memory-capped, headful Chrome container** (one shared image, one persistent profile per platform), spawned on the first call and stopped after an idle grace period. First consumer: the daily job-search routine in `/Users/mnogueron/Documents/Private/ClaudeTasks/JobSearch` (`00-orchestrator.md` … `06-mail-template.md`, `linkedin-extract.js`).
 
-**Status:** design is complete, no code yet. Next step is Phase 0 (spikes) in `12-roadmap.md`.
+**Status (2026-10-01):** Phase 0 (spikes) and Phase 1 (core, MCP server, CLI, browser layer, LinkedIn adapter, soak runner) are merged to `main`; CI builds and pushes the multi-arch router image. **Not yet verified on the NUC:** the deployed stack, Google Chrome on amd64, a manual LinkedIn login, the live LinkedIn adapter and the 6 h soak. The LinkedIn adapter is installed but disabled, and its rate budget awaits Matthieu's approval. Next: the NUC validation in `12-roadmap.md` (Phase 1 exit, then Phase 2).
 
 ## Architecture and stack
 Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.noguetith.fr`; no tunnel) → one published host port → **OAuth front** (babs/mcp-auth-proxy + Redis, Google sign-in limited to Matthieu) → **router** (private Docker network) → adapters → Chrome containers (spawned via the **rootless Docker** socket) or plain HTTP fetch. Diagrams: `16-architecture-diagrams.md`.
@@ -39,7 +39,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.nog
 - CI secrets (`REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`) live only in GitHub secrets; the host's registry login lives only in the `mcpuser` user's `~/.docker/config.json`.
 
 ## Commands
-Use Node 26 (`nvm use`, `.nvmrc`). Marked "(planned)" = not implemented yet; the rest runs today.
+Use Node 26 (`nvm use`, `.nvmrc`). Everything below runs today.
 ```
 npm ci                      # install from lockfile (install scripts are denied by default via package.json "allowScripts")
 npm run lint                # nx run-many -t lint   (includes the architecture rules: module boundaries, restricted imports)
@@ -52,7 +52,7 @@ npm run build               # nx run-many -t build: bundle apps/mcp and apps/cli
 npm run test:integration    # builds the browser image and drives a REAL browser container (needs docker; never in CI): tests/integration/run.sh
 npm run catalog:gen         # regenerate every adapter's catalog/ snapshot (runs the adapter contract tests in update mode); commit the result
 npm run new:adapter -- <id> [--kind http|browser]   # scaffold a new adapter package, register it in packages/adapters, first snapshot
-npm run jobwatch -- adapters list|enable|disable <id...>   # which installed adapters the router plugs in (JW_DATA_DIR=./data for local use)
+npm run jobwatch -- adapters list|enable|disable <id...> | login <platform> [--done] | catalog | doctor   # which installed adapters the router plugs in (JW_DATA_DIR=./data for local use)
 docker build -t jobwatch-router:dev .   # the router image (multi-arch in CI)
 docker compose -f deploy/compose.yml --env-file deploy/.env up -d      # as mcpuser
 ```
@@ -62,7 +62,7 @@ Pinned versions: TypeScript 5.9.3 on purpose (`typescript-eslint` 8.71 supports 
 - **Docs vs code:** until code exists, the numbered docs are the spec. Once code exists, code wins for behaviour; any change to behaviour or to a decision must update the affected doc (and the diagram in `16-…` if it shows it) in the same commit. A `VERIFY:` tag marks an assumption that is **not** a fact: verify it (Phase 0 or when implementing) and record the outcome in `14-risks-and-open-questions.md` and the affected file.
 - **Generated, never hand-edited:** `packages/adapter-*/catalog/*.json`.
 - **Layout:** see `03-router-spec.md` ("Repo layout: Nx monorepo"). Module-boundary rules are lint errors: adapters import only `@jobwatch/sdk`; only `packages/core/src/browser/session.ts` imports `playwright-core`.
-- **Seed code:** copy the proven `linkedin-extract.js` from the routine folder into `packages/adapter-linkedin/src/extract.js` as the starting point for the LinkedIn adapter.
+- **LinkedIn extraction:** the proven logic of `linkedin-extract.js` now lives in `packages/adapter-linkedin/src/{extract,parse}.ts`.
 
 ## Gotchas (details in the linked docs)
 - **CI image must be built with `provenance: false`**, otherwise Watchtower cannot resolve the new digest (`10-…`).
