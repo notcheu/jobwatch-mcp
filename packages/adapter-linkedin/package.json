@@ -1,14 +1,13 @@
 {
-  "name": "@jobwatch/adapters",
+  "name": "@jobwatch/adapter-linkedin",
   "version": "0.0.0",
   "private": true,
-  "description": "The installed adapters: the one place that lists adapter packages. Used by the server and the CLI.",
+  "description": "LinkedIn adapter (read-only).",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@jobwatch/adapter-linkedin": "*",
     "@jobwatch/sdk": "*"
   },
   "scripts": {
@@ -18,7 +17,7 @@
   },
   "nx": {
     "tags": [
-      "type:adapters"
+      "type:adapter"
     ]
   }
 }
