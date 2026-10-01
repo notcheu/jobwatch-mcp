@@ -24,9 +24,10 @@ const classify = async () => {
   if (/^\/(login|authwall|uas\/login|signup)/.test(path) || loginForm) return { path, state: "needs_login" };
   return { path, state: "ok" };
 };
+const WANT = (process.env.STAGES ?? "jobs_home,search,view_1,view_2,split_view_1").split(",");
 let aborted = false;
 async function stage(name, url, fn) {
-  if (aborted) return;
+  if (aborted || !WANT.includes(name)) return;
   console.log(`@@STAGE ${name} ${Date.now()}`);
   const t0 = Date.now(); let err = null;
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) => { err = String(e.message).split("\n")[0]; });
@@ -70,7 +71,7 @@ await stage("search", SEARCH, async () => {
   out("  search", r);
   out("  detail pane on the search page itself", await detailProbe());
 });
-if (!aborted && ids.length < 2) { out("!!! only " + ids.length + " card ids found; cannot run detail stages", "adapter_broken-like (V8)"); aborted = true; }
+if (!aborted && WANT.includes("view_1") && ids.length < 2) { out("!!! only " + ids.length + " card ids found; cannot run detail stages", "adapter_broken-like (V8)"); aborted = true; }
 await stage("view_1", `https://www.linkedin.com/jobs/view/${ids[0]}`, async () => { await page.waitForSelector("h1, [componentKey^=JobDetails_AboutTheJob_]", { timeout: 12000 }).catch(() => {}); out("  detail", await detailProbe()); });
 await stage("view_2", `https://www.linkedin.com/jobs/view/${ids[1]}`, async () => { await page.waitForSelector("h1, [componentKey^=JobDetails_AboutTheJob_]", { timeout: 12000 }).catch(() => {}); out("  detail", await detailProbe()); });
 await stage("split_view_1", `${SEARCH}&currentJobId=${ids[0]}`, async () => { await page.waitForSelector("[componentKey^=JobDetails_AboutTheJob_]", { timeout: 15000 }).catch(() => {}); out("  detail", await detailProbe()); });

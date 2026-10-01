@@ -16,6 +16,7 @@ CHROME_LANG=${CHROME_LANG:-fr-FR}; MEM_MAX=${MEM_MAX:-1100m}
 NET=jw-s4-net; BR=jw-s4-browser; PR=jw-s4-probe; PROFILE=jw-profile-linkedin
 cmd=${1:-}
 echo "ACCEPT_LANGS: ${ACCEPT_LANGS:-<not set: .env.local missing or empty, image default is used>}"
+echo "MEM_MAX=$MEM_MAX CHROME_EXTRA=${CHROME_EXTRA:-<none>} STAGES=${STAGES:-<all>}"
 if ! info=$(docker info 2>&1) || ! grep -qi rootless <<<"$info"; then echo "ERROR: not the rootless daemon (DOCKER_HOST=${DOCKER_HOST:-<unset>})"; exit 1; fi
 # Graceful stop first (SIGTERM, 25 s) so Chrome flushes cookies, e.g. when you press Ctrl+C during login.
 cleanup() { docker stop -t 25 "$BR" >/dev/null 2>&1 || true; docker rm -f "$BR" "$PR" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true; }
@@ -30,9 +31,9 @@ prepare() {
 start_browser() { # $1 = mode, rest = extra docker args
   local mode=$1; shift
   docker run -d --name "$BR" --init --network "$NET" --memory "$MEM_MAX" --memory-swap "$MEM_MAX" --pids-limit 512 --shm-size 256m --cpus 1.5 \
-    --cap-drop ALL --security-opt no-new-privileges --security-opt "seccomp=$SECCOMP" --read-only \
+    --cap-drop ALL --security-opt no-new-privileges --security-opt "seccomp=$SECCOMP" --read-only --oom-score-adj 500 \
     --tmpfs /tmp:rw,size=256m --tmpfs /run:rw,size=16m --tmpfs /home/chrome:rw,size=64m,uid=1000,gid=1000 \
-    -v "$PROFILE":/profile -e MODE="$mode" -e CHROME_LANG="$CHROME_LANG" ${ACCEPT_LANGS:+-e ACCEPT_LANGS="$ACCEPT_LANGS"} "$@" jw-spike-chrome >/dev/null
+    -v "$PROFILE":/profile -e MODE="$mode" -e CHROME_LANG="$CHROME_LANG" ${ACCEPT_LANGS:+-e ACCEPT_LANGS="$ACCEPT_LANGS"} ${CHROME_EXTRA:+-e CHROME_EXTRA="$CHROME_EXTRA"} "$@" jw-spike-chrome >/dev/null
 }
 browser_ip() { docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$BR"; }
 stop_graceful() { docker stop -t 25 "$BR" >/dev/null 2>&1 || true; echo "browser stopped, exit code $(docker inspect -f '{{.State.ExitCode}}' "$BR" 2>/dev/null || echo '?')"; }
@@ -66,16 +67,16 @@ check|persist|pages)
     start_browser run
     IP=$(browser_ip); samples=$(mktemp); probeout=$(mktemp); : >"$samples"
     # One sample every 2 s: "<epoch ms> <memory.peak> <working set>". Working set = memory.current - inactive_file (what `docker stats` shows).
-    ( while line=$(docker exec "$BR" sh -c 'p=$(cat /sys/fs/cgroup/memory.peak); c=$(cat /sys/fs/cgroup/memory.current); i=$(awk "/^inactive_file /{print \$2}" /sys/fs/cgroup/memory.stat); echo "$p $((c-i))"' 2>/dev/null); do
+    ( while line=$(docker exec "$BR" sh -c 'p=$(cat /sys/fs/cgroup/memory.peak); c=$(cat /sys/fs/cgroup/memory.current); i=$(awk "/^inactive_file /{print \$2}" /sys/fs/cgroup/memory.stat); o=$(awk "/^oom_kill /{print \$2}" /sys/fs/cgroup/memory.events); echo "$p $((c-i)) $o"' 2>/dev/null); do
         echo "$(date +%s%3N) $line" >>"$samples"; sleep 2; done ) &
     sampler=$!
     timeout 240 docker run --rm --init --name "$PR" --network "$NET" --read-only --tmpfs /tmp:rw,size=64m,uid=1000,gid=1000 \
-      --cap-drop ALL --security-opt no-new-privileges -e BROWSER_IP="$IP" "$PROBE_IMG" | tee "$probeout" | grep -v '^@@' || echo "(probe exit ${PIPESTATUS[0]} : 2 means not logged in / checkpoint / unknown state)"
+      --cap-drop ALL --security-opt no-new-privileges -e BROWSER_IP="$IP" ${STAGES:+-e STAGES="$STAGES"} "$PROBE_IMG" | tee "$probeout" | grep -v '^@@' || echo "(probe exit ${PIPESTATUS[0]} : 2 means not logged in / checkpoint / unknown state)"
     for _ in $(seq 1 25); do [ "$(docker inspect -f '{{.State.Running}}' "$BR")" = false ] && break; sleep 1; done
     kill "$sampler" 2>/dev/null || true
     echo "browser running=$(docker inspect -f '{{.State.Running}}' "$BR") exit=$(docker inspect -f '{{.State.ExitCode}}' "$BR")"
     mb() { echo $(( $1 / 1024 / 1024 )); }
-    echo "memory (cap $MEM_MAX): memory.peak=$(mb "$(awk 'BEGIN{m=0} $2>m{m=$2} END{print m}' "$samples")") MB, max working set=$(mb "$(awk 'BEGIN{m=0} $3>m{m=$3} END{print m}' "$samples")") MB"
+    echo "memory (cap $MEM_MAX): memory.peak=$(mb "$(awk 'BEGIN{m=0} $2>m{m=$2} END{print m}' "$samples")") MB, max working set=$(mb "$(awk 'BEGIN{m=0} $3>m{m=$3} END{print m}' "$samples")") MB, kernel oom_kill events=$(awk 'BEGIN{m=0} $4>m{m=$4} END{print m}' "$samples")"
     if grep -q '^@@STAGE' "$probeout"; then
       echo "memory per stage (max working set / memory.peak at end, MB):"
       awk -v S="$samples" '

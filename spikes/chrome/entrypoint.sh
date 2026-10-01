@@ -15,6 +15,7 @@ jq --arg l "${ACCEPT_LANGS}" '.intl.accept_languages = $l | .intl.selected_langu
 echo "accept languages applied: $(jq -c '.intl | {accept_languages, selected_languages}' /profile/Default/Preferences)"
 
 EXTRA=()
+[ -n "${CHROME_EXTRA:-}" ] && { read -ra _X <<<"$CHROME_EXTRA"; EXTRA+=("${_X[@]}"); }   # experiments only, e.g. memory-saving flags
 [ "${NO_SANDBOX:-0}" = "1" ] && EXTRA+=(--no-sandbox)
 [ "${MODE}" = "run" ] && EXTRA+=(--restore-last-session)   # keep session cookies across restarts (G4)
 if [ "${MODE}" = "login" ]; then
