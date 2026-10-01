@@ -55,7 +55,7 @@ Browser profiles are **not** host directories: they are named Docker volumes `jw
 Browser containers are **not** declared in compose; the router spawns them with `docker run` (label `jobwatch.managed=true`). Your existing Nginx stays outside this stack.
 
 ## Router image (`Dockerfile`)
-Multi-stage build from the repo root: `deps` (`npm ci`) → `build` (`npm run build`, must also copy non-TS assets such as `adapters/**/extract.js` into `dist/`) → `prod-deps` (`npm ci --omit=dev`) → `runtime` (Node 26 slim, `tini`, a remote-only container CLI, non-root user `node`, `catalog/` baked in, `HEALTHCHECK` on `/healthz`). The filesystem is read-only at run time; state lives in `/data`.
+Multi-stage build from the repo root of the Nx workspace: `deps` (`npm ci`) → `build` (`npx nx build mcp`, which bundles `apps/mcp` and the `cli` with esbuild; native or heavy packages `better-sqlite3` and `playwright-core` stay external; adapter assets such as `extract.js` are inlined or copied) → `prod-deps` (installs only those external packages, pinned) → `runtime` (Node 26 slim, `tini`, a remote-only container CLI, non-root user `node`, `catalog/` baked in, `HEALTHCHECK` on `/healthz`). The filesystem is read-only at run time; state lives in `/data`.
 ```bash
 docker build -t jobwatch-router:dev .                       # run as mcpuser so it uses the rootless daemon
 docker compose -f deploy/compose.yml --env-file deploy/.env build router
@@ -136,6 +136,9 @@ The routine notifies Matthieu. Procedure: `jobwatch login linkedin` → SSH tunn
 
 ### Out of memory / runtime killed
 Look at `memory_report` and the call log (`peak_rss_mb`). Lower per-tool `max_cards`, enable resource blocking, raise `memory.max` only if the host has headroom, or reduce `renderer-process-limit`.
+
+### Enabling or disabling an adapter
+On the NUC, as `mcpuser`: `docker compose -f deploy/compose.yml --env-file deploy/.env exec router jobwatch adapters list` shows every installed adapter and whether it is enabled; `... adapters enable linkedin` / `disable linkedin` edits `data/router/adapters.json` (the router mounts `data/router` at `/data`). Then `docker compose ... restart router`, and refresh the connector in Claude if the tool list does not update. A fresh install has nothing enabled. If `JW_ADAPTERS` is set in `deploy/.env` it wins and the CLI refuses to edit. Enabling `linkedin` requires the approved usage budget (`09-security.md`).
 
 ### Rotating secrets
 `OIDC_CLIENT_SECRET` (rotate in Google Cloud Console, update `deploy/.env`, `docker compose up -d front`). `TOKEN_SIGNING_SECRET`: changing it invalidates every issued token and registered client, so Claude must reconnect (remove and re-add the connector). Redis data (`data/redis`) can be wiped; it only costs in-flight refresh rotations.

@@ -2,7 +2,7 @@
 
 > **Related docs:** Load for tool definitions and schemas. Also load: `03` (Adapter SDK, `defineTool`), `07`/`08` (platform behaviour behind each tool), `13` (how the routine calls the tools). Follow a link only if the task needs it.
 
-> **Source of truth.** Tool definitions are authored in code next to their handler (`defineTool`, see `03-…` "Adapter SDK"). The JSON below is the **generated, committed snapshot** (`npm run catalog:gen`) that `tools/list` mirrors and that reviewers diff. Do not hand-edit it; a contract test fails on drift.
+> **Source of truth.** Tool definitions are authored in code next to their handler (`defineTool`, see `03-…` "Adapter SDK"). The JSON below is the **generated, committed snapshot** (`jobwatch catalog gen`, one `catalog/` folder per adapter package, e.g. `packages/adapter-linkedin/catalog/`) that `tools/list` mirrors and that reviewers diff. Do not hand-edit it; a contract test fails on drift.
 
 ## Catalog entry format (`catalog/<tool>.json`)
 ```json
@@ -53,7 +53,7 @@ Output: `{ cards: [{ id, title, company, location, work_mode: "remote|hybrid|on-
 ### `linkedin_job` (Phase 1)
 Input: `{ "ids": ["<id>", ...] (maxItems 10), "description_max_chars": 1500 }`.
 Output: `[{ id, title, company, location, description (untrusted text, truncated to N chars), description_truncated, stack_hints: ["react","angular",...], years_hints: [...], remote_hints, salary_text, url, status: "ok"|"not_loaded"|"closed" }]`.
-Behaviour: opens each job page **by navigation** (not synthetic card clicks) with human-like pacing; reads the About-the-job text. `stack_hints`/`years_hints`/`remote_hints` are simple deterministic extractions (regex dictionaries in `src/adapters/linkedin/parse.ts`) to save tokens; the client still decides.
+Behaviour: opens each job page **by navigation** (not synthetic card clicks) with human-like pacing; reads the About-the-job text. `stack_hints`/`years_hints`/`remote_hints` are simple deterministic extractions (regex dictionaries in `packages/adapter-linkedin/src/parse.ts`) to save tokens; the client still decides.
 
 ### `linkedin_search_and_read` (Phase 1, convenience)
 Input: union of search args + `{ "skip_ids": [...] (maxItems 500), "open": "unseen_matching|none", "title_exclude_regex": "…", "max_jobs": 15, "description_max_chars": 1200 }`.

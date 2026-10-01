@@ -16,10 +16,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test          # unit + contract only; integration needs the browser runtime (see 11-…)
-      - run: npm run catalog:gen && git diff --exit-code catalog/
+      - run: npx nx affected -t lint typecheck test --base=origin/main~1 --head=HEAD   # unit + contract only; integration needs the browser runtime (see 11-…)
+      - run: npm run catalog:gen && git diff --exit-code -- 'packages/*/catalog'
 
   build-and-push:
     needs: test

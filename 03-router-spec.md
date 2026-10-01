@@ -16,51 +16,42 @@ The router is the only custom service (plus adapters). It is always-on, small, s
 
 It does **not** implement OAuth (the front does), unless decision D7(c) is taken. It still validates that requests come through the front (shared secret header or mTLS on the private network; VERIFY best option for the chosen front).
 
-## Suggested repo layout
+## Repo layout: Nx monorepo (decided 2026-10-01)
+npm workspaces + Nx (same setup as TraderTavern). Packages are private to the workspace (scope `@jobwatch`), not published.
 ```
 jobwatch-mcp/
-  docs/                      # these MD files
-  Dockerfile                 # router image (multi-stage, see 10)
-  .dockerignore
-  package.json               # npm project (ESM, Node 26; .nvmrc)
-  package-lock.json
-  tsconfig.json              # strict
-  src/
-    app.ts                   # Express app + McpServer wiring, /healthz
-    config.ts                # zod-validated config; env + config.yaml
-    catalog/
-      snapshot.ts            # `npm run catalog:gen`: registry -> catalog/*.json; drift check used by tests
-      models.ts              # zod schemas + types: ToolDefinition limits, Budget, RatePolicy
-    runtime/
-      backend.ts             # RuntimeBackend interface
-      dockerCli.ts           # DockerCliBackend
-      manager.ts             # state machine per platform, semaphore, reaper
-      watchdog.ts            # memory polling, thresholds
-    browser/
-      session.ts             # BrowserSession implementation over CDP (the only file importing playwright-core)
-      cdp.ts                 # connectOverCDP wrapper, tab lifecycle, host allowlist
-      fingerprint.ts         # startup self-check (navigator.webdriver etc.)
-    adapters/
-      sdk.ts                 # defineAdapter, defineTool, AdapterContext, BrowserSession, HttpClient
-      registry.ts            # auto-discovers src/adapters/*/index.ts, builds tools/list, rejects duplicates
-      linkedin/
-        index.ts (defineAdapter), extract.js, parse.ts, selectors.ts, fixtures/
-        layouts/classic.ts, layouts/aiSearchResults.ts   # one SearchLayout per LinkedIn search UI (see 07)
-      apec/ wttj/ ats/       # later phases
-    limits/
-      ratelimit.ts, breaker.ts
-    store/
-      db.ts                  # sqlite (better-sqlite3) (WAL): counters, breaker, seen_ids, call_log
-    obs/
-      logging.ts, metrics.ts
-  catalog/                   # static tool definitions (see 04)
-    session_status.json, linkedin_search.json, linkedin_job.json, ...
-  images/browser/            # Dockerfile + entrypoint.sh (see 05)
-  deploy/                    # compose.yml, systemd units, nginx snippet (see 10)
-  tests/                     # unit, contract, integration (see 11)
-  data/                      # runtime state (gitignored)
-  profiles/                  # browser profiles (gitignored, 0700)
+  nx.json  package.json  package-lock.json  tsconfig.base.json  .nvmrc  eslint.config.js
+  packages/
+    sdk/                @jobwatch/sdk      THE CONTRACT adapters build on: defineAdapter, defineTool, AdapterContext,
+                                           BrowserSession, HttpClient, SearchLayout, error classes, SDK_API_VERSION.
+                                           Subpath @jobwatch/sdk/testkit: FakeBrowserSession, contract-test runner.
+                                           Light dependencies (zod only).
+    core/               @jobwatch/core     THE ENGINE: config, registry (loadAdapters), handleCall pipeline, limits
+                                           (ratelimit, breaker), store (SQLite), runtime (RuntimeBackend, DockerCliBackend,
+                                           manager, watchdog), browser (session.ts over CDP, cdp.ts, fingerprint.ts),
+                                           obs (pino, prom-client), built-in ops tools (session_status, memory_report).
+                                           Depends on sdk only.
+    adapters/           @jobwatch/adapters THE INSTALLED LIST: one static map  name -> () => import("@jobwatch/adapter-<name>")
+                                           plus metadata. The single registration point shared by the server and the CLI.
+    adapter-linkedin/   @jobwatch/adapter-linkedin   index.ts (defineAdapter), layouts/classic.ts, layouts/aiSearchResults.ts,
+                                           parse.ts, selectors.ts, extract.js, fixtures/, catalog/ (generated snapshot), tests
+    adapter-ats/ adapter-apec/ adapter-wttj/         same shape, added in later phases
+  apps/
+    mcp/                @jobwatch/mcp      composition root: reads config, asks @jobwatch/adapters for the ENABLED adapters,
+                                           hands them to core, serves stateless Streamable HTTP, /healthz, /metrics.
+                                           The router Dockerfile builds this app.
+    cli/                @jobwatch/cli      `jobwatch` binary: adapters list|enable|disable, login <platform>, catalog gen|check, doctor
+  tools/generators/adapter/                `nx g @jobwatch/tools:adapter <name>`: scaffolds a new adapter package
+  images/browser/       Dockerfile, entrypoint.sh, chrome-seccomp.json (see 05)
+  deploy/               compose.yml, nginx site files (see 10)
+  docs/  spikes/  Dockerfile (router image, builds apps/mcp)  .dockerignore
+  data/                 runtime state (gitignored): router SQLite, adapters.json
 ```
+Dependency rules, enforced by Nx module boundaries (`@nx/enforce-module-boundaries` with tags `type:sdk`, `type:core`, `type:adapter`, `type:adapters`, `type:app`) and by lint:
+- `sdk` depends on nothing in the workspace. `core` depends only on `sdk`.
+- **`adapter-*` may depend only on `sdk`.** They cannot import `core`, other adapters, `playwright-core`, `better-sqlite3`, or Node's `fs`, `net`, `child_process`, `http(s)` (lint rule `no-restricted-imports`). Network and browser access exist only through `AdapterContext`.
+- `adapters` depends on every `adapter-*` and on `sdk`. `apps/*` may depend on `core`, `sdk` and `adapters`.
+- `playwright-core` is imported in exactly one file: `packages/core/src/browser/session.ts`.
 
 ## Core interfaces (sketch)
 
@@ -116,36 +107,67 @@ interface AdapterResult {
 ```
 
 ## Adapter SDK (adding a platform)
-Goal: a new platform is one directory plus one test, with no router change.
+Goal: a new platform is one generated package plus one registration line, with no engine change.
 
 ```ts
-// src/adapters/apec/index.ts
+// packages/adapter-apec/src/index.ts  (imports ONLY @jobwatch/sdk)
+import { defineAdapter, defineTool, z } from "@jobwatch/sdk";
+
 export default defineAdapter({
-  platform: "apec",
-  kind: "browser",
+  id: "apec",                              // the name used by `jobwatch adapters enable apec` and in adapters.json
+  displayName: "APEC",
+  description: "APEC job search (read-only).",
+  sdkApi: 1,                               // SDK_API_VERSION this adapter was written against
+  platform: "apec",                        // profile name, rate-limit and breaker key
+  kind: "http",                            // "browser" => leased Chrome + BrowserSession; "http" => HttpClient, no container
   allowedHosts: ["www.apec.fr"],
-  sessionCheck: async (s) => { await s.goto("https://www.apec.fr/"); return parseLoginState(await s.evaluate(EXTRACT_LOGIN)); },
   tools: [
     defineTool({
       name: "apec_search", title: "APEC job search (read-only)", description: "...read-only, no side effects...",
       input: z.object({ keywords: z.string().max(200), page: z.number().int().min(1).max(5).default(1) }).strict(),
       output: CardsOutput,
       annotations: { readOnlyHint: true, openWorldHint: true, idempotentHint: true },
-      limits: { timeoutS: 90, cost: 1, outputMaxBytes: 60_000 },
-      handler: async ({ keywords, page }, { session, pace }) => { /* goto, evaluate, parse */ },
+      limits: { timeoutS: 60, cost: 1, outputMaxBytes: 60_000 },
+      handler: async ({ keywords, page }, { http, pace }) => { /* POST the search API, normalize */ },
     }),
   ],
 });
 ```
-Rules the SDK enforces, so adapter authors cannot break the ground rules:
-- **One source of truth.** The tool's schemas, annotations, limits and handler live together. `tools/list` is built at startup from the registry (pure data, no container), so a new adapter appears in `tools/list` automatically.
-- **Auto-discovery.** `registry.ts` imports every `src/adapters/*/index.ts` default export. Startup fails on duplicate tool names, a missing `readOnlyHint: true`, `additionalProperties` not false (`.strict()`), strings without `max()`, arrays without `max()`, or a description shorter than the read-only statement.
-- **Catalog snapshot.** `npm run catalog:gen` writes `catalog/*.json` from the registry. It is committed, and a contract test fails if the snapshot differs from the registry, so every change to what Claude can see shows up in review. `04-…` describes the snapshot format.
-- **Sandboxed surface.** Handlers get only `AdapterContext`. `BrowserSession` and `HttpClient` enforce `allowedHosts`; there is no click, type or generic navigation exposed to clients, and handlers cannot return values outside their `output` schema (validated before `shapeOutput`).
-- **Lifecycle is not the adapter's job.** Leasing, tab parking (single tab), timeouts, rate limiting, breaker, memory policy and error mapping stay in the router. An adapter signals problems by throwing `SessionInvalid`, `Checkpoint` or `AdapterBroken`.
-- **Testable offline.** `@jobwatch/testkit` (in-repo) provides a `FakeBrowserSession` that replays saved, **logged-out or synthetic** HTML from `fixtures/` (never real logged-in pages), plus a contract test that runs every registered tool against its schemas.
 
-Checklist for a new browser adapter: create `src/adapters/<platform>/index.ts`; add a profile name to the login CLI; add fixtures and a test; run `npm run catalog:gen`; add the platform's pacing and budget to `07-…`/`08-…`. Shared parsing helpers go in `adapters/_shared/`.
+### Registration and enable / disable
+1. **Installed**: `packages/adapters/src/index.ts` is the one place that lists adapter packages:
+   ```ts
+   export const installed = {
+     linkedin: () => import("@jobwatch/adapter-linkedin").then((m) => m.default),
+     apec:     () => import("@jobwatch/adapter-apec").then((m) => m.default),
+   } satisfies Record<string, () => Promise<AdapterModule>>;
+   ```
+   The generator adds the line. Both the server and the CLI import this map, so they always agree.
+2. **Enabled**: which installed adapters the router actually plugs in. Stored in `adapters.json` in the data directory (`/data/adapters.json` in the container): `{ "enabled": ["linkedin"] }`. Environment override: `JW_ADAPTERS=linkedin,apec` (wins over the file; the CLI refuses to edit while it is set). **Default on a fresh install: nothing enabled**, so only the built-in ops tools are exposed; the LinkedIn adapter must be enabled on purpose (its usage budget needs Matthieu's approval, `09-security.md`).
+3. **Plugging**: `apps/mcp` calls `loadAdapters(enabledNames, installed)` from core. It imports only the enabled adapters, runs the startup checks below, and builds `tools/list` from them. An unknown name is a startup error. A disabled adapter contributes no tools, its runtime is never started, and its profile volume is untouched.
+4. **Changing the set requires a router restart** (`docker compose restart router`); the connector may need to be refreshed in Claude to see the new tool list (VERIFY in Phase 2). Stateless HTTP cannot push `tools/list_changed`.
+
+### CLI (`jobwatch`, package `apps/cli`)
+```
+jobwatch adapters list [--json]      all INSTALLED adapters: id, platform, kind, tools, allowed hosts, ENABLED / disabled
+jobwatch adapters enable  <id...>    add to adapters.json (validates the id exists in `installed`)
+jobwatch adapters disable <id...>    remove from adapters.json
+jobwatch login <platform>            browser login mode (05); only for enabled browser adapters
+jobwatch catalog gen | check         regenerate / verify the committed per-adapter catalog snapshots
+jobwatch doctor                      config, Docker socket, image, data dir, enabled adapters, SDK version compatibility
+```
+The CLI ships inside the router image too, so on the host: `docker compose exec router jobwatch adapters list`. Writing `adapters.json` is atomic (temp file + rename) and the file is the only state the CLI changes.
+
+### Rules the SDK and registry enforce, so adapter authors cannot break the ground rules
+- **One source of truth.** A tool's schemas, annotations, limits and handler live together. `tools/list` is built at startup from the enabled adapters (pure data, no container).
+- **Startup checks** (per adapter, fail fast): `sdkApi` equals the running `SDK_API_VERSION`; `id` and tool names are unique; `readOnlyHint: true` on every tool; input schemas are `.strict()`; every string has `max()` and every array has `max()`; descriptions state read-only behaviour; every host in `allowedHosts` is a bare hostname.
+- **Catalog snapshots.** Each adapter package has `catalog/*.json`, written by `jobwatch catalog gen` (`nx run <adapter>:catalog`) and committed. A contract test (sdk testkit) fails if the snapshot differs from the adapter's definitions, so every change to what Claude can see shows up in that adapter's diff. Snapshots exist for every installed adapter; only enabled ones are served.
+- **Sandboxed surface.** Handlers get only `AdapterContext` (`session`, `http`, `log`, `pace`). `BrowserSession` and `HttpClient` enforce `allowedHosts`; no click, type or generic navigation is ever exposed; handler results are validated against the tool's `output` schema before `shapeOutput`.
+- **Lifecycle is not the adapter's job.** Leasing, the single tab (`06`), timeouts, rate limiting, breaker, memory policy and error mapping stay in core. An adapter signals problems by throwing `SessionInvalid`, `Checkpoint` or `AdapterBroken`.
+- **Honest limit:** adapters run in-process, so an adapter is trusted code. The SDK narrows what it is handed and lint forbids dangerous imports, but it is not a sandbox. Only adapters from this repository are installed; loading external packages by name is deliberately not supported (`JW_EXTRA_ADAPTERS` rejected, 2026-10-01).
+- **Testable offline.** `@jobwatch/sdk/testkit` provides `FakeBrowserSession` (replays saved, **logged-out or synthetic** HTML from the adapter's `fixtures/`, never real logged-in pages), a fake `HttpClient`, and `runAdapterContract(adapter)` which checks the startup rules, the snapshot, and every tool's output against its schema.
+
+Checklist for a new adapter: `nx g @jobwatch/tools:adapter <id>`; write tools, fixtures and tests; `jobwatch catalog gen`; the generator already added the line to `packages/adapters`; add its pacing and budget to `07-…`/`08-…`; for a browser adapter, add its profile name to the login CLI; `jobwatch adapters enable <id>` on the host.
 
 ## tools/call flow (pseudo-code)
 ```ts
@@ -201,7 +223,8 @@ JW_RUNTIME=docker                             # docker | systemd-scope
 JW_BROWSER_IMAGE=localhost/jobwatch-browser:1
 JW_PROFILE_VOLUME_PREFIX=jw-profile-         # browser profiles are named Docker volumes jw-profile-<platform> (no host paths: works on Linux and macOS)
 JW_AUTH=front                                # front | none (none only for local development, loopback only; see compose.dev.yml)
-JW_DATA_DIR=/srv/jobwatch/data
+JW_DATA_DIR=/srv/jobwatch/data                # router SQLite, adapters.json (enabled adapters)
+JW_ADAPTERS=                                  # optional comma list, e.g. linkedin,apec; overrides adapters.json when set; default: none enabled
 JW_IDLE_TTL_S=120  JW_MAX_LIFETIME_S=1800  JW_QUEUE_TIMEOUT_S=60
 JW_MEM_HIGH_MB=1200 JW_MEM_MAX_MB=1500        # defaults, measured in S5 (see 06); per-tool budgets override
 JW_LOG_LEVEL=info

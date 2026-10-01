@@ -100,7 +100,7 @@ flowchart TB
 
   Decide -- "no" --> Plain["Plain HTTP path<br/>own concurrency limit and per-host pacing"]
 
-  subgraph Adapters["adapters/, each exports defineAdapter, auto-discovered by registry.ts"]
+  subgraph Adapters["enabled adapter packages, each exports defineAdapter (see diagram 7)"]
     direction LR
     LI["linkedin<br/>adapter.ts, extract.js,<br/>parse.ts, selectors.ts"]
     APEC["apec"]
@@ -121,12 +121,12 @@ flowchart TB
   Lease --> Idle["touch: idle timer 120 s<br/>then graceful close, SIGTERM, SIGKILL"]
 ```
 
-To add a platform:
-1. Create `src/adapters/<platform>/index.ts` exporting `defineAdapter({ platform, kind, allowedHosts, sessionCheck, tools })`, each tool built with `defineTool` (zod schemas, annotations, limits, handler).
-2. Add fixtures and a test using the testkit.
-3. Run `npm run catalog:gen` and commit the regenerated `catalog/*.json` snapshot.
+To add a platform (diagram 7 shows the packages):
+1. `nx g @jobwatch/tools:adapter <id>` creates `packages/adapter-<id>` and adds one line to `packages/adapters`.
+2. Write the tools with `defineTool`, add fixtures and a contract test using `@jobwatch/sdk/testkit`.
+3. `jobwatch catalog gen`, commit the snapshot, then `jobwatch adapters enable <id>` and restart the router.
 
-The registry auto-discovers the module, so the tool appears in `tools/list` with no router change and no manual registration. Handlers only receive `AdapterContext` (`BrowserSession`, `HttpClient`, `pace`, `log`), so no generic `navigate` or `evaluate` tool is ever exposed and the host allowlist cannot be bypassed.
+Only enabled adapters reach `tools/list`. Handlers only receive `AdapterContext` (`BrowserSession`, `HttpClient`, `pace`, `log`), so no generic `navigate` or `evaluate` tool is ever exposed and the host allowlist cannot be bypassed.
 
 ## 3. One browser-backed call (sequence)
 
@@ -250,3 +250,37 @@ flowchart LR
 ```
 
 Only the router auto-updates. The OAuth front is pinned by digest, and the browser image is updated by hand. After a restart the router reaps leftover `jobwatch.managed=true` containers.
+
+## 7. Workspace packages and registration (Nx monorepo)
+
+```mermaid
+flowchart TB
+  subgraph Apps["apps/"]
+    MCP["mcp<br/>composition root, serves MCP"]
+    CLI["cli<br/>jobwatch adapters list, enable, disable<br/>login, catalog, doctor"]
+  end
+  subgraph Pkgs["packages/"]
+    Core["core<br/>engine: registry, pipeline, limits, store,<br/>runtime, browser, obs, ops tools"]
+    Installed["adapters<br/>installed map: id to import"]
+    SDK["sdk<br/>defineAdapter, defineTool, AdapterContext,<br/>testkit, SDK_API_VERSION"]
+    AL["adapter-linkedin"]
+    AA["adapter-apec"]
+    AT["adapter-ats"]
+  end
+  Cfg[("data/adapters.json<br/>enabled: [linkedin, ...]<br/>or env JW_ADAPTERS")]
+
+  MCP --> Core
+  MCP --> Installed
+  CLI --> Installed
+  CLI -- "edits atomically" --> Cfg
+  MCP -- "reads at startup" --> Cfg
+  Installed --> AL
+  Installed --> AA
+  Installed --> AT
+  Core --> SDK
+  AL --> SDK
+  AA --> SDK
+  AT --> SDK
+```
+
+Allowed dependency directions only (enforced by Nx module boundaries): adapters depend on `sdk` and nothing else, so they can never reach the engine, the browser library or Node's network and file APIs directly. `core` never imports an adapter: the server hands it the enabled ones by name.

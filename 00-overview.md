@@ -34,7 +34,7 @@ flowchart LR
   C[Claude / routine] -- HTTPS + OAuth --> T[Existing Nginx reverse proxy<br/>TLS + your domain]
   T -- "one published host port" --> A[OAuth front<br/>always on]
   A -- private net, token validated --> R[Router<br/>always on, tiny]
-  R -- static catalog --> K[(catalog/*.json)]
+  R -- enabled adapters only --> K[(adapter catalogs<br/>packages/adapter-*/catalog)]
   R -- spawn / reap --> B1[[Browser container<br/>linkedin profile]]
   R -- spawn / reap --> B2[[Browser container<br/>apec/wttj profile]]
   R -- plain HTTPS fetch --> W[(Public ATS APIs / pages)]
