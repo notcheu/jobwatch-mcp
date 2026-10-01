@@ -59,6 +59,11 @@ const jobSchema = z.object({
   new: z.boolean().describe('true when this call stored the job for the first time.'),
   first_seen: z.string(),
   fetched_at: z.string(),
+  last_seen: z
+    .string()
+    .describe(
+      'Last time the job was seen, read or listed on a search page. Stored jobs are evicted after JW_JOB_RETENTION_DAYS without a sighting.',
+    ),
   ...hints,
 });
 
@@ -136,6 +141,7 @@ function toOutput(job: AcceptedJob, maxChars: number): z.infer<typeof jobSchema>
     new: job.isNew,
     first_seen: job.firstSeen,
     fetched_at: job.fetchedAt,
+    last_seen: job.lastSeen,
     stack_hints: job.stack_hints,
     years_hints: job.years_hints,
     remote_hints: job.remote_hints,

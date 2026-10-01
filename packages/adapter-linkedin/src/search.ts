@@ -112,6 +112,8 @@ export async function searchCards(ctx: BrowserAdapterContext, layout: SearchLayo
       throw error;
     }
     pagesLoaded += 1;
+    // Seeing a stored job on a search page keeps it alive, whatever the filters say about it afterwards.
+    await ctx.jobs.touch(loaded.cards.map((card) => card.id));
     warnings.push(...loaded.warnings.filter((warning) => !warnings.includes(warning)));
     for (const card of loaded.cards) {
       if (!seen.has(card.id)) {

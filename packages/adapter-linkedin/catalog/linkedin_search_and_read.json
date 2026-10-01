@@ -212,6 +212,10 @@
             "id": {
               "type": "string"
             },
+            "last_seen": {
+              "description": "Last time the job was seen, read or listed on a search page. Stored jobs are evicted after JW_JOB_RETENTION_DAYS without a sighting.",
+              "type": "string"
+            },
             "location": {
               "type": [
                 "string",
@@ -276,6 +280,7 @@
             "new",
             "first_seen",
             "fetched_at",
+            "last_seen",
             "stack_hints",
             "years_hints",
             "remote_hints",

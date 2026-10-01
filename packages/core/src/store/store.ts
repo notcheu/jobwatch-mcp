@@ -41,14 +41,14 @@ export interface CallRecord {
 /** Retention: the call log keeps 30 days; usage events only need to cover the longest rate window with margin. */
 export const CALL_LOG_RETENTION_MS = 30 * 24 * 3600 * 1000;
 export const USAGE_RETENTION_MS = 2 * 24 * 3600 * 1000;
-/** Stored job postings: kept `JW_JOB_RETENTION_DAYS` (default 30) from the last fetch. */
+/** Stored job postings: kept `JW_JOB_RETENTION_DAYS` (default 30) from the last time they were seen. */
 export const DEFAULT_JOB_RETENTION_DAYS = 30;
 export const MAX_JOB_DESCRIPTION_CHARS = 20_000;
 const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Each entry upgrades the schema by one version (`PRAGMA user_version`). Never edit a released migration: add a new one.
- * Migration 2 adds the `jobs` table.
+ * Migration 2 adds the `jobs` table, 3 its `last_seen` column.
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -95,6 +95,13 @@ const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (platform, id)
   ) WITHOUT ROWID;
   CREATE INDEX jobs_fetched_at ON jobs (fetched_at);
+  `,
+  // 3: last_seen, refreshed whenever the job is seen again (search card included); eviction counts from it, not from fetched_at.
+  `
+  ALTER TABLE jobs ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0;
+  UPDATE jobs SET last_seen = fetched_at;
+  DROP INDEX jobs_fetched_at;
+  CREATE INDEX jobs_last_seen ON jobs (last_seen);
   `,
 ];
 
@@ -281,21 +288,22 @@ export class Store {
     return row === undefined ? null : toJob(row);
   }
 
-  /** Insert, or replace and refresh `fetched_at`; `first_seen` survives a refresh. Validates and caps what an adapter sends. */
+  /** Insert, or replace and refresh `fetched_at` and `last_seen`; `first_seen` survives a refresh. Validates and caps what an adapter sends. */
   putJob(platform: string, job: NewJobRow, now: number): void {
     if (!JOB_ID.test(job.id)) throw new StoreError('invalid job id');
     const text = (value: string | null, max: number): string | null => (value === null ? null : value.slice(0, max));
     this.db
       .prepare(
-        `INSERT INTO jobs (platform, id, first_seen, fetched_at, title, company, location, url, description)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO jobs (platform, id, first_seen, fetched_at, last_seen, title, company, location, url, description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (platform, id) DO UPDATE SET
-           fetched_at = excluded.fetched_at, title = excluded.title, company = excluded.company, location = excluded.location,
+           fetched_at = excluded.fetched_at, last_seen = excluded.last_seen, title = excluded.title, company = excluded.company, location = excluded.location,
            url = excluded.url, description = excluded.description`,
       )
       .run(
         platform,
         job.id,
+        now,
         now,
         now,
         text(job.title, 300),
@@ -304,6 +312,14 @@ export class Store {
         job.url.slice(0, 500),
         job.description.slice(0, MAX_JOB_DESCRIPTION_CHARS),
       );
+  }
+
+  /** Mark stored jobs as seen at `now`. Never moves `last_seen` backwards; ids that are not stored are ignored. */
+  touchJobs(platform: string, ids: readonly string[], now: number): void {
+    const stmt = this.db.prepare('UPDATE jobs SET last_seen = ? WHERE platform = ? AND id = ? AND last_seen < ?');
+    this.transaction(() => {
+      for (const id of new Set(ids)) stmt.run(now, platform, id, now);
+    });
   }
 
   countJobs(platform?: string): number {
@@ -317,7 +333,7 @@ export class Store {
 
   /** Delete what is past retention. Returns how many rows went. */
   prune(now: number): { calls: number; usage: number; jobs: number } {
-    const jobs = Number(this.db.prepare('DELETE FROM jobs WHERE fetched_at < ?').run(now - this.jobRetentionMs).changes);
+    const jobs = Number(this.db.prepare('DELETE FROM jobs WHERE last_seen < ?').run(now - this.jobRetentionMs).changes);
     const calls = Number(this.db.prepare('DELETE FROM call_log WHERE ts < ?').run(now - CALL_LOG_RETENTION_MS).changes);
     const usage = Number(this.db.prepare('DELETE FROM usage WHERE ts < ?').run(now - USAGE_RETENTION_MS).changes);
     return { calls, usage, jobs };
@@ -343,6 +359,7 @@ export interface NewJobRow {
 export interface StoredJobRow extends NewJobRow {
   firstSeen: number;
   fetchedAt: number;
+  lastSeen: number;
 }
 
 function toJob(row: Rows): StoredJobRow {
@@ -357,6 +374,7 @@ function toJob(row: Rows): StoredJobRow {
     description: String(row['description']),
     firstSeen: Number(row['first_seen']),
     fetchedAt: Number(row['fetched_at']),
+    lastSeen: Number(row['last_seen']),
   };
 }
 

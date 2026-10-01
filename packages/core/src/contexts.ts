@@ -34,9 +34,10 @@ export function createJobStore(store: Store, platform: string, clock: () => numb
     known: async (ids) => store.knownJobs(platform, ids),
     get: async (id) => {
       const row = store.getJob(platform, id);
-      return row === null ? null : { ...row, firstSeen: iso(row.firstSeen), fetchedAt: iso(row.fetchedAt) };
+      return row === null ? null : { ...row, firstSeen: iso(row.firstSeen), fetchedAt: iso(row.fetchedAt), lastSeen: iso(row.lastSeen) };
     },
     put: async (job) => store.putJob(platform, job, clock()),
+    touch: async (ids) => store.touchJobs(platform, ids, clock()),
   };
 }
 

@@ -82,7 +82,7 @@ export interface Config {
   dataDir: string;
   /** SQLite file (rate-limit usage, circuit breakers, call log). `:memory:` only in tests. */
   dbPath: string;
-  /** Days a stored job posting is kept after its last fetch; older ones are evicted (at start and every six hours). */
+  /** Days a stored job posting is kept after it was last seen (read or listed on a search page); older ones are evicted (at start and every six hours). */
   jobRetentionDays: number;
   /** From JW_ADAPTERS. When defined it overrides adapters.json and the CLI refuses to edit the file. */
   adaptersFromEnv: readonly string[] | undefined;
