@@ -35,21 +35,24 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.nog
 - CI secrets (`REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`) live only in GitHub secrets; the host's registry login lives only in the `mcpuser` user's `~/.docker/config.json`.
 
 ## Commands
-Scripts are planned and do not exist until `package.json` is created in Phase 1; keep this list in sync when they do.
+Use Node 26 (`nvm use`, `.nvmrc`). Marked "(planned)" = not implemented yet; the rest runs today.
 ```
-npm ci                      # install from lockfile
-npm run build               # tsc + copy non-TS assets (adapters/**/extract.js)
-npm run lint                # eslint + prettier check
-npm run typecheck           # tsc --noEmit (strict)
-npm test                    # vitest: unit + contract
-npm run test:integration    # needs the browser runtime (rootless Docker)
-npm run catalog:gen         # regenerate every adapter's catalog/ snapshot (jobwatch catalog gen); commit the result
-npx nx g @jobwatch/tools:adapter <id>   # scaffold a new adapter package
-npx jobwatch adapters list|enable|disable ...   # which installed adapters the router plugs in
-docker build -t jobwatch-router:dev .
+npm ci                      # install from lockfile (install scripts are denied by default via package.json "allowScripts")
+npm run lint                # nx run-many -t lint   (includes the architecture rules: module boundaries, restricted imports)
+npm run typecheck           # nx run-many -t typecheck (tsc, strict)
+npm test                    # nx run-many -t test (vitest: unit + contract)
+npm run format              # prettier --write . ;  npm run format:check
+npm run ci                  # format:check + lint + typecheck + test
+npx nx run-many -t lint typecheck test   # same targets directly; `nx affected -t ...` for changed projects
+npm run build               # (planned) bundle apps/mcp and apps/cli with esbuild
+npm run test:integration    # (planned) needs the browser runtime (rootless Docker)
+npm run catalog:gen         # (planned) regenerate every adapter's catalog/ snapshot (jobwatch catalog gen); commit the result
+npx nx g @jobwatch/tools:adapter <id>   # (planned) scaffold a new adapter package
+npx jobwatch adapters list|enable|disable ...   # (planned) which installed adapters the router plugs in
+docker build -t jobwatch-router:dev .   # (planned, Dockerfile untested until apps/mcp exists)
 docker compose -f deploy/compose.yml --env-file deploy/.env up -d      # as mcpuser
 ```
-Node version is pinned in `.nvmrc` and `engines`. After changing any tool definition, run `catalog:gen` (a contract test fails on drift).
+Pinned versions: TypeScript 5.9.3 on purpose (`typescript-eslint` 8.71 supports TypeScript below 6.1 only; revisit before moving to TypeScript 7). After adding or removing a package, the Nx project graph cache can be stale for direct `eslint` runs: run any `nx` command (for example `npx nx show projects`) first. After changing any tool definition, run `catalog:gen` (a contract test fails on drift).
 
 ## Sources of truth and paths
 - **Docs vs code:** until code exists, the numbered docs are the spec. Once code exists, code wins for behaviour; any change to behaviour or to a decision must update the affected doc (and the diagram in `16-…` if it shows it) in the same commit. A `VERIFY:` tag marks an assumption that is **not** a fact: verify it (Phase 0 or when implementing) and record the outcome in `14-risks-and-open-questions.md` and the affected file.

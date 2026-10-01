@@ -1,0 +1,20 @@
+{
+  "name": "@jobwatch/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The contract adapters are built on: defineAdapter, defineTool, AdapterContext, errors, testkit.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "nx": {
+    "tags": [
+      "type:sdk"
+    ]
+  }
+}

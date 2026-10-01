@@ -1,0 +1,13 @@
+node_modules
+dist
+.nx
+coverage
+package-lock.json
+spikes
+docs
+deploy
+images
+*.md
+.claude
+.serena
+.idea
