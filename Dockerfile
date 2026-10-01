@@ -1,32 +1,39 @@
-# syntax=docker/dockerfile:1
 # Router image (Nx workspace). Build from the repo root:  docker build -t jobwatch-router:dev .
-# UNTESTED until apps/mcp exists (Phase 1, step 4). Expects:
-#   - `npx nx build mcp` bundles apps/mcp (and apps/cli as the `jobwatch` binary) to dist/apps/{mcp,cli}/main.js with esbuild,
-#     keeping `better-sqlite3` and `playwright-core` external;
-#   - the external package versions are pinned in the root package.json.
+# No `# syntax` directive on purpose: the BuildKit built-in frontend supports everything used here (cache mounts, named
+# stages), and the directive costs an extra Docker Hub round-trip (and dependency) on every build.
+# `nx run-many -t build` bundles apps/mcp and apps/cli to dist/apps/{mcp,cli}/main.js with esbuild. Packages that must stay
+# out of the bundle (native addons, the browser driver: better-sqlite3, playwright-core in steps 5-6) are listed, pinned, in
+# apps/mcp/external-deps.package.json and installed in the prod-deps stage.
 ARG NODE_VERSION=26
+ARG DOCKER_CLI_VERSION=27
+
+# Docker does not expand variables in `COPY --from=...`, so the CLI image is a named stage.
+FROM docker:${DOCKER_CLI_VERSION}-cli AS docker-cli
 
 FROM node:${NODE_VERSION}-bookworm-slim AS deps
 WORKDIR /app
+ENV NX_DAEMON=false NX_NO_CLOUD=true
 COPY package.json package-lock.json nx.json tsconfig.base.json ./
+# npm ci needs every workspace member (packages, apps, tools) to match the lockfile.
 COPY packages ./packages
 COPY apps ./apps
+COPY tools ./tools
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 
 FROM deps AS build
-RUN npx nx build mcp && npx nx build cli
+RUN npx nx run-many -t build -p @jobwatch/mcp @jobwatch/cli
 
 FROM node:${NODE_VERSION}-bookworm-slim AS prod-deps
 WORKDIR /app
 # better-sqlite3 has a native addon: if no prebuilt binary exists for this Node/arch, add a build toolchain HERE only.
 COPY apps/mcp/external-deps.package.json ./package.json
-RUN --mount=type=cache,target=/root/.npm npm install --omit=dev --no-audit --no-fund
+# `mkdir`: with an empty dependency list npm creates no node_modules, and the runtime stage copies the folder.
+RUN --mount=type=cache,target=/root/.npm npm install --omit=dev --no-audit --no-fund && mkdir -p node_modules
 
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 # The router spawns browser containers through the host's rootless socket (see 10-deployment.md).
 # Only the docker CLI is needed (no daemon): copy the static binary from the official CLI image (pin by digest later).
-ARG DOCKER_CLI_VERSION=27
-COPY --from=docker:${DOCKER_CLI_VERSION}-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates tini \
  && rm -rf /var/lib/apt/lists/*
@@ -38,7 +45,11 @@ COPY --from=build /app/dist/apps/mcp ./dist/mcp
 COPY --from=build /app/dist/apps/cli ./dist/cli
 # `jobwatch` available inside the container: docker compose exec router jobwatch adapters list
 RUN printf '#!/bin/sh\nexec node /app/dist/cli/main.js "$@"\n' > /usr/local/bin/jobwatch && chmod +x /usr/local/bin/jobwatch
-# uid/gid 1000 ("node"); state lives in mounted volumes (/data), the rest is read-only.
+# State lives in /data (mounted volume). Create it owned by the runtime user: a named volume copies this ownership on first use,
+# so `jobwatch adapters enable` can write adapters.json. (A bind mount keeps the host owner: see deploy/compose.yml, VERIFY on the NUC.)
+RUN mkdir -p /data && chown node:node /data
+ENV JW_DATA_DIR=/data
+# uid/gid 1000 ("node"); the rest of the filesystem is read-only at run time.
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \

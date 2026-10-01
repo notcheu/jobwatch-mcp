@@ -65,7 +65,7 @@ services:
       JW_METRICS_PORT: 9464
     volumes:
       - "${JW_DOCKER_SOCKET:-${XDG_RUNTIME_DIR}/docker.sock}:/var/run/docker.sock"   # Linux rootless: $XDG_RUNTIME_DIR/docker.sock; Docker Desktop (macOS): /var/run/docker.sock
-      - "../data/router:/data"
+      - "../data/router:/data"             # VERIFY on the NUC: under rootless Docker uid 1000 may not be allowed to write here (adapters.json); see 10-deployment.md
       # Browser profiles are named Docker volumes (jw-profile-<platform>) created by the router: no host paths, so the same file works on Linux and macOS.
     ports:
       - "${JW_METRICS_BIND:-127.0.0.1}:${JW_METRICS_PORT:-9464}:9464"   # Prometheus scrape target; nothing listens unless metrics are enabled

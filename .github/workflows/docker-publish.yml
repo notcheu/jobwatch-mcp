@@ -31,22 +31,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The router app arrives in Phase 1, step 4. Until then there is nothing to build, so the steps below are skipped.
-      # (hashFiles() is not allowed in a job-level condition, hence this explicit check.)
-      - name: Is the router app present?
-        id: app
-        run: echo "present=$([ -f apps/mcp/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      # Publish only when there is something to build AND somewhere to push it. Secrets cannot be tested in an `if:` directly,
+      # so they are passed to this step and checked in shell. Missing secrets skip the publish instead of failing `main`.
+      - name: Can we publish? (router app present and registry secrets configured)
+        id: gate
+        env:
+          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          if [ ! -f apps/mcp/package.json ]; then
+            echo "::notice::apps/mcp not found: nothing to build"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$REGISTRY_URL" ] || [ -z "$REGISTRY_USERNAME" ] || [ -z "$REGISTRY_PASSWORD" ]; then
+            echo "::notice::Registry secrets (REGISTRY_URL, REGISTRY_USERNAME, REGISTRY_PASSWORD) are not configured: skipping the image publish"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up QEMU (arm64 emulation for the multi-arch build)
-        if: steps.app.outputs.present == 'true'
+        if: steps.gate.outputs.publish == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        if: steps.app.outputs.present == 'true'
+        if: steps.gate.outputs.publish == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to private registry
-        if: steps.app.outputs.present == 'true'
+        if: steps.gate.outputs.publish == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ secrets.REGISTRY_URL }}
@@ -54,7 +67,7 @@ jobs:
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Build and push
-        if: steps.app.outputs.present == 'true'
+        if: steps.gate.outputs.publish == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .

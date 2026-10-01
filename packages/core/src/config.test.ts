@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeConfig, loadConfig, parseAdapterList } from './config';
+import { describeConfig, loadConfig, loadStorageSettings, parseAdapterList } from './config';
 import { ConfigError } from './errors';
 
 const base = { JW_BASE_URL: 'https://mcp.noguetith.fr' };
@@ -35,8 +35,12 @@ describe('loadConfig defaults', () => {
     });
   });
 
-  it('refuses to start without a base URL', () => {
-    expect(problemsOf({})).toEqual([expect.stringContaining('JW_BASE_URL')]);
+  it('refuses to start without a base URL, saying what to set', () => {
+    expect(problemsOf({})).toEqual(['JW_BASE_URL: is required: the public URL, e.g. https://mcp.noguetith.fr']);
+    expect(problemsOf({ JW_BASE_URL: 'not a url' })).toEqual(['JW_BASE_URL: must be an http(s) URL, e.g. https://mcp.noguetith.fr']);
+    expect(problemsOf({ JW_BASE_URL: 'ftp://mcp.noguetith.fr' })).toEqual([
+      'JW_BASE_URL: must be an http(s) URL, e.g. https://mcp.noguetith.fr',
+    ]);
   });
 
   it('treats empty values like unset (docker compose passes VAR= for missing interpolations)', () => {
@@ -147,5 +151,28 @@ describe('secrets never leak', () => {
     expect(message).toContain('JW_FRONT_SHARED_SECRET');
     expect(message).not.toContain('tooshort-secret');
     expect(message).not.toContain('not-a-number-value');
+  });
+});
+
+describe('loadStorageSettings (what the CLI needs)', () => {
+  it('works without a base URL and defaults to /data', () => {
+    expect(loadStorageSettings({})).toEqual({ dataDir: '/data', adaptersFromEnv: undefined });
+  });
+
+  it('reads the data directory and the adapter list', () => {
+    expect(loadStorageSettings({ JW_DATA_DIR: './data', JW_ADAPTERS: 'linkedin,apec' })).toEqual({
+      dataDir: './data',
+      adaptersFromEnv: ['linkedin', 'apec'],
+    });
+    expect(loadStorageSettings({ JW_DATA_DIR: '', JW_ADAPTERS: '' })).toEqual({ dataDir: '/data', adaptersFromEnv: [] });
+  });
+
+  it('rejects an invalid adapter list with the same rules as the server', () => {
+    expect(() => loadStorageSettings({ JW_ADAPTERS: '../etc' })).toThrow(ConfigError);
+    expect(() => loadStorageSettings({ JW_ADAPTERS: 'ab,ab' })).toThrow(/listed twice/);
+  });
+
+  it('ignores every other variable, including invalid ones the server would refuse', () => {
+    expect(loadStorageSettings({ JW_PORT: 'nope', JW_BASE_URL: 'ftp://x' })).toEqual({ dataDir: '/data', adaptersFromEnv: undefined });
   });
 });

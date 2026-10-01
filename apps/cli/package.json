@@ -1,0 +1,23 @@
+{
+  "name": "@jobwatch/cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The `jobwatch` command: list, enable and disable adapters (login and catalog commands arrive in step 8).",
+  "type": "module",
+  "dependencies": {
+    "@jobwatch/adapters": "*",
+    "@jobwatch/core": "*",
+    "@jobwatch/sdk": "*"
+  },
+  "scripts": {
+    "build": "esbuild src/main.ts --log-level=warning --bundle --platform=node --format=esm --target=node26 --sourcemap --outfile=../../dist/apps/cli/main.js --banner:js=\"import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\"",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "nx": {
+    "tags": [
+      "type:app"
+    ]
+  }
+}

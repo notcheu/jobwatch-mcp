@@ -21,12 +21,14 @@
     "format:check": "prettier --check .",
     "catalog:gen": "JW_UPDATE_CATALOG=1 nx run-many -t test -p 'tag:type:adapter' --skip-nx-cache",
     "new:adapter": "node tools/new-adapter/index.mjs",
+    "jobwatch": "npm run -s build -w @jobwatch/cli && node dist/apps/cli/main.js",
     "ci": "npm run format:check && npm run lint && npm run typecheck && npm test"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@nx/eslint-plugin": "23.2.1",
     "@types/node": "26.6.3",
+    "esbuild": "0.28.2",
     "eslint": "10.11.0",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.13.0",
@@ -39,6 +41,7 @@
   },
   "allowScripts": {
     "nx": false,
-    "fsevents": false
+    "fsevents": false,
+    "esbuild": false
   }
 }
