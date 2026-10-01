@@ -116,7 +116,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   // Persistent state. Fails fast (the process exits) when the database cannot be opened: running without a rate limiter or
   // breaker would mean nothing stops us from hammering a platform after a checkpoint.
   const clock = options.clock ?? Date.now;
-  const store = Store.open(config.dbPath);
+  const store = Store.open(config.dbPath, { jobRetentionDays: config.jobRetentionDays });
   const breaker = new CircuitBreaker(store, clock, (platform, row) => {
     metrics?.setBreaker(platform, row?.reason);
     if (row !== undefined)
@@ -132,7 +132,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const pruneNow = (): void => {
     try {
       const removed = store.prune(clock());
-      if (removed.calls > 0 || removed.usage > 0) logger.info(removed, 'pruned');
+      if (removed.calls > 0 || removed.usage > 0 || removed.jobs > 0) logger.info(removed, 'pruned');
     } catch (error) {
       logger.error({ err: error }, 'prune_failed');
     }
@@ -178,7 +178,8 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     await runtime.reapOrphans().catch((error: unknown) => logger.error({ err: error }, 'orphan_reap_failed'));
   }
 
-  const contexts = options.contexts ?? createContextProvider({ runtime, connect: options.connectBrowser ?? connectBrowser, logger });
+  const contexts =
+    options.contexts ?? createContextProvider({ runtime, connect: options.connectBrowser ?? connectBrowser, logger, store, clock });
   const ops = createOpsAdapter({ enabledAdapters: () => enabledOnly.adapters, runtime, store, limiter, breaker, contexts, clock, logger });
   const registry = await loadAdapters(enabled.ids, table, [ops]);
   policyAdapters = registry.adapters;

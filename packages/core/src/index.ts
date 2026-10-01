@@ -18,7 +18,7 @@ export type { InstalledAdapters, ListedTool, RegisteredTool, Registry } from './
 export { UnknownToolError, argsHash, callTool, noRuntime } from './call';
 export type { CallDeps, CallGuard, CallRecorder, ContextProvider, ToolCallResult, ToolContent, ToolOutcome } from './call';
 export { createMetrics } from './metrics';
-export { createContextProvider } from './contexts';
+export { createContextProvider, createJobStore } from './contexts';
 export type { ContextProviderDeps } from './contexts';
 export { createHttpClient } from './http/client';
 export type { HttpClientOptions } from './http/client';
@@ -49,8 +49,16 @@ export type {
 } from './runtime/manager';
 export { Semaphore } from './runtime/semaphore';
 export type { Metrics } from './metrics';
-export { CALL_LOG_RETENTION_MS, SCHEMA_VERSION, Store, StoreError, USAGE_RETENTION_MS } from './store/store';
-export type { BreakerReason, BreakerRow, CallRecord, Clock, UsageEvent } from './store/store';
+export {
+  CALL_LOG_RETENTION_MS,
+  DEFAULT_JOB_RETENTION_DAYS,
+  MAX_JOB_DESCRIPTION_CHARS,
+  SCHEMA_VERSION,
+  Store,
+  StoreError,
+  USAGE_RETENTION_MS,
+} from './store/store';
+export type { BreakerReason, BreakerRow, CallRecord, Clock, NewJobRow, StoredJobRow, UsageEvent } from './store/store';
 export { DEFAULT_RATE, effectiveRate } from './limits/policy';
 export { RateLimiter } from './limits/ratelimit';
 export type { RateStatus, WindowUsage } from './limits/ratelimit';

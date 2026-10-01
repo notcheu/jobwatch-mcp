@@ -41,10 +41,14 @@ export interface CallRecord {
 /** Retention: the call log keeps 30 days; usage events only need to cover the longest rate window with margin. */
 export const CALL_LOG_RETENTION_MS = 30 * 24 * 3600 * 1000;
 export const USAGE_RETENTION_MS = 2 * 24 * 3600 * 1000;
+/** Stored job postings: kept `JW_JOB_RETENTION_DAYS` (default 30) from the last fetch. */
+export const DEFAULT_JOB_RETENTION_DAYS = 30;
+export const MAX_JOB_DESCRIPTION_CHARS = 20_000;
+const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Each entry upgrades the schema by one version (`PRAGMA user_version`). Never edit a released migration: add a new one.
- * Step 6 adds columns for cold starts and peak memory to `call_log` as migration 2.
+ * Migration 2 adds the `jobs` table.
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -76,6 +80,22 @@ const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX call_log_ts ON call_log (ts);
   `,
+  // 2: the jobs an adapter already opened (public postings; no cookies, no arguments). Evicted by `prune` on fetched_at.
+  `
+  CREATE TABLE jobs (
+    platform    TEXT    NOT NULL,
+    id          TEXT    NOT NULL,
+    first_seen  INTEGER NOT NULL,
+    fetched_at  INTEGER NOT NULL,
+    title       TEXT,
+    company     TEXT,
+    location    TEXT,
+    url         TEXT    NOT NULL,
+    description TEXT    NOT NULL,
+    PRIMARY KEY (platform, id)
+  ) WITHOUT ROWID;
+  CREATE INDEX jobs_fetched_at ON jobs (fetched_at);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -87,15 +107,22 @@ interface Rows {
 /**
  * The router's only persistent state: rate-limit usage, circuit breakers and the call log (SQLite, WAL).
  * Synchronous on purpose: one process, tiny rows, and a rate check must be atomic with its decision.
- * Never stores cookies, tokens, arguments or page content: only counters, platform names and hashes.
+ * Also holds the job postings adapters chose to remember (`jobs`: public text, retention below). Never stores cookies, tokens,
+ * tool arguments or raw pages: otherwise only counters, platform names and hashes.
  */
 export class Store {
   private closed = false;
 
-  private constructor(private readonly db: DatabaseSync) {}
+  private constructor(
+    private readonly db: DatabaseSync,
+    private readonly jobRetentionMs: number,
+  ) {}
 
   /** `path` may be `:memory:` (tests). A file is created with mode 0600 together with its parent directory. */
-  static open(path: string): Store {
+  static open(path: string, options: { jobRetentionDays?: number } = {}): Store {
+    const days = options.jobRetentionDays ?? DEFAULT_JOB_RETENTION_DAYS;
+    if (!Number.isInteger(days) || days < 1 || days > 3650)
+      throw new StoreError('jobRetentionDays must be a whole number of days between 1 and 3650');
     let db: DatabaseSync;
     try {
       if (path !== ':memory:') {
@@ -120,7 +147,7 @@ export class Store {
       if (cause instanceof StoreError) throw cause;
       throw new StoreError(`Cannot prepare the database at ${path}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
-    return new Store(db);
+    return new Store(db, days * 24 * 3600 * 1000);
   }
 
   private static migrate(db: DatabaseSync): void {
@@ -232,11 +259,61 @@ export class Store {
     return Number((this.db.prepare('SELECT count(*) AS n FROM call_log').get() as Rows | undefined)?.['n'] ?? 0);
   }
 
+  // ------------------------------------------------------------------------------------------------------ jobs
+
+  /** Which of `ids` are stored for `platform`. */
+  knownJobs(platform: string, ids: readonly string[]): Set<string> {
+    const found = new Set<string>();
+    const stmt = this.db.prepare('SELECT 1 AS hit FROM jobs WHERE platform = ? AND id = ?');
+    for (const id of new Set(ids)) if (stmt.get(platform, id) !== undefined) found.add(id);
+    return found;
+  }
+
+  getJob(platform: string, id: string): StoredJobRow | null {
+    const row = this.db.prepare('SELECT * FROM jobs WHERE platform = ? AND id = ?').get(platform, id) as Rows | undefined;
+    return row === undefined ? null : toJob(row);
+  }
+
+  /** Insert, or replace and refresh `fetched_at`; `first_seen` survives a refresh. Validates and caps what an adapter sends. */
+  putJob(platform: string, job: NewJobRow, now: number): void {
+    if (!JOB_ID.test(job.id)) throw new StoreError('invalid job id');
+    const text = (value: string | null, max: number): string | null => (value === null ? null : value.slice(0, max));
+    this.db
+      .prepare(
+        `INSERT INTO jobs (platform, id, first_seen, fetched_at, title, company, location, url, description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (platform, id) DO UPDATE SET
+           fetched_at = excluded.fetched_at, title = excluded.title, company = excluded.company, location = excluded.location,
+           url = excluded.url, description = excluded.description`,
+      )
+      .run(
+        platform,
+        job.id,
+        now,
+        now,
+        text(job.title, 300),
+        text(job.company, 300),
+        text(job.location, 300),
+        job.url.slice(0, 500),
+        job.description.slice(0, MAX_JOB_DESCRIPTION_CHARS),
+      );
+  }
+
+  countJobs(platform?: string): number {
+    const row = (
+      platform === undefined
+        ? this.db.prepare('SELECT count(*) AS n FROM jobs').get()
+        : this.db.prepare('SELECT count(*) AS n FROM jobs WHERE platform = ?').get(platform)
+    ) as Rows | undefined;
+    return Number(row?.['n'] ?? 0);
+  }
+
   /** Delete what is past retention. Returns how many rows went. */
-  prune(now: number): { calls: number; usage: number } {
+  prune(now: number): { calls: number; usage: number; jobs: number } {
+    const jobs = Number(this.db.prepare('DELETE FROM jobs WHERE fetched_at < ?').run(now - this.jobRetentionMs).changes);
     const calls = Number(this.db.prepare('DELETE FROM call_log WHERE ts < ?').run(now - CALL_LOG_RETENTION_MS).changes);
     const usage = Number(this.db.prepare('DELETE FROM usage WHERE ts < ?').run(now - USAGE_RETENTION_MS).changes);
-    return { calls, usage };
+    return { calls, usage, jobs };
   }
 
   /** Safe to call more than once (shutdown can be triggered by two signals). */
@@ -245,6 +322,35 @@ export class Store {
     this.closed = true;
     this.db.close();
   }
+}
+
+export interface NewJobRow {
+  id: string;
+  title: string | null;
+  company: string | null;
+  location: string | null;
+  url: string;
+  description: string;
+}
+
+export interface StoredJobRow extends NewJobRow {
+  firstSeen: number;
+  fetchedAt: number;
+}
+
+function toJob(row: Rows): StoredJobRow {
+  const nullable = (value: number | string | null | undefined): string | null =>
+    value === null || value === undefined ? null : String(value);
+  return {
+    id: String(row['id']),
+    title: nullable(row['title']),
+    company: nullable(row['company']),
+    location: nullable(row['location']),
+    url: String(row['url']),
+    description: String(row['description']),
+    firstSeen: Number(row['first_seen']),
+    fetchedAt: Number(row['fetched_at']),
+  };
 }
 
 function toBreaker(row: Rows): BreakerRow {
