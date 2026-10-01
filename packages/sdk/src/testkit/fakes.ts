@@ -9,9 +9,32 @@ import type {
   HttpClient,
   HttpRequestOptions,
   HttpResponse,
+  JobStore,
   Logger,
+  NewJob,
   PaceKind,
+  StoredJob,
 } from '../context';
+
+/** In-memory `JobStore` for adapter tests. `jobs` is inspectable; `now` can be moved to test retention-independent logic. */
+export class FakeJobStore implements JobStore {
+  readonly jobs = new Map<string, StoredJob>();
+  constructor(private readonly clock: () => Date = () => new Date()) {}
+
+  known(ids: readonly string[]): Promise<Set<string>> {
+    return Promise.resolve(new Set(ids.filter((id) => this.jobs.has(id))));
+  }
+
+  get(id: string): Promise<StoredJob | null> {
+    return Promise.resolve(this.jobs.get(id) ?? null);
+  }
+
+  put(job: NewJob): Promise<void> {
+    const now = this.clock().toISOString();
+    this.jobs.set(job.id, { ...job, firstSeen: this.jobs.get(job.id)?.firstSeen ?? now, fetchedAt: now });
+    return Promise.resolve();
+  }
+}
 
 /** A canned page. Real DOM behaviour is not simulated: tests give the fake what the page would have produced. */
 export interface FakePage {
@@ -148,10 +171,13 @@ export interface TestContext<C> {
   logs: CapturedLog[];
   /** `pace` calls, in order. */
   paced: PaceKind[];
+  /** The store behind `ctx.jobs`: seed it with `put`, assert on `jobs`. */
+  jobs: FakeJobStore;
 }
 
 function baseParts(options: TestContextOptions): {
   http: FakeHttpClient;
+  jobs: FakeJobStore;
   log: Logger;
   logs: CapturedLog[];
   paced: PaceKind[];
@@ -164,6 +190,7 @@ function baseParts(options: TestContextOptions): {
   };
   return {
     http: new FakeHttpClient(options.allowedHosts, options.routes),
+    jobs: new FakeJobStore(),
     log: { debug: push('debug'), info: push('info'), warn: push('warn'), error: push('error') },
     logs,
     paced,
@@ -176,15 +203,15 @@ function baseParts(options: TestContextOptions): {
 
 /** Context for testing a `kind: "http"` adapter. */
 export function createHttpTestContext(options: TestContextOptions): TestContext<HttpAdapterContext> {
-  const { http, log, logs, paced, pace } = baseParts(options);
-  return { ctx: { http, log, pace }, http, logs, paced };
+  const { http, jobs, log, logs, paced, pace } = baseParts(options);
+  return { ctx: { http, jobs, log, pace }, http, jobs, logs, paced };
 }
 
 /** Context for testing a `kind: "browser"` adapter. Also returns the fake session for assertions. */
 export function createBrowserTestContext(
   options: TestContextOptions,
 ): TestContext<BrowserAdapterContext> & { session: FakeBrowserSession } {
-  const { http, log, logs, paced, pace } = baseParts(options);
+  const { http, jobs, log, logs, paced, pace } = baseParts(options);
   const session = new FakeBrowserSession(options.allowedHosts, options.pages);
-  return { ctx: { http, log, pace, session }, http, logs, paced, session };
+  return { ctx: { http, jobs, log, pace, session }, http, jobs, logs, paced, session };
 }

@@ -11,7 +11,8 @@ import {
 import { Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { callTool } from './call';
-import { createContextProvider } from './contexts';
+import { createContextProvider, createJobStore } from './contexts';
+import { Store } from './store/store';
 import { createLogger } from './logging';
 import { loadAdapters } from './registry';
 import type { BrowserConnection } from './browser/session';
@@ -297,5 +298,26 @@ describe('a runtime killed under a running call', () => {
     const next = browserAdapter(async () => undefined);
     void next;
     expect(t.runtime?.status().waiting).toBe(0);
+  });
+});
+
+describe('createJobStore', () => {
+  it('scopes jobs to the platform and reports ISO times', async () => {
+    const store = Store.open(':memory:');
+    let now = Date.parse('2026-10-01T10:00:00Z');
+    const linkedin = createJobStore(store, 'linkedin', () => now);
+    const apec = createJobStore(store, 'apec', () => now);
+    await linkedin.put({ id: '4000000001', title: 'T', company: 'C', location: null, url: 'https://x.test/1', description: 'D' });
+    now += 3600_000;
+    await linkedin.put({ id: '4000000001', title: 'T2', company: 'C', location: null, url: 'https://x.test/1', description: 'D2' });
+    expect(await linkedin.known(['4000000001', '4000000009'])).toEqual(new Set(['4000000001']));
+    expect(await apec.known(['4000000001'])).toEqual(new Set());
+    expect(await linkedin.get('4000000001')).toMatchObject({
+      title: 'T2',
+      firstSeen: '2026-10-01T10:00:00.000Z',
+      fetchedAt: '2026-10-01T11:00:00.000Z',
+    });
+    expect(await apec.get('4000000001')).toBeNull();
+    store.close();
   });
 });

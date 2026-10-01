@@ -65,6 +65,7 @@ services:
       JW_BROWSER_LANG: ${JW_BROWSER_LANG:-fr-FR}
       JW_BROWSER_ACCEPT_LANGS: ${JW_BROWSER_ACCEPT_LANGS:-}   # personal list copied from your everyday browser: set it in deploy/.env
       DOCKER_HOST: unix:///var/run/docker.sock          # mcpuser's ROOTLESS socket, mounted below
+      JW_JOB_RETENTION_DAYS: ${JW_JOB_RETENTION_DAYS:-30}
       JW_METRICS_ENABLED: ${JW_METRICS_ENABLED:-false}  # true => Prometheus /metrics on 9464
       JW_METRICS_PORT: 9464
     volumes:

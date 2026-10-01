@@ -1,10 +1,18 @@
-import { JobwatchError, type AdapterModule, type BaseContext, type BrowserAdapterContext, type HttpClient } from '@jobwatch/sdk';
+import {
+  JobwatchError,
+  type AdapterModule,
+  type BaseContext,
+  type BrowserAdapterContext,
+  type HttpClient,
+  type JobStore,
+} from '@jobwatch/sdk';
 import type { ContextProvider } from './call';
 import { DEFAULT_BROWSER_PACING, NO_PACING, createPacer, type PacerOptions } from './browser/pacer';
 import type { ConnectBrowser } from './browser/session';
 import { createHttpClient } from './http/client';
 import { createAdapterLogger, type EngineLogger } from './logging';
 import type { RuntimeManager } from './runtime/manager';
+import { Store } from './store/store';
 
 export interface ContextProviderDeps {
   /** Undefined when no browser adapter is enabled. */
@@ -14,6 +22,22 @@ export interface ContextProviderDeps {
   /** Overridable for tests. */
   createHttp?: (allowedHosts: readonly string[]) => HttpClient;
   pacerOptions?: PacerOptions;
+  /** Where adapters remember the jobs they opened. Omitted only in tests: a private in-memory store is used. */
+  store?: Store;
+  clock?: () => number;
+}
+
+/** The platform-scoped view of the store an adapter gets as `ctx.jobs`. */
+export function createJobStore(store: Store, platform: string, clock: () => number = Date.now): JobStore {
+  const iso = (ms: number): string => new Date(ms).toISOString();
+  return {
+    known: async (ids) => store.knownJobs(platform, ids),
+    get: async (id) => {
+      const row = store.getJob(platform, id);
+      return row === null ? null : { ...row, firstSeen: iso(row.firstSeen), fetchedAt: iso(row.fetchedAt) };
+    },
+    put: async (job) => store.putJob(platform, job, clock()),
+  };
 }
 
 /**
@@ -24,6 +48,7 @@ export interface ContextProviderDeps {
 export function createContextProvider(deps: ContextProviderDeps): ContextProvider {
   const httpClients = new Map<string, HttpClient>();
   const pacers = new Map<string, ReturnType<typeof createPacer>>();
+  const jobStore = deps.store ?? Store.open(':memory:');
 
   const httpFor = (adapter: AdapterModule): HttpClient => {
     let client = httpClients.get(adapter.id);
@@ -44,7 +69,12 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
 
   return {
     async acquire(adapter, _requestId) {
-      const base: BaseContext = { http: httpFor(adapter), log: createAdapterLogger(deps.logger, adapter.id), pace: pacerFor(adapter) };
+      const base: BaseContext = {
+        http: httpFor(adapter),
+        jobs: createJobStore(jobStore, adapter.platform, deps.clock),
+        log: createAdapterLogger(deps.logger, adapter.id),
+        pace: pacerFor(adapter),
+      };
       if (adapter.kind === 'http') return { ctx: base, release: async () => undefined };
 
       if (deps.runtime === undefined) throw new JobwatchError('internal', 'No browser runtime is available.');

@@ -45,6 +45,7 @@ const envSchema = z.object({
     .default('jw-profile-'),
   JW_DATA_DIR: z.string().min(1).default('/data'),
   JW_DB_PATH: z.string().min(1).optional(),
+  JW_JOB_RETENTION_DAYS: integer(1, 3650, 30),
   JW_ADAPTERS: z.string().optional(),
   JW_IDLE_TTL_S: integer(10, 3600, 120),
   JW_MAX_LIFETIME_S: integer(60, 86_400, 1800),
@@ -81,6 +82,8 @@ export interface Config {
   dataDir: string;
   /** SQLite file (rate-limit usage, circuit breakers, call log). `:memory:` only in tests. */
   dbPath: string;
+  /** Days a stored job posting is kept after its last fetch; older ones are evicted (at start and every six hours). */
+  jobRetentionDays: number;
   /** From JW_ADAPTERS. When defined it overrides adapters.json and the CLI refuses to edit the file. */
   adaptersFromEnv: readonly string[] | undefined;
   idleTtlS: number;
@@ -175,6 +178,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       fingerprint: parsed.JW_FINGERPRINT,
       profileVolumePrefix: parsed.JW_PROFILE_VOLUME_PREFIX,
       dataDir: parsed.JW_DATA_DIR,
+      jobRetentionDays: parsed.JW_JOB_RETENTION_DAYS,
       dbPath: parsed.JW_DB_PATH ?? `${parsed.JW_DATA_DIR.replace(/\/+$/, '')}/jobwatch.sqlite`,
       adaptersFromEnv,
       idleTtlS: parsed.JW_IDLE_TTL_S,

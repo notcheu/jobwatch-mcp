@@ -3,7 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { CALL_LOG_RETENTION_MS, SCHEMA_VERSION, Store, StoreError, USAGE_RETENTION_MS, type CallRecord } from './store';
+import {
+  CALL_LOG_RETENTION_MS,
+  MAX_JOB_DESCRIPTION_CHARS,
+  SCHEMA_VERSION,
+  Store,
+  StoreError,
+  USAGE_RETENTION_MS,
+  type CallRecord,
+  type NewJobRow,
+} from './store';
 
 let dir: string;
 beforeEach(async () => {
@@ -176,7 +185,7 @@ describe('call log', () => {
     store.recordCall(call({ ts: now - CALL_LOG_RETENTION_MS + 1000, requestId: 'kept' }));
     store.addUsage('a', now - USAGE_RETENTION_MS - 1, 1);
     store.addUsage('a', now - 1000, 1);
-    expect(store.prune(now)).toEqual({ calls: 1, usage: 1 });
+    expect(store.prune(now)).toEqual({ calls: 1, usage: 1, jobs: 0 });
     expect(store.recentCalls(10).map((c) => c.requestId)).toEqual(['kept']);
     expect(store.usageSince('a', 0)).toHaveLength(1);
   });
@@ -200,5 +209,68 @@ describe('SQL injection through values', () => {
     expect(store.recentCalls(1)[0]?.tool).toBe(evil);
     expect(store.getBreaker(evil)?.platform).toBe(evil);
     expect(store.countCalls()).toBe(1);
+  });
+});
+
+describe('jobs', () => {
+  const job = (id: string, over: Partial<NewJobRow> = {}): NewJobRow => ({
+    id,
+    title: 'Backend Engineer',
+    company: 'Acme',
+    location: 'Paris',
+    url: `https://www.linkedin.com/jobs/view/${id}/`,
+    description: 'Build APIs.',
+    ...over,
+  });
+
+  it('stores a job per platform, answers known() and returns it back', () => {
+    const store = Store.open(':memory:');
+    store.putJob('linkedin', job('4000000001'), 1000);
+    expect(store.knownJobs('linkedin', ['4000000001', '4000000002', '4000000001'])).toEqual(new Set(['4000000001']));
+    expect(store.knownJobs('apec', ['4000000001']).size).toBe(0);
+    expect(store.getJob('linkedin', '4000000001')).toMatchObject({
+      title: 'Backend Engineer',
+      description: 'Build APIs.',
+      firstSeen: 1000,
+      fetchedAt: 1000,
+    });
+    expect(store.getJob('apec', '4000000001')).toBeNull();
+    store.close();
+  });
+
+  it('a second put refreshes the content and fetched_at but keeps first_seen', () => {
+    const store = Store.open(':memory:');
+    store.putJob('linkedin', job('4000000001'), 1000);
+    store.putJob('linkedin', job('4000000001', { description: 'New text' }), 5000);
+    expect(store.getJob('linkedin', '4000000001')).toMatchObject({ description: 'New text', firstSeen: 1000, fetchedAt: 5000 });
+    expect(store.countJobs()).toBe(1);
+    store.close();
+  });
+
+  it('caps the stored text and refuses an invalid id', () => {
+    const store = Store.open(':memory:');
+    store.putJob('linkedin', job('4000000001', { description: 'x'.repeat(50_000), title: 't'.repeat(900) }), 1);
+    const stored = store.getJob('linkedin', '4000000001');
+    expect(stored?.description).toHaveLength(MAX_JOB_DESCRIPTION_CHARS);
+    expect(stored?.title).toHaveLength(300);
+    for (const bad of ['', 'a b', '../x', 'x'.repeat(65)]) expect(() => store.putJob('linkedin', job(bad), 1)).toThrow(StoreError);
+    store.close();
+  });
+
+  it('evicts jobs past the retention, counted from the last fetch', () => {
+    const day = 24 * 3600 * 1000;
+    const store = Store.open(':memory:', { jobRetentionDays: 7 });
+    store.putJob('linkedin', job('4000000001'), 0);
+    store.putJob('linkedin', job('4000000002'), 0);
+    store.putJob('linkedin', job('4000000002', { description: 'refetched' }), 6 * day);
+    expect(store.prune(8 * day).jobs).toBe(1);
+    expect(store.knownJobs('linkedin', ['4000000001', '4000000002'])).toEqual(new Set(['4000000002']));
+    expect(store.prune(14 * day).jobs).toBe(1);
+    expect(store.countJobs()).toBe(0);
+    store.close();
+  });
+
+  it('rejects a retention that is not a sensible number of days', () => {
+    for (const days of [0, -1, 1.5, 4000]) expect(() => Store.open(':memory:', { jobRetentionDays: days })).toThrow(StoreError);
   });
 });

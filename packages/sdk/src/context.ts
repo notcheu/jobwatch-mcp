@@ -66,8 +66,40 @@ export interface Logger {
   error(message: string, fields?: Record<string, unknown>): void;
 }
 
+/** A job posting an adapter wants to remember. Third-party text: stored as data, never interpreted. */
+export interface NewJob {
+  /** Platform-local id (digits for LinkedIn). 1 to 64 of letters, digits, `_`, `-`. */
+  id: string;
+  title: string | null;
+  company: string | null;
+  location: string | null;
+  url: string;
+  /** Capped by the engine (20 000 characters). */
+  description: string;
+}
+
+export interface StoredJob extends NewJob {
+  /** ISO time the job was first stored, and the last time it was (re)fetched. Retention counts from `fetchedAt`. */
+  firstSeen: string;
+  fetchedAt: string;
+}
+
+/**
+ * The adapter's memory of jobs it already opened, scoped to its platform by the engine (an adapter cannot read another
+ * platform's rows). Stored jobs are evicted after `JW_JOB_RETENTION_DAYS`; a later search then treats them as new again.
+ * Store only a job that was opened AND accepted: that is what makes "already seen" mean "do not open it again".
+ */
+export interface JobStore {
+  /** Which of `ids` are stored. Order and duplicates are irrelevant. */
+  known(ids: readonly string[]): Promise<Set<string>>;
+  get(id: string): Promise<StoredJob | null>;
+  /** Insert, or replace and refresh `fetchedAt` (keeps `firstSeen`). */
+  put(job: NewJob): Promise<void>;
+}
+
 export interface BaseContext {
   http: HttpClient;
+  jobs: JobStore;
   log: Logger;
   /** Human-like delay from the platform's pacing policy. */
   pace(kind: PaceKind): Promise<void>;
