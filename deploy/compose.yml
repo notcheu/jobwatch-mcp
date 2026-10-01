@@ -2,6 +2,8 @@
 # Your existing Nginx proxies https://mcp.noguetith.fr to the single published MCP port below (deploy/nginx/).
 # Runs on Linux (Ubuntu, rootless Docker) and on macOS (Docker Desktop, arm64) for development: see compose.dev.yml and 10-deployment.md.
 name: jobwatch
+volumes:
+  redis-data:
 networks:
   jobwatch-core:     { internal: false }     # front <-> router, front <-> redis (front needs egress to reach Google)
   jobwatch-browsers: { internal: true }      # router <-> spawned browsers
@@ -18,7 +20,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       TRUSTED_PROXY_CIDRS: ${JW_NGINX_CIDR}          # address(es) of your Nginx as seen by this container; needed for X-Forwarded-* and rate limits
       # LISTEN_ADDR defaults to :8080; metrics/readyz listen on 127.0.0.1:9090 inside the container (not published)
-    depends_on: [ redis ]
+    depends_on:
+      redis: { condition: service_healthy }
     ports:
       - "${JW_BIND:-127.0.0.1}:${JW_HOST_PORT:-18931}:8080"   # the ONLY published MCP port; Nginx proxy_pass target
     networks: [ jobwatch-core ]
@@ -29,8 +32,14 @@ services:
     restart: unless-stopped
   redis:                                     # replay defence for the front (single-use codes, refresh rotation)
     image: ${JW_REDIS_IMAGE:-redis:7-alpine}
+    user: "999:999"                          # the image's own redis user: its root entrypoint needs SETUID/SETGID, which cap_drop ALL removes (tested)
     command: [ "redis-server", "--appendonly", "yes", "--maxmemory", "32mb", "--maxmemory-policy", "noeviction" ]
-    volumes: [ "../data/redis:/data" ]
+    volumes: [ "redis-data:/data" ]          # named volume (a host directory would not be writable by uid 999 under rootless Docker)
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks: [ jobwatch-core ]
     mem_limit: 64m
     cap_drop: [ ALL ]

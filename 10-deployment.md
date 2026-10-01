@@ -42,7 +42,7 @@
 /srv/jobwatch/                 (owner mcpuser:mcpuser, mode 0750)   # or the cloned repo; paths below are relative to deploy/
   deploy/compose.yml, deploy/.env (0600, secrets), deploy/nginx/*.conf
   data/router                  router SQLite, logs (0700)
-  data/redis                   Redis append-only file for the OAuth front
+  (Redis keeps its data in the named volume redis-data)
   data/front                   (reserved)
 ```
 Browser profiles are **not** host directories: they are named Docker volumes `jw-profile-<platform>` in the `mcpuser` rootless daemon's storage (`~/.local/share/docker/volumes`), created by the router. This keeps the compose file and the router identical on Linux and macOS. Never in git, never in plain backups.
@@ -125,7 +125,7 @@ Rootless Docker starts at boot through `systemctl --user enable docker` + `login
 1. User `mcpuser`, linger, rootless Docker (Host prerequisites above).
 2. DNS record and router port forwarding for `mcp.noguetith.fr` (Nginx section, steps 1-2).
 3. Google OAuth app in Testing mode, with only your account as test user ("Google sign-in" section).
-4. `cp deploy/.env.example deploy/.env && chmod 600 deploy/.env`, fill `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `TOKEN_SIGNING_SECRET`, `JW_NGINX_CIDR`, `JW_REGISTRY`, `JW_WATCHTOWER_IMAGE`; `mkdir -p data/router data/redis`.
+4. `cp deploy/.env.example deploy/.env && chmod 600 deploy/.env`, fill `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `TOKEN_SIGNING_SECRET`, `JW_NGINX_CIDR`, `JW_REGISTRY`, `JW_WATCHTOWER_IMAGE`; `mkdir -p data/router`.
 5. Nginx: bootstrap site, certbot, final site (Nginx section, steps 3-5).
 6. `docker login <registry>` as `mcpuser`; `docker compose -f deploy/compose.yml --env-file deploy/.env up -d`; run the smoke test (Nginx section, step 6).
 7. Add `https://mcp.noguetith.fr/mcp` as a custom connector in Claude, sign in with your Google account, then the acceptance checklist in `02-…`.
