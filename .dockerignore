@@ -7,7 +7,6 @@ data
 profiles
 secrets
 *.md
-!catalog/**
 .env*
 **/*.har
 **/*.log

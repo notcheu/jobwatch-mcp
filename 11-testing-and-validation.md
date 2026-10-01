@@ -33,4 +33,4 @@ See `12-roadmap.md` (exit criteria). Global acceptance for go-live:
 - [ ] Security checklist in `09-…` fully ticked.
 
 ## Tooling
-`vitest`, `msw` (or undici `MockAgent`) to mock HTTP adapters, `eslint` + `prettier`, `tsc --noEmit` with `strict`, `husky`/`pre-commit` (eslint, secret scan), GitHub Actions or a local `npm run ci` (Matthieu's choice) running unit+contract+integration on the Ubuntu machine (integration needs the runtime; separate vitest project/tag, e.g. `npm run test:integration`).
+`nx` (`nx affected -t lint typecheck test` in CI), `vitest`, `msw` (or undici `MockAgent`) to mock HTTP adapters, `eslint` + `prettier`, `tsc --noEmit` with `strict`, `husky`/`pre-commit` (eslint, secret scan), GitHub Actions or a local `npm run ci` (Matthieu's choice) running unit+contract+integration on the Ubuntu machine (integration needs the runtime; separate vitest project/tag, e.g. `npm run test:integration`).

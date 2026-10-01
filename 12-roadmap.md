@@ -19,7 +19,16 @@ Work in order. Do not skip Phase 0: several design choices hinge on it. Keep a r
 **Exit**: all VERIFY items in `14-…` are resolved or consciously accepted; decisions D7, D8 closed (D10 decided: Nginx); measurements recorded.
 
 ## Phase 1 — Router core + LinkedIn adapter (local, no OAuth)
-Tasks: repo skeleton (`03-…`); config; Adapter SDK (`defineAdapter`/`defineTool`, `BrowserSession`, `HttpClient`, registry, `catalog:gen`, testkit) + models; MCP app (stateless Streamable HTTP) with `tools/list` from catalog; `RuntimeBackend` + `DockerCliBackend`; runtime manager (state machine, semaphore, preemption, reaper, watchdog); CDP wrapper (exactly one tab, host allowlist, graceful quit); fingerprint self-check; SQLite store (counters, breaker, call log); rate limiter + breaker; LinkedIn adapter (`session_status`, `linkedin_search`, `linkedin_job`, `linkedin_search_and_read`); `memory_report`; browser image (`05-…`) + login mode + `jobwatch login` CLI; unit/contract/integration tests; `npm run` scripts (build, lint, typecheck, test).
+Workspace layout and rules: `03-router-spec.md` ("Repo layout: Nx monorepo"). Build order, one commit per step, repo green after each (decided 2026-10-01):
+1. Nx workspace, tooling, module-boundary lint rules, first test.
+2. `packages/sdk`: types, `defineAdapter`/`defineTool`, errors, `SDK_API_VERSION`, testkit.
+3. `packages/core`: config and logging, registry (`loadAdapters`) and catalog snapshot logic, with a fake adapter proving `tools/list` works with no container; `packages/adapters` (installed map) and the adapter generator.
+4. `apps/mcp`: stateless Streamable HTTP, `/healthz`, `/metrics`, contract test; `apps/cli` with `adapters list|enable|disable`. **Open the first PR here** (server runs locally, empty catalog plus one fake adapter), then one PR per later step group.
+5. `core`: SQLite store, rate limiter, breaker, `RuntimeBackend` + `DockerCliBackend`, runtime manager (state machine, semaphore, preemption, reaper, watchdog), tested against a fake backend first.
+6. `core`: browser layer (CDP wrapper with exactly one tab and host allowlist, fingerprint self-check) and `images/browser/` (promoted from `spikes/`).
+7. `packages/adapter-linkedin` (layout A first, then B), ops tools `session_status` and `memory_report`.
+8. `apps/cli`: `login`, `catalog`, `doctor`; Docker integration tests.
+9. Soak test.
 **Exit**: from a local MCP client on the host, the LinkedIn tools return correct data within budgets; lifecycle invariants pass (cold/warm/reap/preempt/OOM); soak test 6 h green.
 
 ## Phase 2 — Public endpoint, OAuth, Claude integration

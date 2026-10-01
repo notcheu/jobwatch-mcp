@@ -11,7 +11,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.nog
 - **Libraries:** `@modelcontextprotocol/sdk` (stateless Streamable HTTP) on Express, `zod`, `playwright-core` (`connectOverCDP` only, behind `BrowserSession`), `better-sqlite3`, `pino`, `prom-client` (optional metrics), `vitest`, `eslint` + `prettier`.
 - **Platforms:** production is the Ubuntu NUC (x86_64, rootless Docker). The images are multi-arch (amd64 + arm64) so they also run on a Mac (Docker Desktop, arm64) for development; the arm64 browser image uses Chromium (Google ships no Linux arm64 Chrome) and is **not** for the LinkedIn session. Never hard-code Linux-only paths: profiles are named Docker volumes, the Docker socket path comes from `JW_DOCKER_SOCKET`.
 - **Runtime:** rootless Docker for a dedicated `mcpuser` user; always-on services (OAuth front, router, Watchtower) in `deploy/compose.yml`; browser containers are spawned by the router, never declared in compose.
-- **Adapters:** one module per platform under `src/adapters/<platform>/index.ts` using the Adapter SDK (`defineAdapter`/`defineTool`). Tool definitions live in code; `catalog/*.json` is a **generated** snapshot.
+- **Monorepo (Nx + npm workspaces):** `packages/sdk` (the adapter contract), `packages/core` (engine), `packages/adapters` (installed adapter map), `packages/adapter-<platform>` (one package per platform, depends on `sdk` only), `apps/mcp` (server), `apps/cli` (`jobwatch`). Tool definitions live in code; each adapter package has a **generated** `catalog/` snapshot. Adapters are enabled/disabled with `jobwatch adapters enable|disable <id>` (`adapters.json`); nothing is enabled by default.
 - **Delivery:** GitHub Actions builds and pushes `jobwatch-router:latest` to a private registry; Watchtower on the host updates the router (`10-deployment.md`).
 
 ## Hard no rules
@@ -26,6 +26,9 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.nog
 ## Git commits
 - Always create and switch to a new branch before starting work if the current branch is `main`.
 - Commit after each big implementation step (a completed feature module, an adapter, a migration, or a self-contained chunk of a plan), unless Matthieu asks to work differently (e.g. pausing for manual review between steps).
+- **One branch and one pull request per roadmap step** (`phase-N/step-M-<name>`), opened as soon as the step is validated. Fill `.github/pull_request_template.md`: start with "This PR adds/implements/fixes/drops ..." and include any specific direction taken.
+- **PR title follows semantic release naming:** `<type>(<optional scope>): <summary>` with type `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf` or `wip`, imperative and lowercase after the colon.
+- **Merge with SQUASH, never a merge commit** (`gh pr merge --squash`), using the PR title as the subject and the PR description as the body. Wait for CI (`gh pr checks --watch`) before merging; never merge over a red check.
 - Every phase ends with its exit criteria met and documented.
 
 ## Secrets and sensitive files
@@ -35,25 +38,30 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.nog
 - CI secrets (`REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`) live only in GitHub secrets; the host's registry login lives only in the `mcpuser` user's `~/.docker/config.json`.
 
 ## Commands
-Scripts are planned and do not exist until `package.json` is created in Phase 1; keep this list in sync when they do.
+Use Node 26 (`nvm use`, `.nvmrc`). Marked "(planned)" = not implemented yet; the rest runs today.
 ```
-npm ci                      # install from lockfile
-npm run build               # tsc + copy non-TS assets (adapters/**/extract.js)
-npm run lint                # eslint + prettier check
-npm run typecheck           # tsc --noEmit (strict)
-npm test                    # vitest: unit + contract
-npm run test:integration    # needs the browser runtime (rootless Docker)
-npm run catalog:gen         # regenerate catalog/*.json from the registry; commit the result
-docker build -t jobwatch-router:dev .
+npm ci                      # install from lockfile (install scripts are denied by default via package.json "allowScripts")
+npm run lint                # nx run-many -t lint   (includes the architecture rules: module boundaries, restricted imports)
+npm run typecheck           # nx run-many -t typecheck (tsc, strict)
+npm test                    # nx run-many -t test (vitest: unit + contract)
+npm run format              # prettier --write . ;  npm run format:check
+npm run ci                  # format:check + lint + typecheck + test
+npx nx run-many -t lint typecheck test   # same targets directly; `nx affected -t ...` for changed projects
+npm run build               # (planned) bundle apps/mcp and apps/cli with esbuild
+npm run test:integration    # (planned) needs the browser runtime (rootless Docker)
+npm run catalog:gen         # (planned) regenerate every adapter's catalog/ snapshot (jobwatch catalog gen); commit the result
+npx nx g @jobwatch/tools:adapter <id>   # (planned) scaffold a new adapter package
+npx jobwatch adapters list|enable|disable ...   # (planned) which installed adapters the router plugs in
+docker build -t jobwatch-router:dev .   # (planned, Dockerfile untested until apps/mcp exists)
 docker compose -f deploy/compose.yml --env-file deploy/.env up -d      # as mcpuser
 ```
-Node version is pinned in `.nvmrc` and `engines`. After changing any tool definition, run `catalog:gen` (a contract test fails on drift).
+Pinned versions: TypeScript 5.9.3 on purpose (`typescript-eslint` 8.71 supports TypeScript below 6.1 only; revisit before moving to TypeScript 7). After adding or removing a package, the Nx project graph cache can be stale for direct `eslint` runs: run any `nx` command (for example `npx nx show projects`) first. After changing any tool definition, run `catalog:gen` (a contract test fails on drift).
 
 ## Sources of truth and paths
 - **Docs vs code:** until code exists, the numbered docs are the spec. Once code exists, code wins for behaviour; any change to behaviour or to a decision must update the affected doc (and the diagram in `16-…` if it shows it) in the same commit. A `VERIFY:` tag marks an assumption that is **not** a fact: verify it (Phase 0 or when implementing) and record the outcome in `14-risks-and-open-questions.md` and the affected file.
-- **Generated, never hand-edited:** `catalog/*.json`.
-- **Layout:** `src/` (router, `adapters/<platform>/`, `browser/`, `runtime/`, `limits/`, `store/`, `obs/`), `catalog/`, `images/browser/`, `deploy/`, `tests/`, `Dockerfile`, `.github/workflows/`. Full layout in `03-router-spec.md`.
-- **Seed code:** copy the proven `linkedin-extract.js` from the routine folder into `src/adapters/linkedin/extract.js` as the starting point for the LinkedIn adapter.
+- **Generated, never hand-edited:** `packages/adapter-*/catalog/*.json`.
+- **Layout:** see `03-router-spec.md` ("Repo layout: Nx monorepo"). Module-boundary rules are lint errors: adapters import only `@jobwatch/sdk`; only `packages/core/src/browser/session.ts` imports `playwright-core`.
+- **Seed code:** copy the proven `linkedin-extract.js` from the routine folder into `packages/adapter-linkedin/src/extract.js` as the starting point for the LinkedIn adapter.
 
 ## Gotchas (details in the linked docs)
 - **CI image must be built with `provenance: false`**, otherwise Watchtower cannot resolve the new digest (`10-…`).
@@ -79,7 +87,7 @@ The numbered docs cross-reference each other, so context is loaded **on demand, 
 | Orientation, "what is this project" | `00-overview.md`, `16-architecture-diagrams.md` | a decision's rationale matters → `01`; security questions → `09` |
 | Decisions / ADRs, changing a choice | `01-decisions.md` | the choice touches OAuth → `02`, runtime → `05`/`06`, deployment → `10` |
 | OAuth front, Claude connector, Nginx | `02-claude-connector-requirements.md`, `10-deployment.md` | front options → `01` (D7); threats → `09`; spikes S1/S2/S8 → `12` |
-| Router core (MCP app, limits, lifecycle, Adapter SDK, errors, config) | `03-router-spec.md` | tool schemas → `04`; RAM and state machine → `06`; CDP → `05`; logs/metrics/deploy → `10` |
+| Router core, workspace layout, Adapter SDK, adapter enable/disable, CLI | `03-router-spec.md` | tool schemas → `04`; RAM and state machine → `06`; CDP → `05`; logs/metrics/deploy → `10` |
 | Tool catalog and schemas | `04-catalog-and-tool-schemas.md` | SDK rules → `03`; per-platform behaviour → `07`/`08`; how the routine calls them → `13` |
 | Browser image, CDP, fingerprint, login mode | `05-browser-runtime.md` | limits and watchdog → `06`; container hardening → `09`; host setup → `10` |
 | Memory policy, runtime state machine, watchdog | `06-memory-and-lifecycle-policy.md` | image flags → `05`; manager code → `03`; measurements → `11` |
