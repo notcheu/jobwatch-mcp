@@ -2,8 +2,10 @@ import { createServer as createHttpServer, type Server as HttpServer } from 'nod
 import {
   CircuitBreaker,
   ConfigError,
+  DockerCliBackend,
   RateLimiter,
   RegistryError,
+  RuntimeManager,
   Store,
   StoreError,
   createGuard,
@@ -18,6 +20,8 @@ import {
   type Clock,
   type ContextProvider,
   type InstalledAdapters,
+  type RuntimeBackend,
+  type RuntimeHooks,
 } from '@jobwatch/core';
 import { installed } from '@jobwatch/adapters';
 import { createApp } from './app';
@@ -31,6 +35,8 @@ export interface RunningServer {
   store: Store;
   limiter: RateLimiter;
   breaker: CircuitBreaker;
+  /** Present only when a browser adapter is enabled. */
+  runtime: RuntimeManager | undefined;
   /** The MCP listener. */
   mcp: HttpServer;
   /** The metrics listener, when enabled. */
@@ -47,6 +53,10 @@ export interface StartOptions {
   contexts?: ContextProvider;
   /** Where log lines go; defaults to stdout. */
   logDestination?: NodeJS.WritableStream;
+  /** Container runtime for browser adapters; tests pass a fake. Defaults to the docker CLI. */
+  runtimeBackend?: RuntimeBackend;
+  /** Browser-layer hooks (DevTools readiness, quit, memory shedding): wired in step 6. */
+  runtimeHooks?: RuntimeHooks;
   /** Time source for rate limits and breakers; tests pass a controllable one. */
   clock?: Clock;
   /** Overrides JW_PORT (tests pass 0 for a free port). */
@@ -123,6 +133,32 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const pruneTimer = setInterval(pruneNow, PRUNE_INTERVAL_MS);
   pruneTimer.unref();
 
+  // The browser runtime exists only when an enabled adapter needs one: a router with HTTP adapters only never touches docker.
+  const needsBrowser = registry.adapters.some((adapter) => adapter.kind === 'browser');
+  let runtime: RuntimeManager | undefined;
+  if (needsBrowser) {
+    runtime = new RuntimeManager(
+      options.runtimeBackend ?? new DockerCliBackend(undefined, config.browserNetwork),
+      {
+        image: config.browserImage,
+        network: config.browserNetwork,
+        ...(config.browserSeccomp ? { seccompProfile: config.browserSeccomp } : {}),
+        profileVolumePrefix: config.profileVolumePrefix,
+        idleTtlS: config.idleTtlS,
+        maxLifetimeS: config.maxLifetimeS,
+        queueTimeoutS: config.queueTimeoutS,
+        memMaxMb: config.memMaxMb,
+        memHighMb: config.memHighMb,
+      },
+      logger,
+      options.runtimeHooks,
+      (event) => metrics?.recordRuntime(event),
+    );
+    // Containers left by a previous router (crash, kill -9) would hold RAM and a profile lock. A docker that is not reachable
+    // is logged, not fatal: the router comes up and every browser call fails with a clear error until docker is back.
+    await runtime.reapOrphans().catch((error: unknown) => logger.error({ err: error }, 'orphan_reap_failed'));
+  }
+
   const app = createApp({
     registry,
     contexts: options.contexts ?? noRuntime,
@@ -160,11 +196,13 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     store,
     limiter,
     breaker,
+    runtime,
     mcp: mcpServer,
     metrics: metricsServer,
     close: (graceMs = 10_000) => {
       closing ??= (async () => {
         clearInterval(pruneTimer);
+        await runtime?.shutdown();
         await Promise.all([closeServer(mcpServer, graceMs), metricsServer ? closeServer(metricsServer, graceMs) : Promise.resolve()]);
         store.close();
         logger.info('stopped');

@@ -18,6 +18,23 @@ export type { InstalledAdapters, ListedTool, RegisteredTool, Registry } from './
 export { UnknownToolError, argsHash, callTool, noRuntime } from './call';
 export type { CallDeps, CallGuard, CallRecorder, ContextProvider, ToolCallResult, ToolContent, ToolOutcome } from './call';
 export { createMetrics } from './metrics';
+export { BackendError } from './runtime/backend';
+export type { ContainerState, RuntimeBackend, RuntimeHandle, RuntimeSpec } from './runtime/backend';
+export { DockerCliBackend, MANAGED_LABEL, runArgs, spawnDocker } from './runtime/dockerCli';
+export type { CliResult, DockerRunner } from './runtime/dockerCli';
+export { RuntimeManager } from './runtime/manager';
+export type {
+  Lease,
+  LeaseOptions,
+  ManagerConfig,
+  MemoryLevel,
+  RuntimeEvent,
+  RuntimeHooks,
+  RuntimeState,
+  RuntimeStatus,
+  StopReason,
+} from './runtime/manager';
+export { Semaphore } from './runtime/semaphore';
 export type { Metrics } from './metrics';
 export { CALL_LOG_RETENTION_MS, SCHEMA_VERSION, Store, StoreError, USAGE_RETENTION_MS } from './store/store';
 export type { BreakerReason, BreakerRow, CallRecord, Clock, UsageEvent } from './store/store';
@@ -27,3 +44,4 @@ export type { RateStatus, WindowUsage } from './limits/ratelimit';
 export { CHECKPOINT_TTL_S, CircuitBreaker } from './limits/breaker';
 export type { BreakerListener } from './limits/breaker';
 export { createGuard, policyFor } from './limits/guard';
+export { FakeBackend } from './runtime/fake';

@@ -25,6 +25,11 @@ const envSchema = z.object({
   JW_PORT: integer(1024, 65535, 8080),
   JW_RUNTIME: z.enum(['docker', 'systemd-scope']).default('docker'),
   JW_BROWSER_IMAGE: z.string().min(1).default('localhost/jobwatch-browser:1'),
+  JW_BROWSER_NETWORK: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_.-]*$/)
+    .default('jobwatch-browsers'),
+  JW_BROWSER_SECCOMP: z.string().startsWith('/').optional(),
   JW_PROFILE_VOLUME_PREFIX: z
     .string()
     .regex(/^[a-z0-9][a-z0-9_.-]*$/)
@@ -54,6 +59,10 @@ export interface Config {
   port: number;
   runtime: 'docker' | 'systemd-scope';
   browserImage: string;
+  /** Internal Docker network the browser containers join (DevTools is never published). */
+  browserNetwork: string;
+  /** Absolute path of the Chrome seccomp profile as seen by the docker CLI; unset = Docker's default profile. */
+  browserSeccomp: string | undefined;
   profileVolumePrefix: string;
   dataDir: string;
   /** SQLite file (rate-limit usage, circuit breakers, call log). `:memory:` only in tests. */
@@ -143,6 +152,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       port: parsed.JW_PORT,
       runtime: parsed.JW_RUNTIME,
       browserImage: parsed.JW_BROWSER_IMAGE,
+      browserNetwork: parsed.JW_BROWSER_NETWORK,
+      browserSeccomp: parsed.JW_BROWSER_SECCOMP,
       profileVolumePrefix: parsed.JW_PROFILE_VOLUME_PREFIX,
       dataDir: parsed.JW_DATA_DIR,
       dbPath: parsed.JW_DB_PATH ?? `${parsed.JW_DATA_DIR.replace(/\/+$/, '')}/jobwatch.sqlite`,
