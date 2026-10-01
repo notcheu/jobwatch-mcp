@@ -3,6 +3,7 @@ dist
 .nx
 coverage
 package-lock.json
+packages/*/catalog
 spikes
 docs
 deploy

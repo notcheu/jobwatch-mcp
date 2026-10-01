@@ -41,7 +41,8 @@ jobwatch-mcp/
                                            hands them to core, serves stateless Streamable HTTP, /healthz, /metrics.
                                            The router Dockerfile builds this app.
     cli/                @jobwatch/cli      `jobwatch` binary: adapters list|enable|disable, login <platform>, catalog gen|check, doctor
-  tools/generators/adapter/                `nx g @jobwatch/tools:adapter <name>`: scaffolds a new adapter package
+  tools/new-adapter/                       `npm run new:adapter -- <id> [--kind http|browser]`: scaffolds a new adapter package
+                                           (a plain Node script, not an Nx plugin generator: no build pipeline for ten small files)
   images/browser/       Dockerfile, entrypoint.sh, chrome-seccomp.json (see 05)
   deploy/               compose.yml, nginx site files (see 10)
   docs/  spikes/  Dockerfile (router image, builds apps/mcp)  .dockerignore
@@ -69,6 +70,12 @@ interface RuntimeBackend {
 //   version.ts  errors.ts  hosts.ts  context.ts  tool.ts  adapter.ts  schema.ts  validate.ts  catalog.ts
 // Only the engine-side interface below is still a sketch until Phase 1 step 5.
 ```
+
+## Implemented in `packages/core` (Phase 1, step 3)
+- **`loadConfig(env)`** (`config.ts`): validates every `JW_*` variable with zod, collects all problems at once, never echoes values. Empty values count as unset (docker compose passes `VAR=`). Cross-checks: `http` base URL only for loopback; **`JW_AUTH=none` only with a loopback `JW_BASE_URL`** (a no-auth server can never run behind the public hostname); `JW_MEM_HIGH_MB < JW_MEM_MAX_MB`; the metrics port differs from the MCP port. Unknown `JW_*` variables are reported as warnings (typos). `describeConfig` redacts the shared secret.
+- **Enabled adapters** (`adapters-config.ts`): `<dataDir>/adapters.json`, written atomically (temp file + rename), sorted and de-duplicated. Precedence: `JW_ADAPTERS` > file > nothing. A missing file means nothing enabled; a present but broken file is an error, never "nothing". Enabling refuses ids that are not installed; **disabling always works** so a stale entry (an adapter deleted from the code) can be removed; editing is refused while `JW_ADAPTERS` is set.
+- **`loadAdapters(enabledIds, installed)`** (`registry.ts`): imports only the enabled adapters, runs `validateAdapter` on each, and fails with every problem at once: unknown id, module id different from its key, a loader that throws, duplicate tool names across adapters, two adapters on one platform with different kinds. **`listTools(registry)`** answers `tools/list` from the definitions: pure data, no handler, no container (tested with a handler call counter).
+- **Logging** (`logging.ts`): pino JSON with ISO timestamps; the logger an adapter receives is tagged with its id and sanitizes free-form fields: sensitive keys (`cookie`, `token`, `secret`, `password`, `authorization`, `session`, `api key`, `li_at`) become `[redacted]`, URL values lose query string, userinfo and fragment, nested objects are omitted.
 
 ## Adapter SDK (adding a platform)
 Goal: a new platform is one generated package plus one registration line, with no engine change.
@@ -112,7 +119,7 @@ Tools are built with `defineHttpTool` (handler context: `{ http, log, pace }`) o
      apec:     () => import("@jobwatch/adapter-apec").then((m) => m.default),
    } satisfies Record<string, () => Promise<AdapterModule>>;
    ```
-   The generator adds the line. Both the server and the CLI import this map, so they always agree.
+   The generator adds the line between the `<installed:begin>` / `<installed:end>` markers, sorted. Both the server and the CLI import this map, so they always agree.
 2. **Enabled**: which installed adapters the router actually plugs in. Stored in `adapters.json` in the data directory (`/data/adapters.json` in the container): `{ "enabled": ["linkedin"] }`. Environment override: `JW_ADAPTERS=linkedin,apec` (wins over the file; the CLI refuses to edit while it is set). **Default on a fresh install: nothing enabled**, so only the built-in ops tools are exposed; the LinkedIn adapter must be enabled on purpose (its usage budget needs Matthieu's approval, `09-security.md`).
 3. **Plugging**: `apps/mcp` calls `loadAdapters(enabledNames, installed)` from core. It imports only the enabled adapters, runs the startup checks below, and builds `tools/list` from them. An unknown name is a startup error. A disabled adapter contributes no tools, its runtime is never started, and its profile volume is untouched.
 4. **Changing the set requires a router restart** (`docker compose restart router`); the connector may need to be refreshed in Claude to see the new tool list (VERIFY in Phase 2). Stateless HTTP cannot push `tools/list_changed`.
@@ -131,7 +138,7 @@ The CLI ships inside the router image too, so on the host: `docker compose exec 
 ### Rules the SDK and registry enforce, so adapter authors cannot break the ground rules
 - **One source of truth.** A tool's schemas, annotations, limits and handler live together. `tools/list` is built at startup from the enabled adapters (pure data, no container).
 - **Startup checks** (per adapter, fail fast): `sdkApi` equals the running `SDK_API_VERSION`; `id` and tool names are unique; `readOnlyHint: true` on every tool; input schemas are `.strict()`; every string has `max()` and every array has `max()`; descriptions state read-only behaviour; every host in `allowedHosts` is a bare hostname.
-- **Catalog snapshots.** Each adapter package has `catalog/*.json`, written by `jobwatch catalog gen` (`nx run <adapter>:catalog`) and committed. A contract test (sdk testkit) fails if the snapshot differs from the adapter's definitions, so every change to what Claude can see shows up in that adapter's diff. Snapshots exist for every installed adapter; only enabled ones are served.
+- **Catalog snapshots.** Each adapter package has `catalog/*.json`, written by `npm run catalog:gen` (it runs every adapter's contract test with `JW_UPDATE_CATALOG=1`, like `vitest -u`; the Nx cache is skipped on purpose) and committed. The snapshots are excluded from prettier: they are deterministic output reviewed as a diff. A contract test (sdk testkit) fails if the snapshot differs from the adapter's definitions, so every change to what Claude can see shows up in that adapter's diff. Snapshots exist for every installed adapter; only enabled ones are served.
 - **Sandboxed surface.** Handlers get only `AdapterContext` (`session`, `http`, `log`, `pace`). `BrowserSession` and `HttpClient` enforce `allowedHosts`; no click, type or generic navigation is ever exposed; handler results are validated against the tool's `output` schema before `shapeOutput`.
 - **Lifecycle is not the adapter's job.** Leasing, the single tab (`06`), timeouts, rate limiting, breaker, memory policy and error mapping stay in core. An adapter signals problems by throwing `SessionInvalid`, `Checkpoint` or `AdapterBroken`.
 - **Honest limit:** adapters run in-process, so an adapter is trusted code. The SDK narrows what it is handed and lint forbids dangerous imports, but it is not a sandbox. Only adapters from this repository are installed; loading external packages by name is deliberately not supported (`JW_EXTRA_ADAPTERS` rejected, 2026-10-01).
@@ -140,7 +147,7 @@ The CLI ships inside the router image too, so on the host: `docker compose exec 
 - **Host allowlist (`isUrlAllowed` / `assertUrlAllowed`):** https only, no credentials in the URL, default port only, hostname must EQUAL a listed host (no subdomain or suffix matching, no IP literals). Core's real `BrowserSession` and `HttpClient` must call it on every navigation and request, including redirects; the fakes already do.
 - **Testable offline.** `@jobwatch/sdk/testkit` provides `FakeBrowserSession` (replays saved, **logged-out or synthetic** HTML from the adapter's `fixtures/`, never real logged-in pages), a fake `HttpClient`, and `runAdapterContract(adapter)` which checks the startup rules, the snapshot, and every tool's output against its schema.
 
-Checklist for a new adapter: `nx g @jobwatch/tools:adapter <id>`; write tools, fixtures and tests; `jobwatch catalog gen`; the generator already added the line to `packages/adapters`; add its pacing and budget to `07-…`/`08-…`; for a browser adapter, add its profile name to the login CLI; `jobwatch adapters enable <id>` on the host.
+Checklist for a new adapter: `npm run new:adapter -- <id>` (creates `packages/adapter-<id>`, adds the line and the dependency to `packages/adapters`, runs `npm install`, formats the files and writes the first catalog snapshot); write tools, fixtures and tests; `npm run catalog:gen` after every change to a tool definition; add its pacing and budget to `07-…`/`08-…`; for a browser adapter, add its profile name to the login CLI; `jobwatch adapters enable <id>` on the host.
 
 ## tools/call flow (pseudo-code)
 ```ts

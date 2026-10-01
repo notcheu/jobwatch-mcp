@@ -20,6 +20,21 @@ afterAll(async () => {
   await Promise.all(Object.values(dirs).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
+// Update mode: starting from an EMPTY folder the contract writes the snapshot and then passes (what `npm run catalog:gen` does).
+let freshDir = '';
+beforeAll(async () => {
+  freshDir = await mkdtemp(join(tmpdir(), 'jw-contract-fresh-'));
+});
+afterAll(async () => {
+  await rm(freshDir, { recursive: true, force: true });
+});
+describeAdapterContract(httpAdapter, {
+  get snapshotDir() {
+    return freshDir;
+  },
+  updateSnapshots: true,
+});
+
 // describeAdapterContract registers tests synchronously, so snapshotDir is resolved lazily through a getter-like proxy path.
 describeAdapterContract(httpAdapter, {
   get snapshotDir() {

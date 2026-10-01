@@ -122,9 +122,9 @@ flowchart TB
 ```
 
 To add a platform (diagram 7 shows the packages):
-1. `nx g @jobwatch/tools:adapter <id>` creates `packages/adapter-<id>` and adds one line to `packages/adapters`.
+1. `npm run new:adapter -- <id>` creates `packages/adapter-<id>`, adds one line to `packages/adapters` and writes the first catalog snapshot.
 2. Write the tools with `defineHttpTool` or `defineBrowserTool`, add fixtures and a contract test using `@jobwatch/sdk/testkit`.
-3. `jobwatch catalog gen`, commit the snapshot, then `jobwatch adapters enable <id>` and restart the router.
+3. `npm run catalog:gen` after every change to a tool, commit the snapshot, then `jobwatch adapters enable <id>` and restart the router.
 
 Only enabled adapters reach `tools/list`. Handlers only receive `AdapterContext` (`BrowserSession`, `HttpClient`, `pace`, `log`), so no generic `navigate` or `evaluate` tool is ever exposed and the host allowlist cannot be bypassed.
 

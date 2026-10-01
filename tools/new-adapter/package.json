@@ -1,0 +1,17 @@
+{
+  "name": "@jobwatch/tool-new-adapter",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Scaffolds a new adapter package: npm run new:adapter -- <id> [--kind http|browser]",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "nx": {
+    "tags": [
+      "type:tool"
+    ]
+  }
+}
