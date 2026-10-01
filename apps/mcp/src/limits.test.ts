@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SDK_API_VERSION, SessionInvalid, defineAdapter, defineHttpTool, z, type AdapterModule } from '@jobwatch/sdk';
@@ -189,8 +189,13 @@ describe('persistence across a restart (a real database file)', () => {
   });
 
   it('refuses to start when the database cannot be opened, with a message that says what to check', async () => {
+    // A parent that is a regular file fails the same way on every OS (a /proc path makes recursive mkdir spin on Linux).
+    const blocker = join(dir, 'blocker');
+    await writeFile(blocker, 'not a directory');
     await expect(
-      startTestServer({ JW_DB_PATH: '/proc/nowhere/jobwatch.sqlite' }, ['budgeted'], { installed: { budgeted: async () => budgeted } }),
+      startTestServer({ JW_DB_PATH: join(blocker, 'state', 'jobwatch.sqlite') }, ['budgeted'], {
+        installed: { budgeted: async () => budgeted },
+      }),
     ).rejects.toThrow(/Is JW_DATA_DIR writable\?/);
   });
 

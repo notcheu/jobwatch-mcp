@@ -29,6 +29,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.nog
 - **One branch and one pull request per roadmap step** (`phase-N/step-M-<name>`), opened as soon as the step is validated. Fill `.github/pull_request_template.md`: start with "This PR adds/implements/fixes/drops ..." and include any specific direction taken.
 - **PR title follows semantic release naming:** `<type>(<optional scope>): <summary>` with type `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf` or `wip`, imperative and lowercase after the colon.
 - **Merge with SQUASH, never a merge commit** (`gh pr merge --squash`), using the PR title as the subject and the PR description as the body. Wait for CI (`gh pr checks --watch`) before merging; never merge over a red check.
+- **The test suite must run in under 5 minutes** (CI enforces it with a 5-minute step cap; vitest per-test timeout is 10 s). If it gets slower, cut the slow tests and keep only the cheap ones; never raise the cap. Never use paths like `/proc/...` in tests: recursive `mkdir` spins forever there on Linux. Reproduce CI-only failures in `docker run node:26-bookworm-slim`.
 - Every phase ends with its exit criteria met and documented.
 
 ## Secrets and sensitive files

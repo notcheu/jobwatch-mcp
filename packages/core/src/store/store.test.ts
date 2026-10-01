@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -81,8 +81,10 @@ describe('opening', () => {
     expect(() => Store.open(path)).toThrow(/newer database/);
   });
 
-  it('explains an unwritable location', () => {
-    expect(() => Store.open('/proc/jobwatch/x.sqlite')).toThrow(/Is JW_DATA_DIR writable\?/);
+  it('explains an unusable location (a parent that is a regular file, portable: /proc makes recursive mkdir spin on Linux)', async () => {
+    const blocker = join(dir, 'blocker');
+    await writeFile(blocker, 'not a directory');
+    expect(() => Store.open(join(blocker, 'sub', 'x.sqlite'))).toThrow(/Is JW_DATA_DIR writable\?/);
   });
 
   it('refuses a file that is not a database', async () => {
