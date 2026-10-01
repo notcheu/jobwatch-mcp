@@ -142,41 +142,27 @@ export function parseCard(raw: RawCard): Card | null {
 
 // ---------------------------------------------------------------------------------------------- filtering
 
-/** The routine's default exclusions (07-adapter-linkedin.md). Matched as whole words, case-insensitively. */
-export const DEFAULT_TITLE_EXCLUDE: readonly string[] = [
-  'Engineering Manager',
-  'Angular',
-  'AngularJS',
-  'Vue',
-  'Vue.js',
-  'Java',
-  '.NET',
-  'Fullstack',
-  'Full-stack',
-  'Full stack',
-  'Freelance',
-  'Stage',
-  'Alternance',
-  'Intern',
-  'Internship',
-  'Stagiaire',
-];
-
 const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Case-insensitive, whole-word matcher built from plain terms, NOT from a client-supplied regular expression: a regex with
- * catastrophic backtracking would freeze the whole router. Whole-word matters: the old unbounded "intern" matched "Internal
- * Tools". Word boundaries are "not a letter or digit on that side", so ".NET" and "Vue.js" work.
+ * Case-insensitive, whole-word matcher built from plain terms the caller sends with each call (there is no built-in list).
+ * It is NOT a client-supplied regular expression: a pattern with catastrophic backtracking would freeze the whole router.
+ * Whole-word matters: an unbounded "intern" matches "Internal Tools". A word boundary is "not a letter or digit on that
+ * side", so ".NET" and "Vue.js" work. Returns the term that matched (as the caller wrote it), or null.
  */
-export function titleExcluder(terms: readonly string[]): (title: string) => boolean {
-  const alternatives = terms
-    .map((term) => term.trim())
-    .filter((term) => term.length > 0)
-    .map(escapeRegex);
-  if (alternatives.length === 0) return () => false;
-  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternatives.join('|')})(?![\\p{L}\\p{N}])`, 'iu');
-  return (title) => pattern.test(title);
+export function termMatcher(terms: readonly string[]): (text: string) => string | null {
+  const byLower = new Map<string, string>();
+  for (const raw of terms) {
+    const term = raw.trim();
+    if (term.length > 0 && !byLower.has(term.toLowerCase())) byLower.set(term.toLowerCase(), term);
+  }
+  if (byLower.size === 0) return () => null;
+  const alternatives = [...byLower.keys()].sort((a, b) => b.length - a.length).map(escapeRegex);
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(${alternatives.join('|')})(?![\\p{L}\\p{N}])`, 'iu');
+  return (text) => {
+    const hit = pattern.exec(text)?.[1];
+    return hit === undefined ? null : (byLower.get(hit.toLowerCase()) ?? hit);
+  };
 }
 
 // ---------------------------------------------------------------------------------------------- hints

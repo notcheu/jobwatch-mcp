@@ -27,7 +27,6 @@ export interface JobDetail extends Hints {
   title: string | null;
   company: string | null;
   description: string;
-  description_truncated: boolean;
   status: JobStatus;
   url: string;
 }
@@ -93,8 +92,11 @@ export function titleParts(pageTitle: string): { title: string | null; company: 
   return { title: parts[0]?.slice(0, 200) ?? null, company: parts.length >= 2 ? (parts[1]?.slice(0, 200) ?? null) : null };
 }
 
-/** Open ONE job page by navigation (never by clicking) and read its description. */
-export async function readJob(ctx: BrowserAdapterContext, id: string, descriptionMaxChars: number): Promise<JobDetail> {
+/** Most of a description kept (and stored); the engine caps it again at the same value. */
+export const MAX_STORED_DESCRIPTION = 20_000;
+
+/** Open ONE job page by navigation (never by clicking) and read its full description (hints are computed from it). */
+export async function readJob(ctx: BrowserAdapterContext, id: string): Promise<JobDetail> {
   const { session } = ctx;
   await ctx.pace('detail');
   await session.goto(jobUrl(id), { timeoutMs: NAVIGATION_TIMEOUT_MS });
@@ -102,16 +104,12 @@ export async function readJob(ctx: BrowserAdapterContext, id: string, descriptio
   const page = await session.evaluate<ExtractedJob>(EXTRACT_JOB);
   assertSignedIn(session.url(), page.loginForm);
   const { title, company } = titleParts(page.title);
-  const description = page.description ?? '';
+  const description = (page.description ?? '').slice(0, MAX_STORED_DESCRIPTION);
   const status: JobStatus = page.description === null ? 'not_loaded' : page.closed ? 'closed' : 'ok';
-  return {
-    id,
-    title,
-    company,
-    description: description.slice(0, descriptionMaxChars),
-    description_truncated: description.length > descriptionMaxChars,
-    status,
-    url: jobUrl(id),
-    ...extractHints(description),
-  };
+  return { id, title, company, description, status, url: jobUrl(id), ...extractHints(description) };
 }
+
+export const clip = (text: string, max: number): { text: string; truncated: boolean } => ({
+  text: text.slice(0, max),
+  truncated: text.length > max,
+});

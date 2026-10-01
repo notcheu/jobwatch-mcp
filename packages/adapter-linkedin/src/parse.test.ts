@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyPage, extractHints, geoId, isJobId, jobUrl, parseCard, titleExcluder, workMode } from './parse';
+import { classifyPage, extractHints, geoId, isJobId, jobUrl, parseCard, termMatcher, workMode } from './parse';
 
 describe('ids and urls', () => {
   it('accepts numeric job ids only', () => {
@@ -61,17 +61,33 @@ describe('parseCard', () => {
   });
 });
 
-describe('titleExcluder', () => {
-  it('matches whole words case-insensitively and never treats terms as a pattern', () => {
-    const excluded = titleExcluder(['intern', 'c++', '.*']);
-    expect(excluded('Software INTERN')).toBe(true);
-    expect(excluded('International Lead')).toBe(false);
-    expect(excluded('C++ developer')).toBe(true);
-    expect(excluded('Frontend developer')).toBe(false);
+describe('termMatcher', () => {
+  it('matches whole words case-insensitively, returns the term as written, and never treats terms as a pattern', () => {
+    const match = termMatcher(['intern', 'C++', '.*', '.NET', 'Full stack']);
+    expect(match('Software INTERN')).toBe('intern');
+    expect(match('International Lead')).toBeNull();
+    expect(match('C++ developer')).toBe('C++');
+    expect(match('Senior .NET engineer')).toBe('.NET');
+    expect(match('full stack engineer')).toBe('Full stack');
+    expect(match('Frontend developer')).toBeNull();
   });
 
-  it('excludes nothing for an empty list', () => {
-    expect(titleExcluder([])('anything')).toBe(false);
+  it('prefers the longer term and ignores blanks and duplicates', () => {
+    const match = termMatcher(['Java', 'java', '  ', 'Java Spring']);
+    expect(match('Java Spring developer')).toBe('Java Spring');
+    expect(match('JavaScript developer')).toBeNull();
+  });
+
+  it('matches nothing for an empty list', () => {
+    expect(termMatcher([])('anything')).toBeNull();
+    expect(termMatcher([' '])('anything')).toBeNull();
+  });
+
+  it('survives a hostile term (no catastrophic backtracking)', () => {
+    const match = termMatcher(['(a+)+$', 'a'.repeat(60)]);
+    const started = Date.now();
+    expect(match(`${'a'.repeat(5000)}!`)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 });
 

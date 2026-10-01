@@ -4,8 +4,10 @@ import { EXTRACT_PAGE_STATE, type ExtractedPageState } from './extract';
 import { aiSearchResultsLayout } from './layouts/aiSearchResults';
 import { classicLayout } from './layouts/classic';
 import type { SearchLayout } from './layouts/layout';
-import { DEFAULT_TITLE_EXCLUDE, classifyPage, titleExcluder } from './parse';
-import { readJob, searchCards, type JobDetail, type SearchArgs } from './search';
+import { classifyPage, termMatcher } from './parse';
+import { readNew } from './read';
+import { clip, readJob, searchCards, type SearchArgs } from './search';
+import { extractHints as extractHintsOf } from './parse';
 
 const HOSTS = ['www.linkedin.com', 'media.licdn.com'];
 
@@ -21,6 +23,13 @@ const jobId = z
   .max(15)
   .regex(/^\d{5,15}$/, 'a numeric LinkedIn job id');
 
+const hints = {
+  stack_hints: z.array(z.string()),
+  years_hints: z.array(z.number()),
+  remote_hints: z.array(z.string()),
+  salary_text: z.string().nullable(),
+};
+
 const cardSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -33,41 +42,67 @@ const cardSchema = z.object({
   promoted: z.boolean(),
   easy_apply: z.boolean(),
   url: z.string(),
+  /** Already stored: a previous run opened and accepted it. */
+  known: z.boolean(),
 });
 
 const jobSchema = z.object({
   id: z.string(),
   title: z.string().nullable(),
   company: z.string().nullable(),
+  location: z.string().nullable(),
   description: z.string(),
   description_truncated: z.boolean(),
-  status: z.enum(['ok', 'not_loaded', 'closed']),
   url: z.string(),
-  stack_hints: z.array(z.string()),
-  years_hints: z.array(z.number()),
-  remote_hints: z.array(z.string()),
-  salary_text: z.string().nullable(),
+  source: z.enum(['fetched', 'stored']),
+  fetched_at: z.string().nullable(),
+  ...hints,
+});
+
+const excludedSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  reason: z.enum(['title', 'description']),
+  term: z.string(),
 });
 
 const searchInput = z
   .object({
-    keywords: z.string().trim().min(1).max(200).describe('Search keywords, e.g. "senior frontend engineer".'),
+    keywords: z.string().trim().min(1).max(200).describe('Search keywords, e.g. "full stack engineer".'),
     geo: geo.describe('Location: paris_idf, france, or a numeric LinkedIn geoId.'),
     posted_within: z.enum(['24h', 'any']).default('24h'),
     remote_only: z.boolean().default(false).describe('Keep only cards whose location says Remote (filtered here, not by LinkedIn).'),
-    page: z.number().int().min(1).max(5).default(1),
+    page: z.number().int().min(1).max(5).default(1).describe('Result page, 25 cards each.'),
     max_cards: z.number().int().min(1).max(25).default(25),
   })
   .strict();
 
-const searchOutput = z.object({
-  cards: z.array(cardSchema),
-  page: z.number(),
-  has_more: z.boolean(),
-  truncated: z.boolean(),
-});
+/** Shared by the two tools that open jobs. There is no built-in list: the caller decides per call. */
+const termFields = {
+  disallowed_terms: z
+    .array(z.string().trim().min(1).max(60))
+    .max(60)
+    .default([])
+    .describe('Whole words or phrases to reject, case-insensitive, e.g. ["frontend", "front-end", "Angular"]. Plain text, not a regex.'),
+  disallowed_scope: z
+    .enum(['title', 'title_and_description'])
+    .default('title')
+    .describe(
+      'title: reject from the card title before opening (free). title_and_description: also reject after reading the description (the page was already visited).',
+    ),
+};
+const descriptionChars = z
+  .number()
+  .int()
+  .min(500)
+  .max(6000)
+  .default(3000)
+  .describe('Description characters returned per job; the full text is stored.');
 
 const annotations = { readOnlyHint: true, openWorldHint: true, idempotentHint: true } as const;
+
+/** Soft limit inside `linkedin_search_and_read`: stop opening jobs and report the rest, so the call ends before its timeout. */
+const OPEN_BUDGET_MS = 200_000;
 
 export interface LinkedinOptions {
   /** `classic` (default) or `ai`, the two search pages LinkedIn serves. Env `JW_LINKEDIN_LAYOUT` selects it at load time. */
@@ -92,91 +127,169 @@ export function createLinkedinTools(layout: SearchLayout) {
   const search = defineBrowserTool({
     name: 'linkedin_search',
     title: 'LinkedIn job search (read-only)',
-    description: `Read-only. Search LinkedIn jobs and return one page of cards (id, title, company, location, work mode, salary, posted time). Needs a signed-in session. ${UNTRUSTED}`,
+    description: `Read-only. Lists one page (25) of LinkedIn job cards: id, title, company, location, work mode, salary, posted time, and known=true when a previous run already opened and stored that job. Opens no job page. Needs a signed-in session. ${UNTRUSTED}`,
     input: searchInput,
-    output: searchOutput,
+    output: z.object({ cards: z.array(cardSchema), page: z.number(), has_more: z.boolean(), truncated: z.boolean() }),
     annotations,
     limits: { timeoutS: 90, cost: 1, outputMaxBytes: 60_000 },
     handler: async (args, ctx) => {
-      const result = await searchCards(ctx, layout, args);
-      const { warnings, ...data } = result;
-      return { data, warnings };
+      const { warnings, cards, ...rest } = await searchCards(ctx, layout, args);
+      const stored = await ctx.jobs.known(cards.map((card) => card.id));
+      return { data: { ...rest, cards: cards.map((card) => ({ ...card, known: stored.has(card.id) })) }, warnings };
     },
   });
 
   const job = defineBrowserTool({
     name: 'linkedin_job',
     title: 'LinkedIn job details (read-only)',
-    description: `Read-only. Read up to 10 LinkedIn job pages by id: description plus hints (stack, years, remote, salary). Each page is opened by navigation. ${UNTRUSTED}`,
+    description: `Read-only. Returns the description and hints (stack, years, remote, salary) of up to 10 LinkedIn jobs by id. A job already stored comes from memory without visiting LinkedIn (source=stored) unless refresh=true. A job that is opened and accepted is stored; one holding a disallowed term is reported in excluded and not stored. ${UNTRUSTED}`,
     input: z
       .object({
         ids: z.array(jobId).min(1).max(10),
-        description_max_chars: z.number().int().min(500).max(12_000).default(6000),
+        refresh: z.boolean().default(false).describe('Visit LinkedIn again even if the job is stored.'),
+        description_max_chars: descriptionChars,
+        ...termFields,
       })
       .strict(),
-    output: z.object({ jobs: z.array(jobSchema) }),
+    output: z.object({
+      jobs: z.array(jobSchema),
+      excluded: z.array(excludedSchema),
+      failed: z.array(z.object({ id: z.string(), status: z.string() })),
+    }),
     annotations,
     limits: { timeoutS: 240, cost: 10, outputMaxBytes: 120_000 },
     handler: async (args, ctx) => {
-      const jobs: JobDetail[] = [];
-      const warnings: string[] = [];
+      const matchTerm = termMatcher(args.disallowed_terms);
+      const jobs: z.infer<typeof jobSchema>[] = [];
+      const excluded: z.infer<typeof excludedSchema>[] = [];
+      const failed: { id: string; status: string }[] = [];
       for (const id of [...new Set(args.ids)]) {
-        const detail = await readJob(ctx, id, args.description_max_chars);
-        if (detail.status !== 'ok') warnings.push(`job ${id}: ${detail.status}`);
-        jobs.push(detail);
+        const stored = args.refresh ? null : await ctx.jobs.get(id);
+        if (stored !== null) {
+          const text = clip(stored.description, args.description_max_chars);
+          jobs.push({
+            id,
+            title: stored.title,
+            company: stored.company,
+            location: stored.location,
+            description: text.text,
+            description_truncated: text.truncated,
+            url: stored.url,
+            source: 'stored',
+            fetched_at: stored.fetchedAt,
+            ...extractHintsOf(stored.description),
+          });
+          continue;
+        }
+        const opened = await readJob(ctx, id);
+        if (opened.status !== 'ok') {
+          failed.push({ id, status: opened.status });
+          continue;
+        }
+        const title = opened.title ?? '';
+        const term = matchTerm(title) ?? (args.disallowed_scope === 'title_and_description' ? matchTerm(opened.description) : null);
+        if (term !== null) {
+          excluded.push({
+            id,
+            title,
+            reason: matchTerm(title) !== null ? 'title' : 'description',
+            term,
+          });
+          continue;
+        }
+        await ctx.jobs.put({
+          id,
+          title: opened.title,
+          company: opened.company,
+          location: null,
+          url: opened.url,
+          description: opened.description,
+        });
+        const text = clip(opened.description, args.description_max_chars);
+        jobs.push({
+          id,
+          title: opened.title,
+          company: opened.company,
+          location: null,
+          description: text.text,
+          description_truncated: text.truncated,
+          url: opened.url,
+          source: 'fetched',
+          fetched_at: new Date().toISOString(),
+          stack_hints: opened.stack_hints,
+          years_hints: opened.years_hints,
+          remote_hints: opened.remote_hints,
+          salary_text: opened.salary_text,
+        });
       }
-      return { data: { jobs }, warnings };
+      const warnings = [...failed.map((f) => `job ${f.id}: ${f.status}`)];
+      return { data: { jobs, excluded, failed }, warnings };
     },
   });
 
   const searchAndRead = defineBrowserTool({
     name: 'linkedin_search_and_read',
-    title: 'LinkedIn search then read the new matches (read-only)',
-    description: `Read-only. One search page, then the descriptions of the cards not in skip_ids whose title is not excluded. Saves round trips for the daily routine. ${UNTRUSTED}`,
+    title: 'LinkedIn search then read the new jobs (read-only)',
+    description: `Read-only. Loads one search page (25 cards) and opens only the jobs worth opening: not already stored, not listed in skip_ids, and no disallowed term in the title. Each opened job is stored with its description right away, so later calls never open it again. Returns the new jobs, the ids it skipped as known, what was excluded and why, and remaining_ids when max_jobs or the time budget stopped it: call again with the same arguments to continue. max_jobs=0 only classifies (nothing is opened or stored). ${UNTRUSTED}`,
     input: searchInput
       .extend({
-        skip_ids: z.array(jobId).max(500).default([]).describe('Job ids already seen: neither listed as new nor opened.'),
-        title_exclude: z
-          .array(z.string().trim().min(1).max(60))
-          .max(60)
-          .default([...DEFAULT_TITLE_EXCLUDE])
-          .describe('Whole words or phrases; a card whose title contains one is not opened.'),
-        open: z.enum(['unseen_matching', 'none']).default('unseen_matching'),
-        max_jobs: z.number().int().min(1).max(15).default(10),
+        skip_ids: z.array(jobId).max(500).default([]).describe('Extra job ids to leave alone, on top of the ones already stored.'),
+        max_jobs: z.number().int().min(0).max(25).default(25).describe('Most job pages to visit in this call (0 = classify only).'),
+        description_max_chars: descriptionChars,
+        ...termFields,
       })
       .strict(),
     output: z.object({
-      cards: z.array(cardSchema),
-      skipped_seen: z.number(),
-      excluded_titles: z.number(),
       jobs: z.array(jobSchema),
+      known_ids: z.array(z.string()),
+      excluded: z.array(excludedSchema),
+      failed: z.array(z.object({ id: z.string(), status: z.string() })),
+      remaining_ids: z.array(z.string()),
       page: z.number(),
       has_more: z.boolean(),
     }),
     annotations,
-    limits: { timeoutS: 200, cost: 16, outputMaxBytes: 200_000 },
+    limits: { timeoutS: 300, cost: 26, outputMaxBytes: 200_000 },
     handler: async (args, ctx) => {
+      const deadline = Date.now() + OPEN_BUDGET_MS;
       const found = await searchCards(ctx, layout, args as SearchArgs);
-      const warnings = [...found.warnings];
-      const seen = new Set(args.skip_ids);
-      const excluded = titleExcluder(args.title_exclude);
-      const fresh = found.cards.filter((card) => !seen.has(card.id));
-      const wanted = fresh.filter((card) => !excluded(card.title));
-      const jobs: JobDetail[] = [];
-      if (args.open === 'unseen_matching') {
-        for (const card of wanted.slice(0, args.max_jobs)) {
-          const detail = await readJob(ctx, card.id, 6000);
-          if (detail.status !== 'ok') warnings.push(`job ${card.id}: ${detail.status}`);
-          jobs.push(detail);
-        }
-        if (wanted.length > args.max_jobs) warnings.push(`${wanted.length - args.max_jobs} matching card(s) were not opened (max_jobs).`);
-      }
+      const matchTerm = termMatcher(args.disallowed_terms);
+      const outcome = await readNew(ctx, found.cards, {
+        known: new Set(args.skip_ids),
+        maxJobs: args.max_jobs,
+        matchTitle: matchTerm,
+        matchDescription: args.disallowed_scope === 'title_and_description' ? matchTerm : null,
+        deadline,
+      });
+      const warnings = [...found.warnings, ...outcome.failed.map((f) => `job ${f.id}: ${f.status}`)];
+      if (outcome.remaining.length > 0)
+        warnings.push(`${outcome.remaining.length} job(s) not opened yet: call again with the same arguments to continue.`);
+      const fetchedAt = new Date().toISOString();
+      const jobs = outcome.opened.map((opened) => {
+        const text = clip(opened.description, args.description_max_chars);
+        return {
+          id: opened.id,
+          title: opened.title,
+          company: opened.company,
+          location: opened.location,
+          description: text.text,
+          description_truncated: text.truncated,
+          url: opened.url,
+          source: 'fetched' as const,
+          fetched_at: fetchedAt,
+          stack_hints: opened.stack_hints,
+          years_hints: opened.years_hints,
+          remote_hints: opened.remote_hints,
+          salary_text: opened.salary_text,
+        };
+      });
       return {
         data: {
-          cards: fresh,
-          skipped_seen: found.cards.length - fresh.length,
-          excluded_titles: fresh.length - wanted.length,
           jobs,
+          known_ids: outcome.knownIds,
+          excluded: outcome.excluded,
+          failed: outcome.failed,
+          remaining_ids: outcome.remaining,
           page: found.page,
           has_more: found.has_more,
         },
