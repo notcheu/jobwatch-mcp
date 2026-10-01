@@ -39,9 +39,9 @@ Source: Anthropic docs "Authentication for connectors" and "Third party connecto
 - Single user is enforced by the Google OAuth app (Testing mode, one test user), not by the proxy: include "a second Google account is refused" in the acceptance run.
 
 ## Acceptance checklist for the auth layer (used in Phase 2)
-- [ ] `curl -i https://<host>/mcp` (no token) → `401` + `WWW-Authenticate` with `resource_metadata`.
-- [ ] `/.well-known/oauth-protected-resource` returns JSON with exact `resource` and first `authorization_servers` entry.
-- [ ] AS metadata reachable, lists `registration_endpoint` (or CIMD flags), `code_challenge_methods_supported: ["S256"]`, `offline_access` in `scopes_supported`.
+- [x] `curl -i https://<host>/mcp` (no token) → `401` + `WWW-Authenticate` with `resource_metadata` (2026-10-01, through Nginx on the NUC; the URL points at `/.well-known/oauth-protected-resource/mcp`).
+- [x] `/.well-known/oauth-protected-resource` returns JSON with exact `resource` and first `authorization_servers` entry (2026-10-01: `resource` = `https://mcp.noguetith.fr/mcp`, `authorization_servers` = `["https://mcp.noguetith.fr"]`, `scopes_supported` empty).
+- [~] AS metadata reachable, lists `registration_endpoint`, `code_challenge_methods_supported: ["S256"]` (2026-10-01: yes, `token_endpoint_auth_methods_supported: ["none"]`, grants `authorization_code` + `refresh_token`, no CIMD flag so Claude uses DCR). **Not met by design:** `scopes_supported` is empty, so no `offline_access`; refresh must be proven unattended (S1).
 - [ ] Token endpoint accepts form-encoded bodies; refresh rotation works; expired/revoked refresh → `invalid_grant`.
 - [ ] Response times < 2 s for discovery/registration/token under normal conditions.
 - [ ] Adding the URL as a custom connector in Claude completes the sign-in; tools list appears; a call works.
