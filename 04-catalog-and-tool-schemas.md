@@ -46,7 +46,7 @@ Input:
   "max_cards": 25
 }
 ```
-Notes: maps to the search-results URL (see `07-adapter-linkedin.md`). `remote_only` is **post-filtered** on the card location because LinkedIn drops the remote URL filter. `page` 1..5 (start = (page-1)*25).
+Notes: maps to the LinkedIn search URL (classic `/jobs/search/` since 2026-10-01; the AI `/jobs/search-results/` layout is kept as a variant, see `07-adapter-linkedin.md`). `remote_only` is **post-filtered** on the card location because LinkedIn drops the remote URL filter. `page` 1..5 (start = (page-1)*25).
 Output: `{ cards: [{ id, title, company, location, work_mode: "remote|hybrid|on-site|unknown", salary_text, posted_text, posted_hours_ago, promoted, easy_apply, url }], page, has_more, truncated, warnings }`.
 `url` is always `https://www.linkedin.com/jobs/view/<id>` (no tracking parameters).
 

@@ -6,9 +6,9 @@ import http from "node:http";
 import { chromium } from "playwright-core";
 
 const IP = process.env.BROWSER_IP;
-// Default: the routine's /jobs/search-results/ URL (Wednesday-sweep form, no time filter, so results exist). On 2026-10-01 it answered "No results found" twice
-// (container and Matthieu's Chrome); override with SEARCH_URL (e.g. the classic /jobs/search/?keywords=…&geoId=…&distance=0) to compare. Both layouts are detected.
-const SEARCH = process.env.SEARCH_URL ?? "https://www.linkedin.com/jobs/search-results/?keywords=Staff%20Frontend%20Engineer%20OR%20Lead%20Frontend%20OR%20Frontend%20Tech%20Lead&geoId=104246759&distance=0.0";
+// Default: the classic layout A, /jobs/search/ (primary since 2026-10-01; LinkedIn reverted from the AI /jobs/search-results/ UI). The routine's boolean OR query,
+// no time filter, so results exist. Override with SEARCH_URL (e.g. the AI layout B /jobs/search-results/?...) to compare. Both layouts are detected.
+const SEARCH = process.env.SEARCH_URL ?? "https://www.linkedin.com/jobs/search/?keywords=Staff%20Frontend%20Engineer%20OR%20Lead%20Frontend%20OR%20Frontend%20Tech%20Lead&geoId=104246759&distance=0";
 const out = (k, v) => console.log(`${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pace = () => sleep(6000 + Math.floor(Math.random() * 5000)); // human-like gap between page loads

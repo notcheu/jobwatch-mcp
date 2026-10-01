@@ -16,7 +16,7 @@ CHROME_LANG=${CHROME_LANG:-fr-FR}; MEM_MAX=${MEM_MAX:-1100m}
 NET=jw-s4-net; BR=jw-s4-browser; PR=jw-s4-probe; PROFILE=jw-profile-linkedin
 cmd=${1:-}
 echo "ACCEPT_LANGS: ${ACCEPT_LANGS:-<not set: .env.local missing or empty, image default is used>}"
-echo "MEM_MAX=$MEM_MAX CHROME_EXTRA=${CHROME_EXTRA:-<none>} STAGES=${STAGES:-<all>} BLOCK=${BLOCK:-<none>} SEARCH_URL=${SEARCH_URL:-<routine search-results URL>}"
+echo "MEM_MAX=$MEM_MAX CHROME_EXTRA=${CHROME_EXTRA:-<none>} STAGES=${STAGES:-<all>} BLOCK=${BLOCK:-<none>} SEARCH_URL=${SEARCH_URL:-<classic /jobs/search/ URL>}"
 if ! info=$(docker info 2>&1) || ! grep -qi rootless <<<"$info"; then echo "ERROR: not the rootless daemon (DOCKER_HOST=${DOCKER_HOST:-<unset>})"; exit 1; fi
 # Graceful stop first (SIGTERM, 25 s) so Chrome flushes cookies, e.g. when you press Ctrl+C during login.
 cleanup() { docker stop -t 25 "$BR" >/dev/null 2>&1 || true; docker rm -f "$BR" "$PR" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true; }

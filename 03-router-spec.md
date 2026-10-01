@@ -45,6 +45,7 @@ jobwatch-mcp/
       registry.ts            # auto-discovers src/adapters/*/index.ts, builds tools/list, rejects duplicates
       linkedin/
         index.ts (defineAdapter), extract.js, parse.ts, selectors.ts, fixtures/
+        layouts/classic.ts, layouts/aiSearchResults.ts   # one SearchLayout per LinkedIn search UI (see 07)
       apec/ wttj/ ats/       # later phases
     limits/
       ratelimit.ts, breaker.ts

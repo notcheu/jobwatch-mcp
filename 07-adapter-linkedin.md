@@ -7,12 +7,20 @@ The proven extraction logic is `../linkedin-extract.js` (and the procedure in `.
 ## Scope (read-only)
 Search results pages and job details pages only. No messaging, no profile views, no Easy Apply, no saving, no following.
 
-## URL and DOM drift found on 2026-10-01 (spike S5, read in Matthieu's own logged-in Chrome and in the container)
-- **`/jobs/search-results/?keywords=…&geoId=…` now answers "No results found" for every query tried** (the routine's boolean `OR` keywords with and without `f_TPR`, and a plain `Frontend Tech Lead` in Paris). It served no `SearchResultsMainContent`, no `job-card-component-ref-*` cards and no `/jobs/view/` links; the page showed a `semanticSearchBox` and `JobsSearchFilters`. The selectors below that depend on it are stale. (It worked on 2026-09-30, so this is probably a LinkedIn UI rollout; re-test before relying on either.)
-- **`/jobs/search/?keywords=…&geoId=…&distance=0` worked as a fallback** and shows results with the **classic markup**: `h1`/`h2` "Jobs search", job cards as `li[data-occludable-job-id]` (7 initially, more after scrolling; 7 unique ids, each with an `a[href*="/jobs/view/"]` and 3 text lines title / company / location), a list container `.scaffold-layout__list`, pagination `.jobs-search-pagination`, a promoted label in the list. LinkedIn adds `currentJobId=<first id>` to the URL on load. Description selectors for this variant are still unconfirmed (the detail wrapper existed but the description box was empty at read time).
-- **Decision (Matthieu, 2026-10-01): `/jobs/search-results/` stays the primary URL**, as in the routine. Consequence for the adapter: do not assume one layout. Detect which variant loaded (`SearchResultsMainContent` / `job-card-component-ref-*` vs `.scaffold-layout__list` / `li[data-occludable-job-id]`); if `/jobs/search-results/` answers "No results found" for a search that should have results, treat it as a layout/rollout problem, not as an empty list: retry once on the classic `/jobs/search/` URL (as a fallback only) and otherwise return `adapter_broken` (keep a canary query that is known to have results). Still to establish: why `/jobs/search-results/` returned no results today although it worked on 2026-09-30 (a rollout, a missing parameter, or throttling of automated loads); check by opening your usual URL by hand in your own Chrome.
+## Layouts: A (classic `/jobs/search/`, primary since 2026-10-01) and B (AI `/jobs/search-results/`, kept for when it returns)
+LinkedIn serves two search UIs. On 2026-09-29/30 `/jobs/search-results/` (the new AI-assisted search, with a `semanticSearchBox`) worked and was used by the routine. On 2026-10-01 it answered "No results found" for every query (container and Matthieu's Chrome) and LinkedIn reverted to the classic `/jobs/search/` (Matthieu, 2026-10-01). **Decision: layout A is primary; layout B is preserved below and in code, because it may come back.**
 
-## URLs (as documented before the 2026-10-01 drift; re-verify)
+The adapter implements a `SearchLayout` per variant (`src/adapters/linkedin/layouts/classic.ts` = A, `layouts/aiSearchResults.ts` = B) with the same interface (`searchUrl(args)`, `isLoaded(page)`, `readCards(page)`, `detailUrl(id)`, `readDescription(page, id)`). The adapter navigates with layout A. After load it detects which markup is present (A: `.scaffold-layout__list` / `li[data-occludable-job-id]`; B: `[componentKey=SearchResultsMainContent]` / `job-card-component-ref-*`) and uses the matching reader, so a silent switch by LinkedIn still parses. "No results found" on the canary query (a search known to have results) maps to `adapter_broken`, never to an empty list. A config flag `JW_LINKEDIN_LAYOUT=classic|ai` chooses which URL is requested.
+
+### Layout A: classic `/jobs/search/` (primary)
+Observed 2026-10-01 in Matthieu's Chrome (markers and counts only):
+- URL: `https://www.linkedin.com/jobs/search/?keywords=<urlencoded>&geoId=<id>&distance=0[&f_TPR=r86400][&start=<N>]`. LinkedIn adds `currentJobId=<first id>` to the URL on load. Whether `OR` boolean keywords, `f_TPR` and `start=` behave as in layout B is **to verify** in S5 (only the plain phrase "Frontend Tech Lead" was tested).
+- Cards: `li[data-occludable-job-id]` (id = that attribute; 7 initially, more after scrolling; each has an `a[href*="/jobs/view/"]`); first three text lines are title / company / location (e.g. `European Union (Remote)`), as in layout B. Container `.scaffold-layout__list`; pagination `.jobs-search-pagination`; a promoted label appears in the list.
+- Details pane: wrapper `.jobs-search__job-details--wrapper` / `.jobs-details` exists; the description selector (`#job-details`, `.jobs-description__content`, `.jobs-box__html-content`, "About the job" heading) is **not confirmed yet** (empty at read time). The S5 probe now tries all of them.
+- Loading: the list is lazy, scroll the list container gently to load more cards.
+
+### Layout B: AI `/jobs/search-results/` (preserved, last verified working 2026-09-30)
+URLs:
 - Search results: `https://www.linkedin.com/jobs/search-results/?keywords=<urlencoded>&geoId=<id>&distance=0.0[&f_TPR=r86400][&start=<N>]`
   - `geoId=104246759` — the Paris / Île-de-France search used by the routine; `geoId=105015875` — France.
   - `f_TPR=r86400` = posted in the last 24 h. Omit for the Wednesday sweep and for `posted_within=any`.
@@ -20,7 +28,8 @@ Search results pages and job details pages only. No messaging, no profile views,
 - **`f_WT=2` (remote) is dropped by LinkedIn on load** — the filter is never applied. Remote must be **post-filtered**: keep cards whose location shows `(Remote)` and set `warnings: ["remote filter not applied by LinkedIn; post-filtered"]`. Results for the France search are mixed (Hybrid/On-site/Remote).
 - Job details: known-good path = the search-results page with `currentJobId=<id>` (split view; selectors below). `https://www.linkedin.com/jobs/view/<id>` is the public/permalink form used for output URLs; its DOM may differ: **VERIFY in spike S5** (capture both DOMs while logged in and pick one; prefer navigating, not clicking synthetic events).
 
-## Selectors / DOM facts (as of 2026-09-30; expect drift)
+
+Selectors / DOM facts (as of 2026-09-30; expect drift):
 - Results container: `[componentKey=SearchResultsMainContent]`.
 - Cards: `[componentKey^="job-card-component-ref-"]`; job id = last `-`-separated segment of the attribute. **Each card appears twice in the DOM → dedupe by id.**
 - Card text (`innerText` split on `\n`, trimmed): noise lines to drop: `Promoted`, `Viewed`, `Easy Apply`, `Be an early applicant`, `Posted …`, and `(Verified job)` markers. After stripping, drop consecutive duplicate lines; the remaining first three are **title, company, location** (location carries the mode: `Paris (Hybrid)`, `(Remote)`, `(On-site)`).
