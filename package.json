@@ -19,6 +19,8 @@
     "test": "nx run-many -t test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "catalog:gen": "JW_UPDATE_CATALOG=1 nx run-many -t test -p 'tag:type:adapter' --skip-nx-cache",
+    "new:adapter": "node tools/new-adapter/index.mjs",
     "ci": "npm run format:check && npm run lint && npm run typecheck && npm test"
   },
   "devDependencies": {

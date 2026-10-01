@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterModule } from '../adapter';
 import { stableStringify } from '../catalog';
-import { diffCatalogSnapshot } from '../catalog-fs';
+import { diffCatalogSnapshot, writeCatalogSnapshot } from '../catalog-fs';
 import { validateAdapter } from '../validate';
 
 export interface ContractSample {
@@ -14,6 +14,11 @@ export interface ContractSample {
 export interface ContractOptions {
   /** The adapter's committed `catalog/` folder. */
   snapshotDir: string;
+  /**
+   * Rewrite the snapshot instead of failing when it is out of date. Defaults to `JW_UPDATE_CATALOG=1` in the environment,
+   * which is what `npm run catalog:gen` sets (like `vitest -u`). Never enable it in CI.
+   */
+  updateSnapshots?: boolean;
   /** Optional per-tool samples: each must produce output that matches the tool's `output` schema within `outputMaxBytes`. */
   samples?: Readonly<Record<string, ContractSample>>;
 }
@@ -28,7 +33,8 @@ export function describeAdapterContract(adapter: AdapterModule, options: Contrac
       expect(validateAdapter(adapter)).toEqual([]);
     });
 
-    it('has a catalog snapshot in sync with its definitions (run `jobwatch catalog gen` to update)', async () => {
+    it('has a catalog snapshot in sync with its definitions (run `npm run catalog:gen` to update)', async () => {
+      if (options.updateSnapshots ?? process.env['JW_UPDATE_CATALOG'] === '1') await writeCatalogSnapshot(adapter, options.snapshotDir);
       expect(await diffCatalogSnapshot(adapter, options.snapshotDir)).toEqual({ missing: [], stale: [], changed: [] });
     });
 

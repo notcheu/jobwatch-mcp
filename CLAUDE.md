@@ -49,8 +49,8 @@ npm run ci                  # format:check + lint + typecheck + test
 npx nx run-many -t lint typecheck test   # same targets directly; `nx affected -t ...` for changed projects
 npm run build               # (planned) bundle apps/mcp and apps/cli with esbuild
 npm run test:integration    # (planned) needs the browser runtime (rootless Docker)
-npm run catalog:gen         # (planned) regenerate every adapter's catalog/ snapshot (jobwatch catalog gen); commit the result
-npx nx g @jobwatch/tools:adapter <id>   # (planned) scaffold a new adapter package
+npm run catalog:gen         # regenerate every adapter's catalog/ snapshot (runs the adapter contract tests in update mode); commit the result
+npm run new:adapter -- <id> [--kind http|browser]   # scaffold a new adapter package, register it in packages/adapters, first snapshot
 npx jobwatch adapters list|enable|disable ...   # (planned) which installed adapters the router plugs in
 docker build -t jobwatch-router:dev .   # (planned, Dockerfile untested until apps/mcp exists)
 docker compose -f deploy/compose.yml --env-file deploy/.env up -d      # as mcpuser

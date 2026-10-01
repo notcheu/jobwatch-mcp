@@ -1,0 +1,23 @@
+{
+  "name": "@jobwatch/adapters",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The installed adapters: the one place that lists adapter packages. Used by the server and the CLI.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@jobwatch/sdk": "*"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "nx": {
+    "tags": [
+      "type:adapters"
+    ]
+  }
+}
