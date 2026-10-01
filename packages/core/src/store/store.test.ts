@@ -274,3 +274,53 @@ describe('jobs', () => {
     for (const days of [0, -1, 1.5, 4000]) expect(() => Store.open(':memory:', { jobRetentionDays: days })).toThrow(StoreError);
   });
 });
+
+describe('jobs: last seen', () => {
+  const day = 24 * 3600 * 1000;
+  const job = (id: string): NewJobRow => ({ id, title: 'T', company: 'C', location: null, url: `https://x.test/${id}`, description: 'D' });
+
+  it('touch keeps a posting alive past the retention, without touching its content or fetched_at', () => {
+    const store = Store.open(':memory:', { jobRetentionDays: 7 });
+    store.putJob('linkedin', job('4000000001'), 0);
+    store.putJob('linkedin', job('4000000002'), 0);
+    store.touchJobs('linkedin', ['4000000001', '4000000099'], 6 * day);
+    expect(store.getJob('linkedin', '4000000001')).toMatchObject({ firstSeen: 0, fetchedAt: 0, lastSeen: 6 * day });
+    expect(store.prune(8 * day).jobs).toBe(1);
+    expect(store.knownJobs('linkedin', ['4000000001', '4000000002'])).toEqual(new Set(['4000000001']));
+    expect(store.prune(14 * day).jobs).toBe(1); // last seen on day 6, so gone after day 13
+    store.close();
+  });
+
+  it('touch never moves last_seen backwards and ignores other platforms', () => {
+    const store = Store.open(':memory:');
+    store.putJob('linkedin', job('4000000001'), 5000);
+    store.touchJobs('linkedin', ['4000000001'], 1000);
+    store.touchJobs('apec', ['4000000001'], 9000);
+    expect(store.getJob('linkedin', '4000000001')?.lastSeen).toBe(5000);
+    store.close();
+  });
+
+  it('a put counts as a sighting', () => {
+    const store = Store.open(':memory:');
+    store.putJob('linkedin', job('4000000001'), 100);
+    store.putJob('linkedin', job('4000000001'), 900);
+    expect(store.getJob('linkedin', '4000000001')).toMatchObject({ fetchedAt: 900, lastSeen: 900 });
+    store.close();
+  });
+
+  it('migrates a version 2 database: last_seen starts at fetched_at', () => {
+    const path = join(dir, 'v2.sqlite');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE usage (id INTEGER PRIMARY KEY, platform TEXT NOT NULL, ts INTEGER NOT NULL, cost INTEGER NOT NULL CHECK (cost > 0));
+      CREATE TABLE breaker (platform TEXT PRIMARY KEY, reason TEXT NOT NULL CHECK (reason IN ('needs_login', 'checkpoint')), opened_at INTEGER NOT NULL, until_ts INTEGER);
+      CREATE TABLE call_log (id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, request_id TEXT NOT NULL, tool TEXT NOT NULL, adapter TEXT NOT NULL, platform TEXT NOT NULL, outcome TEXT NOT NULL, duration_ms INTEGER NOT NULL, args_hash TEXT NOT NULL);
+      CREATE TABLE jobs (platform TEXT NOT NULL, id TEXT NOT NULL, first_seen INTEGER NOT NULL, fetched_at INTEGER NOT NULL, title TEXT, company TEXT, location TEXT, url TEXT NOT NULL, description TEXT NOT NULL, PRIMARY KEY (platform, id)) WITHOUT ROWID;
+      CREATE INDEX jobs_fetched_at ON jobs (fetched_at);
+      INSERT INTO jobs VALUES ('linkedin', '4000000001', 10, 20, 'T', 'C', NULL, 'https://x.test/1', 'D');
+      PRAGMA user_version = 2;`);
+    old.close();
+    const store = Store.open(path);
+    expect(store.getJob('linkedin', '4000000001')).toMatchObject({ firstSeen: 10, fetchedAt: 20, lastSeen: 20 });
+    store.close();
+  });
+});

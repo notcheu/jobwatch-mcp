@@ -442,6 +442,40 @@ describe('max_results and several pages', () => {
   });
 });
 
+describe('last seen', () => {
+  const later = (c: ReturnType<typeof context>) => {
+    const old = '2026-01-01T00:00:00.000Z';
+    for (const [id, job] of c.jobs.jobs) c.jobs.jobs.set(id, { ...job, lastSeen: old, fetchedAt: old });
+    return old;
+  };
+
+  it('a search that lists a stored job refreshes its last_seen, even if its title is excluded or remote_only hides it', async () => {
+    const c = context();
+    await tools.searchAndRead.handler(read(), c.ctx);
+    const old = later(c);
+    await tools.searchAndRead.handler(read({ disallowed_terms: ['frontend'], remote_only: true }), c.ctx);
+    for (const id of IDS) expect(c.jobs.jobs.get(id)?.lastSeen).not.toBe(old);
+    expect(c.jobs.jobs.get('4000000001')?.fetchedAt).toBe(old); // the page was not read again
+  });
+
+  it('linkedin_search flags known cards and refreshes them too', async () => {
+    const c = context();
+    await tools.searchAndRead.handler(read(), c.ctx);
+    const old = later(c);
+    await tools.search.handler(tools.search.input.parse({ keywords: 'x' }), c.ctx);
+    expect(c.jobs.jobs.get('4000000002')?.lastSeen).not.toBe(old);
+  });
+
+  it('only jobs seen on the page are refreshed, and the output carries last_seen', async () => {
+    const c = context();
+    await c.jobs.put({ id: '4999999999', title: 'Gone', company: 'X', location: null, url: jobUrl('4999999999'), description: 'old' });
+    const old = later(c);
+    const result = await tools.searchAndRead.handler(read(), c.ctx);
+    expect(c.jobs.jobs.get('4999999999')?.lastSeen).toBe(old);
+    expect(result.data.jobs.every((job) => job.last_seen !== old)).toBe(true);
+  });
+});
+
 describe('result size', () => {
   it('hands back fewer jobs rather than failing when 25 long descriptions do not fit, and names the others', async () => {
     const many = Array.from({ length: 25 }, (_, n) => ({

@@ -79,9 +79,13 @@ export interface NewJob {
 }
 
 export interface StoredJob extends NewJob {
-  /** ISO time the job was first stored, and the last time it was (re)fetched. Retention counts from `fetchedAt`. */
+  /**
+   * ISO times: first stored; last time the page was read (`fetchedAt`); last time the job was seen anywhere, search card
+   * included (`lastSeen`, always >= `fetchedAt`). Retention counts from `lastSeen`.
+   */
   firstSeen: string;
   fetchedAt: string;
+  lastSeen: string;
 }
 
 /**
@@ -95,7 +99,12 @@ export interface JobStore {
   /** Which of `ids` are stored. Order and duplicates are irrelevant. */
   known(ids: readonly string[]): Promise<Set<string>>;
   get(id: string): Promise<StoredJob | null>;
-  /** Insert, or replace and refresh `fetchedAt` (keeps `firstSeen`). */
+  /**
+   * Record that these jobs were seen just now (on a search page, say): refreshes `lastSeen` of the ones that are stored, so a
+   * posting that is still listed is never evicted. Ids that are not stored are ignored.
+   */
+  touch(ids: readonly string[]): Promise<void>;
+  /** Insert, or replace and refresh `fetchedAt` and `lastSeen` (keeps `firstSeen`). */
   put(job: NewJob): Promise<void>;
 }
 

@@ -52,7 +52,7 @@ Output: `{ cards: [{ id, title, company, location, work_mode: "remote|hybrid|on-
 
 ### `linkedin_job` (Phase 1)
 Input: `{ "ids": ["<id>", ...] (maxItems 25), "refresh": false, "description_max_chars": 3000 (500-6000), "disallowed_terms": ["…"] (maxItems 60, default none), "disallowed_scope": "title" | "title_then_description" }`.
-Output: `{ jobs: [{ id, title, company, location, description (untrusted text, cut to N chars), description_truncated, url, source: "fetched"|"stored", new, first_seen, fetched_at, stack_hints, years_hints, remote_hints, salary_text }], not_returned_ids, excluded: [{ id, title, reason, term }], failed: [{ id, status: "not_loaded"|"closed" }] }`.
+Output: `{ jobs: [{ id, title, company, location, description (untrusted text, cut to N chars), description_truncated, url, source: "fetched"|"stored", new, first_seen, fetched_at, last_seen, stack_hints, years_hints, remote_hints, salary_text }], not_returned_ids, excluded: [{ id, title, reason, term }], failed: [{ id, status: "not_loaded"|"closed" }] }`.
 Behaviour: see `07-adapter-linkedin.md`. Stored jobs are answered without a visit; opened jobs are opened **by navigation** with human-like pacing and stored as soon as their title passes.
 
 ### `linkedin_search_and_read` (Phase 1, the routine's tool)

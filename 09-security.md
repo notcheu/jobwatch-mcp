@@ -20,7 +20,7 @@
 | Docker socket abuse | Rootless Docker only; router uses the `mcpuser` user's own socket; no root socket anywhere; router runs as a non-root user with `no-new-privileges`, read-only root fs |
 | Account ban or checkpoint | Conservative budgets, jittered pacing, one tab, circuit breaker, `session_status`, notify Matthieu; residential IP only |
 | Profile theft from disk | Profiles 0700, dedicated user, disk encryption recommended; do not back up profiles unencrypted |
-| Stored job postings (public text, `jobs` table in the router's SQLite file, 0600, in `data/`) | Not secret, but personal in aggregate (what you look for). Evicted after `JW_JOB_RETENTION_DAYS`; never logged; the call log still keeps only an argument hash. Back up or wipe `data/` with the same care as the rest |
+| Stored job postings (public text, `jobs` table in the router's SQLite file, 0600, in `data/`) | Not secret, but personal in aggregate (what you look for). Evicted after `JW_JOB_RETENTION_DAYS` without a sighting; never logged; the call log still keeps only an argument hash. Back up or wipe `data/` with the same care as the rest |
 | Secrets in git | `.gitignore` for `profiles/`, `data/`, `.env`, `secrets/`; pre-commit secret scan |
 | Supply chain | CI publishes the router to a private registry (credentials only in GitHub secrets and the host `~/.docker/config.json`); Watchtower updates only the labelled router; pin image digests and npm deps (committed `package-lock.json`, `npm ci`, exact versions); scheduled `npm audit` checks; rebuild browser image deliberately |
 | Runaway resource use (DoS on the house) | cgroup caps, rate limits, queue timeout, global semaphore |

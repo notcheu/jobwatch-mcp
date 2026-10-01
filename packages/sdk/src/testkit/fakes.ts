@@ -31,7 +31,16 @@ export class FakeJobStore implements JobStore {
 
   put(job: NewJob): Promise<void> {
     const now = this.clock().toISOString();
-    this.jobs.set(job.id, { ...job, firstSeen: this.jobs.get(job.id)?.firstSeen ?? now, fetchedAt: now });
+    this.jobs.set(job.id, { ...job, firstSeen: this.jobs.get(job.id)?.firstSeen ?? now, fetchedAt: now, lastSeen: now });
+    return Promise.resolve();
+  }
+
+  touch(ids: readonly string[]): Promise<void> {
+    const now = this.clock().toISOString();
+    for (const id of ids) {
+      const job = this.jobs.get(id);
+      if (job) this.jobs.set(id, { ...job, lastSeen: now });
+    }
     return Promise.resolve();
   }
 }

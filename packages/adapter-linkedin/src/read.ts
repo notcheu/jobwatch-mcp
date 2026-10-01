@@ -33,6 +33,7 @@ export interface AcceptedJob extends Hints {
   isNew: boolean;
   firstSeen: string;
   fetchedAt: string;
+  lastSeen: string;
 }
 
 export interface Failed {
@@ -51,6 +52,7 @@ const fromStored = (row: StoredJob): AcceptedJob => ({
   isNew: false,
   firstSeen: row.firstSeen,
   fetchedAt: row.fetchedAt,
+  lastSeen: row.lastSeen,
   ...extractHints(row.description),
 });
 
@@ -96,6 +98,7 @@ async function visit(
       isNew: !known,
       firstSeen: now,
       fetchedAt: now,
+      lastSeen: now,
       ...extractHints(page.description),
     },
   };
