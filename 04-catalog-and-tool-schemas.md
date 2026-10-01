@@ -56,7 +56,7 @@ Output: `[{ id, title, company, location, description (untrusted text, truncated
 Behaviour: opens each job page **by navigation** (not synthetic card clicks) with human-like pacing; reads the About-the-job text. `stack_hints`/`years_hints`/`remote_hints` are simple deterministic extractions (regex dictionaries in `packages/adapter-linkedin/src/parse.ts`) to save tokens; the client still decides.
 
 ### `linkedin_search_and_read` (Phase 1, convenience)
-Input: union of search args + `{ "skip_ids": [...] (maxItems 500), "open": "unseen_matching|none", "title_exclude_regex": "…", "max_jobs": 15, "description_max_chars": 1200 }`.
+Input: union of search args + `{ "skip_ids": [...] (maxItems 500), "open": "unseen_matching|none", "title_exclude": ["…"] (maxItems 60, whole words, not a regex), "max_jobs": 15, "description_max_chars": 1200 }`.
 Output: cards + details for opened ones. Mirrors what `linkedin-extract.js` did in one call; server-side it reuses the single tab and the same pacing.
 
 ### `apec_search` (HTTP), `apec_job` (browser), `wttj_matches`, `free_work_search`, `ats_jobs` (Phase 3)

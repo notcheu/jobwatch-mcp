@@ -57,7 +57,7 @@ Navigate to `https://www.linkedin.com/jobs/` (allowed host only), wait for the m
 For each id (max 10 per call): navigate to the details URL, wait for the About-the-job element (timeout 12 s), read text, truncate to `description_max_chars`, compute hints (stack/years/remote), close nothing (same tab reused). Pace between jobs: random 2.5–5 s. Status `not_loaded` if the element never appears; `closed` if the page shows "No longer accepting applications".
 
 ### `linkedin_search_and_read`
-Search, drop `skip_ids`, apply `title_exclude_regex` (default = the routine's exclusions: Engineering Manager, Angular, Vue, Java, .NET, fullstack, freelance, stage/alternance, **word-bounded `intern(ship)?`** — the old unbounded `intern` matched "Internal Tools"), open up to `max_jobs` remaining jobs, return cards + details.
+Search, drop `skip_ids`, apply `title_exclude` (a list of whole words or phrases, never a client-supplied regex, to rule out ReDoS; default = the routine's exclusions: Engineering Manager, Angular, Vue, Java, .NET, fullstack, freelance, stage/alternance, **word-bounded `intern(ship)?`** — the old unbounded `intern` matched "Internal Tools"), open up to `max_jobs` remaining jobs, return cards + details.
 
 ## Hints dictionaries (`parse.ts`)
 - Stack: React, Next.js, TypeScript, JavaScript, Angular/AngularJS, Vue/Vue.js/Nuxt, Node.js, Java, Kotlin, PHP/Symfony, Python, Svelte, GraphQL, Storybook, Design System, micro-frontends. Use **case-sensitive word-boundary** matching for `Vue` (the French word "vue" otherwise matches everywhere).
@@ -84,3 +84,9 @@ Labels above are the **English** LinkedIn UI. Keep the account/browser language 
 - Fixture-based parser tests: saved **sanitized** HTML of a search page and a details page (store outside git or scrub; no personal data).
 - Golden cases: duplicate cards; "(Verified job)" duplicates; promoted + easy apply lines; salary line; every `Posted …` unit; location with `(Remote)`; card with no salary.
 - Live smoke test (manual/nightly, off by default): search page 1 returns ≥ 5 cards; one job returns a description ≥ 200 chars; both within budget.
+
+## Implementation status (Phase 1, step 7b)
+- Code: `packages/adapter-linkedin` (`parse.ts` pure parsing and filtering, `extract.ts` in-page scripts that only return raw text, `layouts/` URL builders, `search.ts` page readers, `index.ts` the three tools and `sessionCheck`). `JW_LINKEDIN_LAYOUT=ai` picks layout B.
+- An empty card list is an honest result only when the page says "No results found"; otherwise it is `adapter_broken`. A login form or `/login`, `/checkpoint` URL throws `SessionInvalid` or `Checkpoint` (opens the breaker).
+- Jobs are opened by navigation to `/jobs/view/<id>/`, never by clicking; ids are digits only. Text from the pages is marked untrusted in the tool descriptions.
+- Tested with a fake browser and synthetic data only. **VERIFY:** the in-page scripts and the `f_TPR` / `start=` parameters on layout A against the live site, from the NUC after a manual login.
