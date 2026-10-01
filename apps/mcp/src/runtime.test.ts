@@ -25,6 +25,8 @@ const browserAdapter: AdapterModule = defineAdapter({
     }),
   ],
 });
+/** No DevTools exists behind the fake backend's addresses, so tests that lease a browser replace the readiness hooks. */
+const noHooks = { runtimeHooks: {} } as const;
 const installed = { ...installedFixtures, browsery: async () => browserAdapter };
 
 let server: TestServer;
@@ -35,7 +37,7 @@ afterEach(async () => {
 describe('browser runtime wiring', () => {
   it('does not create a runtime, or touch docker, when only HTTP adapters are enabled', async () => {
     const backend = new FakeBackend();
-    server = await startTestServer({}, ['probe'], { installed, runtimeBackend: backend });
+    server = await startTestServer({}, ['probe'], { installed, runtimeBackend: backend, ...noHooks });
     expect(server.running.runtime).toBeUndefined();
     expect(backend.calls).toEqual([]);
   });
@@ -43,7 +45,7 @@ describe('browser runtime wiring', () => {
   it('creates the runtime when a browser adapter is enabled, and removes orphans of a previous router at startup', async () => {
     const backend = new FakeBackend();
     backend.containers.set('jw-linkedin', { spec: {} as never, running: true, oomKilled: false });
-    server = await startTestServer({}, ['browsery'], { installed, runtimeBackend: backend });
+    server = await startTestServer({}, ['browsery'], { installed, runtimeBackend: backend, ...noHooks });
     expect(server.running.runtime).toBeDefined();
     expect(backend.calls).toContain('remove:jw-linkedin');
     expect(backend.containers.size).toBe(0);
@@ -53,13 +55,13 @@ describe('browser runtime wiring', () => {
 
   it('starts nothing at startup: tools/list stays free of containers', async () => {
     const backend = new FakeBackend();
-    server = await startTestServer({}, ['browsery'], { installed, runtimeBackend: backend });
+    server = await startTestServer({}, ['browsery'], { installed, runtimeBackend: backend, ...noHooks });
     expect(backend.calls.filter((c) => c.startsWith('start'))).toEqual([]);
   });
 
   it('stops the running browser on shutdown', async () => {
     const backend = new FakeBackend();
-    server = await startTestServer({}, ['browsery'], { installed, runtimeBackend: backend });
+    server = await startTestServer({}, ['browsery'], { installed, runtimeBackend: backend, ...noHooks });
     const lease = await server.running.runtime?.lease('browsery');
     expect(backend.running).toEqual(['jw-browsery']);
     await server.stop();
@@ -85,7 +87,7 @@ describe('browser runtime wiring', () => {
         JW_PROFILE_VOLUME_PREFIX: 'prof-',
       },
       ['browsery'],
-      { installed, runtimeBackend: backend },
+      { installed, runtimeBackend: backend, ...noHooks },
     );
     await (await server.running.runtime?.lease('browsery'))?.release();
     expect(backend.containers.get('jw-browsery')?.spec).toMatchObject({
@@ -99,7 +101,7 @@ describe('browser runtime wiring', () => {
 
   it('feeds runtime events into the metrics', async () => {
     const backend = new FakeBackend();
-    server = await startTestServer({ JW_METRICS_ENABLED: 'true' }, ['browsery'], { installed, runtimeBackend: backend });
+    server = await startTestServer({ JW_METRICS_ENABLED: 'true' }, ['browsery'], { installed, runtimeBackend: backend, ...noHooks });
     const lease = await server.running.runtime?.lease('browsery');
     let text = await (await fetch(server.metricsUrl as URL)).text();
     expect(text).toContain('jw_runtime_state{platform="browsery",state="busy"} 1');
@@ -107,5 +109,57 @@ describe('browser runtime wiring', () => {
     await lease?.release();
     text = await (await fetch(server.metricsUrl as URL)).text();
     expect(text).toContain('jw_runtime_state{platform="browsery",state="idle_grace"} 1');
+  });
+});
+
+describe('browser tools end to end through the real provider (fake CDP)', () => {
+  it('runs a browser tool: lease, connect by IP, handler, park, release; recorded and counted', async () => {
+    const backend = new FakeBackend();
+    const steps: string[] = [];
+    const connection = {
+      session: {
+        goto: async () => undefined,
+        evaluate: (async () => undefined) as never,
+        waitForSelector: async () => true,
+        text: async () => null,
+        url: () => 'about:blank',
+      },
+      park: async () => void steps.push('park'),
+      shedMemory: async () => undefined,
+      quit: async () => undefined,
+      disconnect: async () => void steps.push('disconnect'),
+    };
+    const seen: string[] = [];
+    server = await startTestServer({ JW_METRICS_ENABLED: 'true' }, ['browsery'], {
+      installed,
+      runtimeBackend: backend,
+      ...noHooks,
+      contexts: undefined, // use the real provider; only the CDP connection is faked
+      connectBrowser: async (address, hosts) => (seen.push(`${address} ${hosts.join(',')}`), connection),
+    });
+    const { connectClient } = await import('./harness');
+    const client = await connectClient(server.url);
+    const result = await client.callTool({ name: 'browsery_open', arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toEqual({ ok: true });
+    expect(seen).toEqual([expect.stringMatching(/^172\.18\.0\.\d+ www\.browsery\.example\.com$/)]);
+    expect(steps).toEqual(['park', 'disconnect']);
+    expect(server.running.runtime?.status().current?.state).toBe('idle_grace');
+    expect(server.running.store.recentCalls(1)[0]).toMatchObject({ tool: 'browsery_open', outcome: 'ok', platform: 'browsery' });
+    expect(await (await fetch(server.metricsUrl as URL)).text()).toContain(
+      'jw_tool_calls_total{tool="browsery_open",platform="browsery",result="ok"} 1',
+    );
+    await client.close();
+  });
+
+  it('passes the browser language settings to the container and the fingerprint expectation', async () => {
+    const backend = new FakeBackend();
+    server = await startTestServer({ JW_BROWSER_LANG: 'sv-SE', JW_BROWSER_ACCEPT_LANGS: 'fr-FR,en-GB,sv-SE' }, ['browsery'], {
+      installed,
+      runtimeBackend: backend,
+      ...noHooks,
+    });
+    await (await server.running.runtime?.lease('browsery'))?.release();
+    expect(backend.containers.get('jw-browsery')?.spec.env).toEqual({ CHROME_LANG: 'sv-SE', ACCEPT_LANGS: 'fr-FR,en-GB,sv-SE' });
   });
 });

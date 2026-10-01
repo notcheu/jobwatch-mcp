@@ -60,6 +60,10 @@ services:
     environment:
       JW_BASE_URL: ${JW_BASE_URL}
       JW_RUNTIME: docker
+      JW_BROWSER_IMAGE: ${JW_BROWSER_IMAGE:-jobwatch-browser:latest}
+      JW_BROWSER_NETWORK: jobwatch_jobwatch-browsers   # compose names networks <project>_<name>; the project is `jobwatch`
+      JW_BROWSER_LANG: ${JW_BROWSER_LANG:-fr-FR}
+      JW_BROWSER_ACCEPT_LANGS: ${JW_BROWSER_ACCEPT_LANGS:-}   # personal list copied from your everyday browser: set it in deploy/.env
       DOCKER_HOST: unix:///var/run/docker.sock          # mcpuser's ROOTLESS socket, mounted below
       JW_METRICS_ENABLED: ${JW_METRICS_ENABLED:-false}  # true => Prometheus /metrics on 9464
       JW_METRICS_PORT: 9464

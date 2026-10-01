@@ -49,7 +49,7 @@ npm run format              # prettier --write . ;  npm run format:check
 npm run ci                  # format:check + lint + typecheck + test
 npx nx run-many -t lint typecheck test   # same targets directly; `nx affected -t ...` for changed projects
 npm run build               # nx run-many -t build: bundle apps/mcp and apps/cli with esbuild into dist/apps/*/main.js
-npm run test:integration    # (planned) needs the browser runtime (rootless Docker)
+npm run test:integration    # builds the browser image and drives a REAL browser container (needs docker; never in CI): tests/integration/run.sh
 npm run catalog:gen         # regenerate every adapter's catalog/ snapshot (runs the adapter contract tests in update mode); commit the result
 npm run new:adapter -- <id> [--kind http|browser]   # scaffold a new adapter package, register it in packages/adapters, first snapshot
 npm run jobwatch -- adapters list|enable|disable <id...>   # which installed adapters the router plugs in (JW_DATA_DIR=./data for local use)

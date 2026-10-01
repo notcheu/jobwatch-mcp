@@ -13,7 +13,7 @@ import type { Registry } from './registry';
 
 /** Gives a handler its context (HTTP client, browser session, logger) and takes it back. Real providers arrive in steps 5 and 6. */
 export interface ContextProvider {
-  acquire(adapter: AdapterModule, requestId: string): Promise<{ ctx: BaseContext; release: () => Promise<void> }>;
+  acquire(adapter: AdapterModule, requestId: string): Promise<{ ctx: BaseContext; release: () => Promise<void>; signal?: AbortSignal }>;
 }
 
 /** The provider of a build without a runtime: every acquisition fails with a clear `internal` error. */
@@ -92,6 +92,22 @@ function errorResult(body: ErrorBody, requestId: string): ToolCallResult {
   return { isError: true, content: [{ type: 'text', text: JSON.stringify(withId) }] };
 }
 
+/** Reject as soon as `signal` aborts, with its reason when that is a JobwatchError (budget_exceeded, oom_killed, ...). */
+function raceAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (signal === undefined) return work;
+  const toError = (): Error =>
+    signal.reason instanceof Error ? signal.reason : new JobwatchError('internal', 'The browser stopped unexpectedly.');
+  if (signal.aborted) return Promise.reject(toError());
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(toError());
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  return Promise.race([work, aborted]).finally(() => {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  });
+}
+
 function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
@@ -165,7 +181,7 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
     lease = await deps.contexts.acquire(adapter, requestId);
     // One cast, here: the registry stores tools with their argument type erased; `input` has just validated the arguments.
     const handler = tool.handler as (args: unknown, ctx: BaseContext) => Promise<AdapterResult>;
-    const produced = await withTimeout(handler(parsed.data, lease.ctx), tool.limits.timeoutS * 1000);
+    const produced = await withTimeout(raceAbort(handler(parsed.data, lease.ctx), lease.signal), tool.limits.timeoutS * 1000);
 
     const checked = tool.output.safeParse(produced.data);
     if (!checked.success) {

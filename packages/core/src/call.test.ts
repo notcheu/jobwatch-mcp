@@ -1,6 +1,7 @@
 import { Writable } from 'node:stream';
 import {
   AdapterBroken,
+  JobwatchError,
   Checkpoint,
   SDK_API_VERSION,
   SessionInvalid,
@@ -274,5 +275,54 @@ describe('logging of calls', () => {
     expect(argsHash({ a: 1 })).toBe(argsHash({ a: 1 }));
     expect(argsHash({ a: 1 })).not.toBe(argsHash({ a: 2 }));
     expect(argsHash(undefined)).toBe(argsHash(null));
+  });
+});
+
+describe('callTool: a lease signal that aborts', () => {
+  it('fails at once with the signal reason instead of waiting for the tool timeout', async () => {
+    const controller = new AbortController();
+    const provider: ContextProvider = {
+      acquire: async () => ({ ctx: {} as BaseContext, release: async () => undefined, signal: controller.signal }),
+    };
+    const { deps } = await depsFor(() => new Promise(() => undefined), { provider, limits: { timeoutS: 60 } });
+    const pending = callTool(deps, 'probe_run', { q: 'x' });
+    controller.abort(new JobwatchError('budget_exceeded', 'The browser used too much memory and was stopped.'));
+    const { outcome } = await pending;
+    expect(outcome.code).toBe('budget_exceeded');
+  });
+
+  it('fails immediately when the signal was already aborted, and never runs the handler', async () => {
+    const controller = new AbortController();
+    controller.abort(new JobwatchError('oom_killed', 'killed'));
+    const handler = vi.fn(async () => ({ data: { n: 1 }, warnings: [] }));
+    const provider: ContextProvider = {
+      acquire: async () => ({ ctx: {} as BaseContext, release: async () => undefined, signal: controller.signal }),
+    };
+    const { deps } = await depsFor(handler, { provider });
+    expect((await callTool(deps, 'probe_run', { q: 'x' })).outcome.code).toBe('oom_killed');
+  });
+
+  it('maps a non-Error abort reason to a generic internal error', async () => {
+    const controller = new AbortController();
+    const provider: ContextProvider = {
+      acquire: async () => ({ ctx: {} as BaseContext, release: async () => undefined, signal: controller.signal }),
+    };
+    const { deps } = await depsFor(() => new Promise(() => undefined), { provider });
+    const pending = callTool(deps, 'probe_run', { q: 'x' });
+    controller.abort('just a string');
+    expect((await pending).outcome.code).toBe('internal');
+  });
+
+  it('does not leak abort listeners from calls that finish normally', async () => {
+    const controller = new AbortController();
+    const add = vi.spyOn(controller.signal, 'addEventListener');
+    const remove = vi.spyOn(controller.signal, 'removeEventListener');
+    const provider: ContextProvider = {
+      acquire: async () => ({ ctx: {} as BaseContext, release: async () => undefined, signal: controller.signal }),
+    };
+    const { deps } = await depsFor(async () => ({ data: { n: 1 }, warnings: [] }), { provider });
+    await callTool(deps, 'probe_run', { q: 'x' });
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1);
   });
 });

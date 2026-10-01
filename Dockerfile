@@ -37,11 +37,14 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates tini \
  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
-    JW_PORT=8080
+    JW_PORT=8080 \
+    JW_BROWSER_SECCOMP=/etc/jobwatch/chrome-seccomp.json
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist/apps/mcp ./dist/mcp
 COPY --from=build /app/dist/apps/cli ./dist/cli
+# The Chrome seccomp profile is read by the docker CLI in THIS container when it starts a browser (05-browser-runtime.md, G6).
+COPY images/browser/chrome-seccomp.json /etc/jobwatch/chrome-seccomp.json
 # `jobwatch` available inside the container: docker compose exec router jobwatch adapters list
 RUN printf '#!/bin/sh\nexec node /app/dist/cli/main.js "$@"\n' > /usr/local/bin/jobwatch && chmod +x /usr/local/bin/jobwatch
 # State lives in /data (mounted volume). Create it owned by the runtime user: a named volume copies this ownership on first use,
