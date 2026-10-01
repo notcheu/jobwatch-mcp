@@ -43,6 +43,7 @@ services:
     build: ../echo-mcp
     mem_limit: 128m
     read_only: true
+    tmpfs: [ "/tmp:rw,size=32m,uid=1000,gid=1000" ]   # tsx writes its compile cache to /tmp
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
     restart: unless-stopped
