@@ -62,6 +62,17 @@ describeAdapterContract(adapter, {
   },
 });
 
+describe('date range input', () => {
+  it('accepts the four ranges, defaults to the last 24 hours and refuses the old short form', () => {
+    const input = tools.search.input;
+    for (const range of ['last_24_hours', 'past_week', 'past_month', 'any'])
+      expect(input.parse({ keywords: 'x', posted_within: range }).posted_within).toBe(range);
+    expect(input.parse({ keywords: 'x' }).posted_within).toBe('last_24_hours');
+    expect(input.safeParse({ keywords: 'x', posted_within: '24h' }).success).toBe(false);
+    expect(tools.searchAndRead.input.parse({ keywords: 'x', posted_within: 'past_month' }).posted_within).toBe('past_month');
+  });
+});
+
 describe('linkedin_search', () => {
   const args = (over: object = {}) => tools.search.input.parse({ keywords: 'x', geo: 'france', posted_within: 'any', ...over });
 

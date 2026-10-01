@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { classifyPage, extractHints, geoId, isJobId, jobUrl, parseCard, termMatcher, workMode } from './parse';
+import { aiSearchResultsLayout } from './layouts/aiSearchResults';
+import { classicLayout } from './layouts/classic';
+import { classifyPage, extractHints, geoId, isJobId, jobUrl, parseCard, postedParam, termMatcher, workMode } from './parse';
 
 describe('ids and urls', () => {
   it('accepts numeric job ids only', () => {
@@ -112,5 +114,27 @@ describe('classifyPage', () => {
     expect(classifyPage('https://www.linkedin.com/uas/login', false)).toBe('needs_login');
     expect(classifyPage('https://www.linkedin.com/jobs/', true)).toBe('needs_login');
     expect(classifyPage('https://www.linkedin.com/jobs/', false)).toBe('ok');
+  });
+});
+
+describe('date range', () => {
+  it('maps each range to the LinkedIn f_TPR value and sends nothing for any time', () => {
+    expect(postedParam('last_24_hours')).toBe('f_TPR=r86400');
+    expect(postedParam('past_week')).toBe('f_TPR=r604800');
+    expect(postedParam('past_month')).toBe('f_TPR=r2592000');
+    expect(postedParam('any')).toBeNull();
+  });
+
+  it.each([
+    ['classic', classicLayout],
+    ['ai', aiSearchResultsLayout],
+  ])('puts it in the %s search url, with the geo and the page offset', (_name, layout) => {
+    const base = { keywords: 'full stack', geo: 'paris_idf', remote_only: false, page: 3, max_results: 25 } as const;
+    const week = layout.searchUrl({ ...base, posted_within: 'past_week' });
+    expect(week).toContain('f_TPR=r604800');
+    expect(week).toContain('geoId=104246759');
+    expect(week).toContain('start=50');
+    expect(layout.searchUrl({ ...base, posted_within: 'any' })).not.toContain('f_TPR');
+    expect(layout.searchUrl({ ...base, posted_within: 'past_month' })).toContain('f_TPR=r2592000');
   });
 });

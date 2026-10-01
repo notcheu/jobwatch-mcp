@@ -40,7 +40,7 @@ Input:
 {
   "keywords": "string (<=200)",
   "geo": "paris_idf | france | <geoId string>",
-  "posted_within": "24h | any",
+  "posted_within": "last_24_hours | past_week | past_month | any",
   "remote_only": false,
   "max_results": 25,
   "page": 1

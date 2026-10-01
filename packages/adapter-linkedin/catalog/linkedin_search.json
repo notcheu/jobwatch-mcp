@@ -42,9 +42,12 @@
         "type": "integer"
       },
       "posted_within": {
-        "default": "24h",
+        "default": "last_24_hours",
+        "description": "How recent the postings must be: last_24_hours, past_week, past_month, or any (no date filter).",
         "enum": [
-          "24h",
+          "last_24_hours",
+          "past_week",
+          "past_month",
           "any"
         ],
         "type": "string"

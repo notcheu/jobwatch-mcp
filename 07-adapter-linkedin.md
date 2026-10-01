@@ -24,8 +24,8 @@ Observed 2026-10-01 in Matthieu's Chrome (markers and counts only):
 ### Layout B: AI `/jobs/search-results/` (preserved, last verified working 2026-09-30)
 URLs:
 - Search results: `https://www.linkedin.com/jobs/search-results/?keywords=<urlencoded>&geoId=<id>&distance=0.0[&f_TPR=r86400][&start=<N>]`
-  - `geoId=104246759` — the Paris / Île-de-France search used by the routine; `geoId=105015875` — France.
-  - `f_TPR=r86400` = posted in the last 24 h. Omit for the Wednesday sweep and for `posted_within=any`.
+  - `geoId=104246759` — LinkedIn resolves it to **"Île-de-France, France"** (checked on the live page 2026-10-02: the location box shows that, and most cards are Paris or its suburbs). It is the whole region, not Paris city only, and LinkedIn also lists remote roles open to a wider area (an "EMEA (Remote)" card came first). `geoId=105015875` — France. Any numeric geoId is accepted by the tools.
+  - `posted_within` maps to `f_TPR`: `last_24_hours` = `r86400`, `past_week` = `r604800`, `past_month` = `r2592000`, `any` = no parameter. All three were checked on the live page 2026-10-02: LinkedIn's filter shows "Past 24 hours / Past week / Past month" for them.
   - `start=0,25,50,75,100` for pages 1–5 (25 cards/page). The pagination buttons have `aria-label="Page N"` (clicking one worked in the past; prefer `start=`).
 - **`f_WT=2` (remote) is dropped by LinkedIn on load** — the filter is never applied. Remote must be **post-filtered**: keep cards whose location shows `(Remote)` and set `warnings: ["remote filter not applied by LinkedIn; post-filtered"]`. Results for the France search are mixed (Hybrid/On-site/Remote).
 - Job details: known-good path = the search-results page with `currentJobId=<id>` (split view; selectors below). `https://www.linkedin.com/jobs/view/<id>` is the public/permalink form used for output URLs; its DOM may differ: **VERIFY in spike S5** (capture both DOMs while logged in and pick one; prefer navigating, not clicking synthetic events).
