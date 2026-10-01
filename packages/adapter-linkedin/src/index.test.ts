@@ -162,7 +162,7 @@ describe('linkedin_job', () => {
     const byDescription = await run(c.ctx, {
       ids: ['4000000001'],
       disallowed_terms: ['Angular'],
-      disallowed_scope: 'title_and_description',
+      disallowed_scope: 'title_then_description',
     });
     expect(byDescription.data.excluded).toEqual([{ id: '4000000001', title: 'Backend Engineer', reason: 'description', term: 'Angular' }]);
     const byTitle = await run(c.ctx, { ids: ['4000000002'], disallowed_terms: ['frontend'] });
@@ -237,11 +237,11 @@ describe('linkedin_search_and_read', () => {
     expect(c.jobs.jobs.size).toBe(0);
   });
 
-  it('with title_and_description a rejected description is not stored, so it is opened again next time', async () => {
+  it('with title_then_description a rejected description is not stored, so it is opened again next time', async () => {
     const c = context({ '4000000003': 'Our stack is Angular and Java.' });
     const input = read({
       disallowed_terms: ['angular'],
-      disallowed_scope: 'title_and_description',
+      disallowed_scope: 'title_then_description',
       skip_ids: ['4000000001', '4000000002'],
     });
     const first = await tools.searchAndRead.handler(input, c.ctx);
@@ -283,5 +283,106 @@ describe('layouts and session check', () => {
     expect((await run(page({ loginForm: false, nav: true, title: '' }))).state).toBe('ok');
     expect((await run(page({ loginForm: true, nav: true, title: '' }))).state).toBe('needs_login');
     expect((await run(page({ loginForm: false, nav: false, title: '' }))).state).toBe('unknown');
+  });
+});
+
+describe('max_results and several pages', () => {
+  const fullCard = (n: number) => ({ id: String(5_000_000_000 + n), lines: [`Engineer ${n}`, 'Co', 'Paris', '1 hour ago'] });
+  /** A search that serves `perPage[i]` cards on its i-th load (25 = a full page), then an empty "no results" page. */
+  function paged(perPage: number[], extraPages: Record<string, FakePage> = {}) {
+    let load = 0;
+    let offset = 0;
+    const page: FakePage = {
+      present: ['li[data-occludable-job-id]'],
+      evaluate: () => {
+        const count = perPage[load] ?? 0;
+        const batch = Array.from({ length: count }, (_, i) => fullCard(offset + i));
+        load += 1;
+        offset += count;
+        return { classic: count, ai: 0, cards: batch, noResults: count === 0, loginForm: false };
+      },
+    };
+    const made = createBrowserTestContext({ allowedHosts: adapter.allowedHosts, pages: { [SEARCH_URL]: page, ...extraPages } });
+    return { ...made, loads: () => load };
+  }
+  const search = (over: object = {}) => tools.search.input.parse({ keywords: 'x', posted_within: 'any', ...over });
+
+  it('50 results loads pages 1 and 2 and reports what the budget really spent', async () => {
+    const c = paged([25, 25, 25]);
+    const result = await tools.search.handler(search({ max_results: 50 }), c.ctx);
+    expect(result.data.cards).toHaveLength(50);
+    expect(result.data).toMatchObject({ page: 1, pages_loaded: 2, truncated: false, has_more: true });
+    expect(result.cost).toBe(2);
+    expect(c.loads()).toBe(2);
+  });
+
+  it('the default is one page, and 30 results examines two pages but returns 30', async () => {
+    const one = paged([25, 25]);
+    expect((await tools.search.handler(search(), one.ctx)).data.pages_loaded).toBe(1);
+    const thirty = paged([25, 25]);
+    const result = await tools.search.handler(search({ max_results: 30 }), thirty.ctx);
+    expect(result.data.cards).toHaveLength(30);
+    expect(result.data.truncated).toBe(true);
+    expect(result.data.pages_loaded).toBe(2);
+  });
+
+  it('stops at the end of the results: a page that is not full is the last one', async () => {
+    const c = paged([25, 10, 25]);
+    const result = await tools.search.handler(search({ max_results: 250 }), c.ctx);
+    expect(result.data.cards).toHaveLength(35);
+    expect(result.data).toMatchObject({ pages_loaded: 2, has_more: false });
+    expect(c.loads()).toBe(2);
+  });
+
+  it('treats an empty later page as the end instead of failing the call', async () => {
+    const c = paged([25, 0]);
+    const result = await tools.search.handler(search({ max_results: 100 }), c.ctx);
+    expect(result.data.cards).toHaveLength(25);
+    expect(result.data.pages_loaded).toBe(2);
+  });
+
+  it('never goes past page 10 and says so', async () => {
+    const c = paged([25, 25, 25]);
+    const result = await tools.search.handler(search({ page: 9, max_results: 100 }), c.ctx);
+    expect(result.data.pages_loaded).toBe(2);
+    expect(result.warnings.join(' ')).toMatch(/up to 10/);
+    expect(tools.search.input.safeParse({ keywords: 'x', page: 11 }).success).toBe(false);
+    expect(tools.search.input.safeParse({ keywords: 'x', max_results: 251 }).success).toBe(false);
+  });
+
+  it('search_and_read scans the pages, skips known and excluded jobs, caps the visits and charges pages plus visits', async () => {
+    const jobPages = Object.fromEntries(
+      Array.from({ length: 50 }, (_, n) => [jobUrl(String(5_000_000_000 + n)), jobPage(`Text ${n}`)] as const),
+    );
+    const c = paged([25, 25], jobPages);
+    await c.jobs.put({
+      id: '5000000002',
+      title: 'Engineer 2',
+      company: 'Co',
+      location: null,
+      url: jobUrl('5000000002'),
+      description: 'stored',
+    });
+    const input = tools.searchAndRead.input.parse({ keywords: 'x', max_results: 50, disallowed_terms: ['Engineer 1'] });
+    const result = await tools.searchAndRead.handler(input, c.ctx);
+    expect(result.data).toMatchObject({ pages_loaded: 2, scanned: 50, known_ids: ['5000000002'] });
+    expect(result.data.excluded.map((e) => e.id)).toEqual(['5000000001']);
+    expect(result.data.jobs).toHaveLength(25);
+    expect(result.data.remaining_ids).toHaveLength(50 - 1 - 1 - 25);
+    expect(result.cost).toBe(2 + 25);
+    expect(c.jobs.jobs.size).toBe(26);
+  });
+});
+
+describe('cost reporting', () => {
+  it('linkedin_job charges the pages it visited: 0 for a stored job, 1 per opened one', async () => {
+    const c = context();
+    expect((await tools.job.handler(tools.job.input.parse({ ids: ['4000000001', '4000000002'] }), c.ctx)).cost).toBe(2);
+    expect((await tools.job.handler(tools.job.input.parse({ ids: ['4000000001', '4000000002'] }), c.ctx)).cost).toBe(0);
+  });
+
+  it('the adapter declares the approved budget and every tool fits in it', () => {
+    expect(adapter.rate).toEqual({ perHour: 200, perDay: 400 });
+    for (const tool of adapter.tools) expect(tool.limits.cost).toBeLessThanOrEqual(200);
   });
 });

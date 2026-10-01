@@ -25,6 +25,12 @@ interface Window {
  * `take` checks and records in ONE transaction: two calls can never both pass the last remaining point.
  * Cost is taken before the call runs and is not refunded when the call fails: a failed request still reached the platform.
  */
+/** What `take` charged, kept to settle the real cost afterwards. */
+export interface UsageTicket {
+  id: number;
+  cost: number;
+}
+
 export class RateLimiter {
   constructor(
     private readonly store: Store,
@@ -40,9 +46,15 @@ export class RateLimiter {
     ];
   }
 
+  /** Give back what a finished call did not use. `actual` is clamped to 0..charged; a no-op when it is not lower. */
+  settle(ticket: UsageTicket, actual: number): void {
+    if (!Number.isFinite(actual)) return;
+    this.store.settleUsage(ticket.id, Math.max(0, Math.min(ticket.cost, Math.floor(actual))));
+  }
+
   /** Take `cost` points or throw `rate_limited` with the number of seconds until the call would fit. */
-  take(platform: string, cost: number): void {
-    this.store.transaction(() => {
+  take(platform: string, cost: number): UsageTicket {
+    return this.store.transaction(() => {
       const now = this.clock();
       const events = this.store.usageSince(platform, now - DAY_MS);
       let waitMs = 0;
@@ -87,7 +99,7 @@ export class RateLimiter {
           },
         );
       }
-      this.store.addUsage(platform, now, cost);
+      return { id: this.store.addUsage(platform, now, cost), cost };
     });
   }
 

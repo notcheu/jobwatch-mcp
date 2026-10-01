@@ -19,7 +19,7 @@ import { createGuard, policyFor } from './guard';
 import { RateLimiter } from './ratelimit';
 
 const annotations = { readOnlyHint: true, openWorldHint: true, idempotentHint: true } as const;
-let behaviour: () => Promise<{ data: { n: number }; warnings: string[] }>;
+let behaviour: () => Promise<{ data: { n: number }; warnings: string[]; cost?: number }>;
 const handlerRuns = { count: 0 };
 
 function adapterOf(id: string, platform: string, rate?: { perHour: number; perDay: number }, cost = 1): AdapterModule {
@@ -132,6 +132,53 @@ describe('rate limiting around calls', () => {
     };
     await code(deps, 'alpha_run');
     expect(limiter.status('alpha').hour.used).toBe(1);
+  });
+});
+
+describe('settling the real cost', () => {
+  const setupCost = () => setup([adapterOf('alpha', 'alpha', { perHour: 30, perDay: 100 }, 10)]);
+
+  it('refunds what the handler did not use, so the next call can fit', async () => {
+    const { deps, limiter } = await setupCost();
+    behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: 3 });
+    for (let i = 0; i < 5; i += 1) expect(await code(deps, 'alpha_run')).toBe('ok');
+    expect(limiter.status('alpha').hour.used).toBe(15);
+    expect(limiter.status('alpha').day.used).toBe(15);
+  });
+
+  it('still reserves the full cost up front: with 5 left a call that costs 10 at most is refused, whatever it would use', async () => {
+    const { deps, limiter } = await setup([adapterOf('alpha', 'alpha', { perHour: 15, perDay: 100 }, 10)]);
+    behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: 8 });
+    expect(await code(deps, 'alpha_run')).toBe('ok');
+    expect(limiter.status('alpha').hour.used).toBe(8);
+    behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: 1 });
+    expect(await code(deps, 'alpha_run')).toBe('rate_limited'); // 8 + 10 > 15
+    expect(handlerRuns.count).toBe(1);
+  });
+
+  it('clamps a report above the reservation and ignores nonsense', async () => {
+    const { deps, limiter } = await setupCost();
+    behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: 99 });
+    await code(deps, 'alpha_run');
+    expect(limiter.status('alpha').hour.used).toBe(10);
+    behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: Number.NaN });
+    await code(deps, 'alpha_run');
+    expect(limiter.status('alpha').hour.used).toBe(20);
+    behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: -4 });
+    await code(deps, 'alpha_run');
+    expect(limiter.status('alpha').hour.used).toBe(20);
+  });
+
+  it('removes the charge when nothing reached the platform (cost 0) and keeps full charge on failure', async () => {
+    const { deps, limiter } = await setupCost();
+    behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: 0 });
+    await code(deps, 'alpha_run');
+    expect(limiter.status('alpha').hour.used).toBe(0);
+    behaviour = async () => {
+      throw new Error('boom');
+    };
+    await code(deps, 'alpha_run');
+    expect(limiter.status('alpha').hour.used).toBe(10);
   });
 });
 
