@@ -30,8 +30,10 @@ export interface RegisteredTool {
 }
 
 export interface Registry {
-  /** Enabled adapters, in the order they were requested. */
+  /** Built-in adapters first (the ops tools), then the enabled ones in the order they were requested. */
   readonly adapters: readonly AdapterModule[];
+  /** Only the enabled, installed adapters (what `adapters.json` selects), without the built-ins. */
+  readonly enabled: readonly AdapterModule[];
   /** Tool name to its adapter and definition. Names are unique across all enabled adapters. */
   readonly tools: ReadonlyMap<string, RegisteredTool>;
 }
@@ -42,11 +44,27 @@ export interface Registry {
  * adapters, and adapters that share a platform but disagree on kind (they would share one runtime).
  * Only enabled adapters are imported; a disabled adapter costs nothing and exposes nothing.
  */
-export async function loadAdapters(enabledIds: readonly string[], installed: InstalledAdapters): Promise<Registry> {
+export async function loadAdapters(
+  enabledIds: readonly string[],
+  installed: InstalledAdapters,
+  builtins: readonly AdapterModule[] = [],
+): Promise<Registry> {
   const problems: string[] = [];
   const adapters: AdapterModule[] = [];
 
+  // Built-ins (the ops tools) are part of the engine, always present, and held to the same rules as any adapter.
+  for (const builtin of builtins) {
+    const violations = validateAdapter(builtin);
+    if (violations.length > 0) problems.push(formatViolations(builtin.id, violations));
+    else adapters.push(builtin);
+  }
+  const builtinCount = adapters.length;
+
   for (const id of enabledIds) {
+    if (builtins.some((builtin) => builtin.id === id)) {
+      problems.push(`"${id}" is a reserved built-in id and cannot be installed or enabled`);
+      continue;
+    }
     const load = installed[id];
     if (load === undefined) {
       problems.push(`"${id}" is enabled but not installed (installed: ${Object.keys(installed).join(', ') || 'none'})`);
@@ -93,7 +111,7 @@ export async function loadAdapters(enabledIds: readonly string[], installed: Ins
   }
 
   if (problems.length > 0) throw new RegistryError(problems);
-  return { adapters, tools };
+  return { adapters, enabled: adapters.slice(builtinCount), tools };
 }
 
 /** What `tools/list` exposes for one tool (a subset of the catalog entry: nothing about limits or hosts). */

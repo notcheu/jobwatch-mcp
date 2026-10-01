@@ -6,6 +6,7 @@ import {
   connectBrowser,
   createBrowserHooks,
   createContextProvider,
+  createOpsAdapter,
   RateLimiter,
   RegistryError,
   RuntimeManager,
@@ -99,17 +100,18 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   logger.info({ config: describeConfig(config) }, 'config_loaded');
 
   const enabled = await resolveEnabledAdapters(config);
-  const registry = await loadAdapters(enabled.ids, options.installed ?? installed);
-  logger.info({ enabled: enabled.ids, source: enabled.source, tools: [...registry.tools.keys()] }, 'adapters_loaded');
+  // Two passes: the ops tools need the limiter, breaker and runtime, which are built from the enabled adapters.
+  const table = options.installed ?? installed;
+  const enabledOnly = await loadAdapters(enabled.ids, table);
   if (enabled.ids.length === 0)
-    logger.warn('No adapters are enabled: the tool list is empty. Enable one with `jobwatch adapters enable <id>`.');
+    logger.warn('No adapters are enabled: only the built-in ops tools are listed. Enable one with `jobwatch adapters enable <id>`.');
   if (config.auth === 'front' && config.frontSharedSecret === undefined) {
     logger.warn('JW_FRONT_SHARED_SECRET is not set: relying on network isolation, only the OAuth front may reach this port.');
   }
   if (config.auth === 'none') logger.warn('JW_AUTH=none: no authentication. Local development only; never expose this port.');
 
   const metrics = config.metrics.enabled ? createMetrics({ version: options.version }) : undefined;
-  metrics?.setEnabledAdapters(registry.adapters.length);
+  metrics?.setEnabledAdapters(enabledOnly.adapters.length);
 
   // Persistent state. Fails fast (the process exits) when the database cannot be opened: running without a rate limiter or
   // breaker would mean nothing stops us from hammering a platform after a checkpoint.
@@ -121,7 +123,8 @@ export async function start(options: StartOptions): Promise<RunningServer> {
       logger.warn({ platform, reason: row.reason, until: row.until === null ? null : new Date(row.until).toISOString() }, 'breaker_opened');
     else logger.info({ platform }, 'breaker_closed');
   });
-  const limiter = new RateLimiter(store, clock, policyFor(registry.adapters));
+  let policyAdapters = enabledOnly.adapters;
+  const limiter = new RateLimiter(store, clock, (platform) => policyFor(policyAdapters)(platform));
   for (const open of breaker.all()) {
     metrics?.setBreaker(open.platform, open.reason);
     logger.warn({ platform: open.platform, reason: open.reason, since: new Date(open.openedAt).toISOString() }, 'breaker_still_open');
@@ -139,7 +142,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   pruneTimer.unref();
 
   // The browser runtime exists only when an enabled adapter needs one: a router with HTTP adapters only never touches docker.
-  const needsBrowser = registry.adapters.some((adapter) => adapter.kind === 'browser');
+  const needsBrowser = enabledOnly.adapters.some((adapter) => adapter.kind === 'browser');
   let runtime: RuntimeManager | undefined;
   if (needsBrowser) {
     runtime = new RuntimeManager(
@@ -175,9 +178,15 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     await runtime.reapOrphans().catch((error: unknown) => logger.error({ err: error }, 'orphan_reap_failed'));
   }
 
+  const contexts = options.contexts ?? createContextProvider({ runtime, connect: options.connectBrowser ?? connectBrowser, logger });
+  const ops = createOpsAdapter({ enabledAdapters: () => enabledOnly.adapters, runtime, store, limiter, breaker, contexts, clock, logger });
+  const registry = await loadAdapters(enabled.ids, table, [ops]);
+  policyAdapters = registry.adapters;
+  logger.info({ enabled: enabled.ids, source: enabled.source, tools: [...registry.tools.keys()] }, 'adapters_loaded');
+
   const app = createApp({
     registry,
-    contexts: options.contexts ?? createContextProvider({ runtime, connect: options.connectBrowser ?? connectBrowser, logger }),
+    contexts,
     logger,
     metrics,
     version: options.version,

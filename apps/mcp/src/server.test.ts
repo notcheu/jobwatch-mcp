@@ -84,8 +84,8 @@ describe('request hygiene', () => {
     const res = await post(server.url, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
     expect(res.headers.get('mcp-session-id')).toBeNull();
     const [a, b] = await Promise.all([connectClient(server.url), connectClient(server.url)]);
-    expect((await a.listTools()).tools).toHaveLength(4);
-    expect((await b.listTools()).tools).toHaveLength(4);
+    expect((await a.listTools()).tools).toHaveLength(6); // 4 fixture tools + 2 built-in ops tools
+    expect((await b.listTools()).tools).toHaveLength(6);
     await a.close();
     await b.close();
   });
@@ -96,19 +96,32 @@ describe('tools/list', () => {
     server = await startTestServer();
     const client = await connectClient(server.url);
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name)).toEqual(['probe_echo', 'probe_login', 'probe_crash', 'other_ping']);
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'session_status',
+      'memory_report',
+      'probe_echo',
+      'probe_login',
+      'probe_crash',
+      'other_ping',
+    ]); // built-ins first
     for (const tool of tools) {
       expect(tool.annotations).toMatchObject({ readOnlyHint: true });
       expect(tool.inputSchema).toMatchObject({ type: 'object', additionalProperties: false });
     }
-    expect(tools[0]?.inputSchema).toMatchObject({ properties: { word: { type: 'string', maxLength: 30 } }, required: ['word'] });
+    expect(tools.find((tool) => tool.name === 'probe_echo')?.inputSchema).toMatchObject({
+      properties: { word: { type: 'string', maxLength: 30 } },
+      required: ['word'],
+    });
     await client.close();
   });
 
   it('exposes nothing about hosts, platforms or limits', async () => {
     server = await startTestServer();
     const client = await connectClient(server.url);
-    const text = JSON.stringify((await client.listTools()).tools);
+    // the ops tools legitimately talk about platforms in their own schema; the fixture adapters' tools must not leak anything
+    const text = JSON.stringify(
+      (await client.listTools()).tools.filter((tool) => !['session_status', 'memory_report'].includes(tool.name)),
+    );
     for (const secret of ['api.probe.example.com', 'allowedHosts', 'platform', 'timeoutS', 'outputMaxBytes'])
       expect(text).not.toContain(secret);
     await client.close();
@@ -117,7 +130,7 @@ describe('tools/list', () => {
   it('hides a disabled adapter completely', async () => {
     server = await startTestServer({}, ['other']);
     const client = await connectClient(server.url);
-    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(['other_ping']);
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(['session_status', 'memory_report', 'other_ping']);
     await expect(client.callTool({ name: 'probe_echo', arguments: { word: 'x' } })).rejects.toBeInstanceOf(McpError);
     await client.close();
   });
@@ -125,7 +138,7 @@ describe('tools/list', () => {
   it('is empty when nothing is enabled', async () => {
     server = await startTestServer({}, []);
     const client = await connectClient(server.url);
-    expect((await client.listTools()).tools).toEqual([]);
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(['session_status', 'memory_report']); // only the built-in ops tools
     await client.close();
   });
 
@@ -230,7 +243,7 @@ describe('authentication: JW_AUTH=front with a shared secret', () => {
   it('accepts the right credential', async () => {
     server = await startTestServer(front);
     const client = await connectClient(server.url, { authorization: `Bearer ${SHARED}` });
-    expect((await client.listTools()).tools).toHaveLength(4);
+    expect((await client.listTools()).tools).toHaveLength(6);
     await client.close();
   });
 
@@ -324,5 +337,34 @@ describe('lifecycle', () => {
     const url = new URL('/healthz', server.url);
     await server.stop();
     await expect(fetch(url)).rejects.toThrow();
+  });
+});
+
+describe('built-in ops tools over MCP', () => {
+  it('memory_report answers over HTTP even when no adapter is enabled, and is recorded and metered', async () => {
+    server = await startTestServer({ JW_METRICS_ENABLED: 'true' }, []);
+    const client = await connectClient(server.url);
+    const result = await client.callTool({ name: 'memory_report', arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({ runtime: { enabled: false, state: 'cold' }, platforms: [] });
+    expect(server.running.store.recentCalls(1)[0]).toMatchObject({ tool: 'memory_report', platform: 'ops', outcome: 'ok' });
+    expect(await (await fetch(server.metricsUrl as URL)).text()).toContain(
+      'jw_tool_calls_total{tool="memory_report",platform="ops",result="ok"} 1',
+    );
+    await client.close();
+  });
+
+  it('session_status says which platforms it knows when asked for one that does not exist', async () => {
+    server = await startTestServer();
+    const client = await connectClient(server.url);
+    const result = await client.callTool({ name: 'session_status', arguments: { platform: 'linkedin' } });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse((result.content as { text: string }[])[0]?.text ?? '{}')).toMatchObject({ code: 'invalid_arguments' });
+    await client.close();
+  });
+
+  it('the ops tools are not counted as enabled adapters', async () => {
+    server = await startTestServer({ JW_METRICS_ENABLED: 'true' }, ['probe']);
+    expect(await (await fetch(server.metricsUrl as URL)).text()).toContain('jw_enabled_adapters 1');
   });
 });
