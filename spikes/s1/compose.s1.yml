@@ -5,7 +5,7 @@
 name: jobwatch-s1
 services:
   front:
-    image: ${JW_FRONT_IMAGE:-ghcr.io/babs/mcp-auth-proxy:v1.4.1}
+    image: ${JW_FRONT_IMAGE:-ghcr.io/babs/mcp-auth-proxy:1.4.1}
     environment:
       PROXY_BASE_URL: ${JW_BASE_URL}
       UPSTREAM_MCP_URL: http://echo:8080/mcp

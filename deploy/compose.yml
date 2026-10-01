@@ -7,7 +7,7 @@ networks:
   jobwatch-browsers: { internal: true }      # router <-> spawned browsers
 services:
   front:                                     # OAuth 2.1 authorization server + reverse proxy (decision D7: babs/mcp-auth-proxy)
-    image: ${JW_FRONT_IMAGE:-ghcr.io/babs/mcp-auth-proxy:v1.4.1}   # pin by digest once verified (S1)
+    image: ${JW_FRONT_IMAGE:-ghcr.io/babs/mcp-auth-proxy:1.4.1}   # pin by digest once verified (S1)
     environment:
       PROXY_BASE_URL: ${JW_BASE_URL}                 # https://mcp.noguetith.fr
       UPSTREAM_MCP_URL: http://router:8080/mcp       # path is the public mount AND is forwarded verbatim
