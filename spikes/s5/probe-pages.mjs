@@ -75,8 +75,8 @@ await stage("search", SEARCH, async () => {
   if (r.cardCount === 0) {
     // Selector diagnostics (attribute NAMES/VALUES of markers only, never text): which markers does the page actually have?
     out("  DIAG markers", await page.evaluate(() => {
-      const norm = (s) => s.replace(/\d+/g, "#").slice(0, 60);
-      const keys = {}; document.querySelectorAll("[componentKey]").forEach((e) => { const k = norm(e.getAttribute("componentKey")); keys[k] = (keys[k] || 0) + 1; });
+      const norm = (s) => (s ?? "(null)").replace(/\d+/g, "#").slice(0, 60);
+      const keys = {}; document.querySelectorAll("[componentKey]").forEach((e) => { const k = norm(e.getAttribute("componentKey") ?? e.getAttribute("componentkey")); keys[k] = (keys[k] || 0) + 1; });
       const testids = {}; document.querySelectorAll("[data-testid]").forEach((e) => { const k = norm(e.getAttribute("data-testid")); testids[k] = (testids[k] || 0) + 1; });
       return {
         componentKeys: Object.entries(keys).sort((a, b) => b[1] - a[1]).slice(0, 25),
