@@ -54,10 +54,39 @@ Navigate to `https://www.linkedin.com/jobs/` (allowed host only), wait for the m
 5. Return cards (+ `warnings`). One page view = 1 rate-limit cost unit.
 
 ### `linkedin_job`
-For each id (max 10 per call): navigate to the details URL, wait for the About-the-job element (timeout 12 s), read text, truncate to `description_max_chars`, compute hints (stack/years/remote), close nothing (same tab reused). Pace between jobs: random 2.5–5 s. Status `not_loaded` if the element never appears; `closed` if the page shows "No longer accepting applications".
+Reads up to 10 jobs by id. A job that is already stored is answered from memory (`source: "stored"`, no visit, no pacing) unless `refresh: true`. Otherwise: navigate to the details URL, wait for the About-the-job element (12 s), read the full text, compute hints (stack/years/remote), pace 2.5-5 s between jobs. `not_loaded` (element never appeared) and `closed` ("No longer accepting applications") go to `failed` and are **not stored**. With `disallowed_terms`, a job whose page title (and, with `disallowed_scope: "title_and_description"`, description) holds a term goes to `excluded` and is not stored; every other job is stored. The text returned is cut to `description_max_chars` (500-6000, default 3000); the stored text is the full description (max 20 000 characters).
 
 ### `linkedin_search_and_read`
-Search, drop `skip_ids`, apply `title_exclude` (a list of whole words or phrases, never a client-supplied regex, to rule out ReDoS; default = the routine's exclusions: Engineering Manager, Angular, Vue, Java, .NET, fullstack, freelance, stage/alternance, **word-bounded `intern(ship)?`** — the old unbounded `intern` matched "Internal Tools"), open up to `max_jobs` remaining jobs, return cards + details.
+The tool for the daily routine. One call = one search page (25 cards) and the visits that page deserves:
+1. Load the page, read the cards, post-filter `remote_only`.
+2. **Already stored** (opened and accepted by an earlier call, any search) or listed in `skip_ids`: left alone, reported in `known_ids`. Never opened again.
+3. **Disallowed term in the card title**: dropped without opening (costs nothing), reported in `excluded` with the term that matched.
+4. Everything else is opened one by one, up to `max_jobs` (default 25, the most page visits of the call; `0` = classify only) and a soft 200 s time budget.
+5. With `disallowed_scope: "title_and_description"`, an opened job whose description holds a term is reported in `excluded` (`reason: description`) and **not stored**.
+6. Each accepted job is **stored right after it is read** (title, company, location, url, full description), so a call that dies half way loses nothing.
+7. Jobs not visited because of `max_jobs` or the time budget come back in `remaining_ids`: **call again with the same arguments**; stored jobs are skipped, so the call continues where it stopped.
+
+`disallowed_terms` has no built-in default and no environment variable: the caller sends the list with every call (whole words or phrases, case-insensitive, plain text, never a regex, which also rules out ReDoS). That is what lets one run search "full stack" and ignore "frontend", and another search "backend" and ignore "fullstack". A job rejected by one list is **not** remembered as rejected, so it can still be opened by a search with another list.
+
+### Usage guide (what each tool is for)
+| Tool | Use it to | Cost | Visits |
+|---|---|---|---|
+| `session_status` | check the LinkedIn session before a run (`ok`, `needs_login`, `checkpoint`) | 1 page | 1 |
+| `linkedin_search` | peek at a result page: who is listed, which cards are new (`known: false`). Opens nothing, stores nothing | 1 | 1 search page |
+| `linkedin_job` | read specific jobs you already have ids for (from a search, or a stored one) | 10 | up to 10 job pages, 0 for stored jobs |
+| `linkedin_search_and_read` | the routine: search a page and read every job that is new and not disallowed | 26 | 1 search page + up to 25 job pages |
+
+Typical run, two searches over two pages each (4 calls):
+```
+linkedin_search_and_read { keywords: "full stack engineer", geo: "paris_idf", page: 1, disallowed_terms: ["frontend", "front-end", "Angular"] }
+linkedin_search_and_read { ...same..., page: 2 }
+linkedin_search_and_read { keywords: "backend engineer", page: 1, disallowed_terms: ["fullstack", "full-stack", "full stack"] }
+linkedin_search_and_read { ...same..., page: 2 }
+```
+If a result has `remaining_ids`, repeat that same call until it is empty. The whole run costs at most 4 x 26 = 104 budget units, the second day far fewer page visits because stored jobs are skipped (but the cost is charged up front, see below).
+
+### Job memory and retention
+Accepted jobs live in the router's SQLite `jobs` table (`03-router-spec.md`, "Job store") and are evicted `JW_JOB_RETENTION_DAYS` (default 30) after their last fetch. After eviction a posting counts as new again and is opened again.
 
 ## Hints dictionaries (`parse.ts`)
 - Stack: React, Next.js, TypeScript, JavaScript, Angular/AngularJS, Vue/Vue.js/Nuxt, Node.js, Java, Kotlin, PHP/Symfony, Python, Svelte, GraphQL, Storybook, Design System, micro-frontends. Use **case-sensitive word-boundary** matching for `Vue` (the French word "vue" otherwise matches everywhere).
@@ -70,7 +99,7 @@ Labels above are the **English** LinkedIn UI. Keep the account/browser language 
 
 ## Pacing and budget (defaults, to be approved by Matthieu before going live)
 - Minimum 2.5 s (jittered 2.5–5 s) between navigations; never parallel tabs.
-- ≤ 40 page views per tool call, ≤ 120 per hour, ≤ 300 per day (search page = 1, job page = 1).
+- ≤ 26 page views per tool call (`linkedin_search_and_read`: 1 search + 25 jobs; the cost is charged up front at that maximum), ≤ 120 per hour, ≤ 300 per day (search page = 1, job page = 1). Four such calls (2 searches x 2 pages) use 104 of the hourly 120: the numbers are Matthieu's to approve.
 - Circuit breaker: any checkpoint/authwall/captcha marker opens the breaker for 6 h and returns `checkpoint`; `needs_login` opens until `session_status` returns ok.
 - A typical daily routine needs ≈ 4–6 search pages + ≈ 15–25 job pages; the Wednesday sweep adds 5–10 pages + ≈ 20 jobs.
 
