@@ -21,7 +21,7 @@ Work in order. Do not skip Phase 0: several design choices hinge on it. Keep a r
 ## Phase 1 — Router core + LinkedIn adapter (local, no OAuth)
 Workspace layout and rules: `03-router-spec.md` ("Repo layout: Nx monorepo"). Build order, one commit per step, repo green after each (decided 2026-10-01):
 1. Nx workspace, tooling, module-boundary lint rules, first test.
-2. `packages/sdk`: types, `defineAdapter`/`defineTool`, errors, `SDK_API_VERSION`, testkit.
+2. `packages/sdk`: types, `defineAdapter`/`defineHttpTool`/`defineBrowserTool`, errors, host allowlist, `validateAdapter`, catalog builder, testkit. **Done** (84 tests).
 3. `packages/core`: config and logging, registry (`loadAdapters`) and catalog snapshot logic, with a fake adapter proving `tools/list` works with no container; `packages/adapters` (installed map) and the adapter generator.
 4. `apps/mcp`: stateless Streamable HTTP, `/healthz`, `/metrics`, contract test; `apps/cli` with `adapters list|enable|disable`. **Open the first PR here** (server runs locally, empty catalog plus one fake adapter), then one PR per later step group.
 5. `core`: SQLite store, rate limiter, breaker, `RuntimeBackend` + `DockerCliBackend`, runtime manager (state machine, semaphore, preemption, reaper, watchdog), tested against a fake backend first.

@@ -5,7 +5,9 @@
   "description": "The contract adapters are built on: defineAdapter, defineTool, AdapterContext, errors, testkit.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testkit": "./src/testkit/index.ts",
+    "./catalog-fs": "./src/catalog-fs.ts"
   },
   "scripts": {
     "lint": "eslint .",
@@ -16,5 +18,16 @@
     "tags": [
       "type:sdk"
     ]
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "peerDependencies": {
+    "vitest": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
   }
 }
