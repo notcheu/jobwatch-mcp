@@ -33,6 +33,7 @@ function setup(over: Partial<BrowserHooksOptions> = {}, fp: unknown = goodFp) {
       url: () => 'about:blank',
     },
     park: async () => void calls.push('park'),
+    keepSessionCookies: async () => 0,
     shedMemory: async () => void calls.push('shed'),
     quit: async () => void calls.push('quit'),
     disconnect: async () => void calls.push('disconnect'),

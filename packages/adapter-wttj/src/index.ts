@@ -329,6 +329,7 @@ export default defineAdapter({
   kind: 'browser',
   allowedHosts: [HOST],
   sessionCheck: checkSession,
+  keepSessionCookies: true,
   rate: { perHour: 60, perDay: 200 },
   tools: [matches, job, matchesAndRead],
 });

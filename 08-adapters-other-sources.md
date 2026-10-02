@@ -13,6 +13,7 @@ All return the normalized card shape from `04-…`. Every adapter declares `allo
 - **Source and board:** `source: "wttj"`, `board` = the company slug on WTTJ (`bsport-1`), `salary_text` and `remote_hints` from the card when it states them.
 - **Session and breaker:** `session_status` is `needs_login` when the site shows a sign-in page and `checkpoint` when a verification shows. Log in with `jobwatch login wttj` (the same noVNC procedure as LinkedIn, `05-browser-runtime.md`).
 - **Budget:** each matches page and each job read is 1 unit; the adapter declares 60 per hour and 200 per day, lower than LinkedIn's because it is an account-bound site.
+- **Keeping the login:** WTTJ's sign-in cookies have no expiry, so Chrome drops them when the browser container stops. The adapter sets `keepSessionCookies`: each call ends by giving them a 30 day expiry (`05-browser-runtime.md`, G4).
 - **Not verified:** a Google Chrome session on the NUC staying signed in to WTTJ, the matches list on a different account language (the labels read are French), and `Next Page` beyond page 2.
 
 ## Apec (`packages/adapter-apec`, tools `apec_search`, `apec_job`, `apec_search_and_read`)
