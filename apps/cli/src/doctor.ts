@@ -68,7 +68,7 @@ export async function doctor(deps: Deps): Promise<number> {
         add(
           found ? 'ok' : 'warn',
           `profile ${platform}`,
-          found ? volume : `${volume} does not exist yet: run "jobwatch login ${platform}"`,
+          found ? volume : `${volume} does not exist yet: run "jobwatch login start ${platform}"`,
         );
       }
     }

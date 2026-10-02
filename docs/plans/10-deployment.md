@@ -133,7 +133,7 @@ Rootless Docker starts at boot through `systemctl --user enable docker` + `login
 8. LinkedIn login through noVNC (`05-…`).
 
 ### Session expired / `needs_login` or `checkpoint`
-The routine notifies Matthieu. Procedure: `jobwatch login linkedin` → SSH tunnel to the viewer → log in → `jobwatch login --done`. After a checkpoint wait 24 h and reduce budgets.
+The routine notifies Matthieu. Procedure: `jobwatch login start linkedin` → SSH tunnel to the viewer → log in → `jobwatch login stop linkedin`. After a checkpoint wait 24 h and reduce budgets.
 
 ### Out of memory / runtime killed
 Look at `memory_report` and the call log (`peak_rss_mb`). Lower per-tool `max_cards`, enable resource blocking, raise `memory.max` only if the host has headroom, or reduce `renderer-process-limit`.

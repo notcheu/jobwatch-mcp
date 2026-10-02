@@ -72,7 +72,7 @@ const cli = (argv: string[], over: Partial<Deps> = {}): Promise<number> =>
 
 describe('login', () => {
   it('starts the login browser on loopback, with a password and the start page, and prints the tunnel', async () => {
-    expect(await cli(['login', 'linkedin'])).toBe(0);
+    expect(await cli(['login', 'start', 'linkedin'])).toBe(0);
     const start = calls.find((args) => args[0] === 'run');
     expect(start).toBeDefined();
     expect(start).toContain('127.0.0.1:6080:6080');
@@ -83,33 +83,35 @@ describe('login', () => {
     expect(start?.[start.indexOf('--network') + 1]).toBe('bridge');
     expect(out).toContain('ssh -L 6080:localhost:6080');
     expect(out).toContain('pw123456');
-    expect(out).toContain('jobwatch login linkedin --done');
+    expect(out).toContain('jobwatch login stop linkedin');
   });
 
   it('refuses while the router browser runs on the same profile', async () => {
     const docker = fakeDocker({ 'inspect -f': { stdout: 'true\n' } });
-    expect(await cli(['login', 'linkedin'], { docker })).toBe(2);
+    expect(await cli(['login', 'start', 'linkedin'], { docker })).toBe(2);
     expect(err).toContain('running on the profile');
     expect(calls.some((args) => args[0] === 'run')).toBe(false);
   });
 
   it('rejects unknown platforms, extra arguments and bad ports', async () => {
-    expect(await cli(['login', 'nope'])).toBe(1);
+    expect(await cli(['login', 'start', 'nope'])).toBe(1);
     expect(err).toContain('Browser platforms: linkedin');
     expect(await cli(['login'])).toBe(1);
-    expect(await cli(['login', 'linkedin', '--port', '80'])).toBe(1);
+    expect(await cli(['login', 'linkedin'])).toBe(1); // the old form: no start or stop
+    expect(await cli(['login', 'start'])).toBe(1);
+    expect(await cli(['login', 'start', 'linkedin', '--port', '80'])).toBe(1);
     expect(calls.some((args) => args[0] === 'run')).toBe(false);
   });
 
   it('reports a docker failure without echoing the password', async () => {
     const docker = fakeDocker({ run: { code: 125, stderr: 'port is already allocated' } });
-    expect(await cli(['login', 'linkedin'], { docker })).toBe(2);
+    expect(await cli(['login', 'start', 'linkedin'], { docker })).toBe(2);
     expect(err).toContain('port is already allocated');
     expect(err).not.toContain('pw123456');
   });
 
-  it('--done stops and removes the login browser', async () => {
-    expect(await cli(['login', 'linkedin', '--done'])).toBe(0);
+  it('stop stops and removes the login browser', async () => {
+    expect(await cli(['login', 'stop', 'linkedin'])).toBe(0);
     expect(calls.map((args) => args.slice(0, 1).concat(args.at(-1) ?? ''))).toEqual([
       ['stop', 'jw-login-linkedin'],
       ['rm', 'jw-login-linkedin'],

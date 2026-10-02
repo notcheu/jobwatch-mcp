@@ -17,8 +17,8 @@ export function randomVncPassword(): string {
 export const loginContainerName = (platform: string): string => `jw-login-${platform}`;
 
 const LOGIN_USAGE = `Usage:
-  jobwatch login <platform> [--port 6080]   start a visible browser on the platform's profile
-  jobwatch login <platform> --done          stop it (the profile keeps the session)
+  jobwatch login start <platform> [--port 6080]   start a visible browser on the platform's profile
+  jobwatch login stop <platform>                  stop it (the profile keeps the session)
 `;
 
 /**
@@ -29,10 +29,10 @@ export async function login(deps: Deps, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
-    options: { done: { type: 'boolean', default: false }, port: { type: 'string', default: String(LOGIN_PORT) } },
+    options: { port: { type: 'string', default: String(LOGIN_PORT) } },
   });
-  const [platform, ...extra] = positionals;
-  if (platform === undefined || extra.length > 0) {
+  const [action, platform, ...extra] = positionals;
+  if ((action !== 'start' && action !== 'stop') || platform === undefined || extra.length > 0) {
     deps.io.err(LOGIN_USAGE);
     return EXIT_USAGE;
   }
@@ -50,7 +50,7 @@ export async function login(deps: Deps, args: string[]): Promise<number> {
   }
   const name = loginContainerName(platform);
 
-  if (values.done) {
+  if (action === 'stop') {
     await docker(['stop', '-t', '20', name], { timeoutMs: DOCKER_TIMEOUT_MS });
     await docker(['rm', '-f', name], { timeoutMs: DOCKER_TIMEOUT_MS });
     deps.io.out(
@@ -117,7 +117,7 @@ export async function login(deps: Deps, args: string[]): Promise<number> {
       `     ssh -L ${port}:localhost:${port} <user>@<this-host>`,
       `2. Open http://localhost:${port}/vnc.html and connect with the password: ${password}`,
       `3. Sign in by hand (captcha, phone confirmation), then browse once to a page that needs the session.`,
-      `4. Stop it:  jobwatch login ${platform} --done`,
+      `4. Stop it:  jobwatch login stop ${platform}`,
       '',
       "The viewer listens on this machine's loopback only. The password is valid until you stop it.",
       '',

@@ -11,7 +11,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.nog
 - **Libraries:** `@modelcontextprotocol/sdk` (stateless Streamable HTTP) on Express, `zod`, `playwright-core` (`connectOverCDP` only, behind `BrowserSession`), `node:sqlite` (built into Node 26, no native addon), `pino`, `prom-client` (optional metrics), `vitest`, `eslint` + `prettier`.
 - **Platforms:** production is the Ubuntu NUC (x86_64, rootless Docker). The images are multi-arch (amd64 + arm64) so they also run on a Mac (Docker Desktop, arm64) for development; the arm64 browser image uses Chromium (Google ships no Linux arm64 Chrome) and is **not** for the LinkedIn session. Never hard-code Linux-only paths: profiles are named Docker volumes, the Docker socket path comes from `JW_DOCKER_SOCKET`.
 - **Runtime:** rootless Docker for a dedicated `mcpuser` user; always-on services (OAuth front, router, Watchtower) in `deploy/compose.yml`; browser containers are spawned by the router, never declared in compose.
-- **Monorepo (Nx + npm workspaces):** `packages/sdk` (the adapter contract), `packages/core` (engine), `packages/adapters` (installed adapter map), `packages/adapter-<platform>` (one package per platform, depends on `sdk` only), `apps/mcp` (server), `apps/cli` (`jobwatch`). Tool definitions live in code; each adapter package has a **generated** `catalog/` snapshot. Adapters are enabled/disabled with `jobwatch adapters enable|disable <id>` (`adapters.json`); nothing is enabled by default. Other commands: `jobwatch login <platform> [--done]` (manual sign-in via noVNC), `jobwatch catalog [--all]`, `jobwatch doctor`.
+- **Monorepo (Nx + npm workspaces):** `packages/sdk` (the adapter contract), `packages/core` (engine), `packages/adapters` (installed adapter map), `packages/adapter-<platform>` (one package per platform, depends on `sdk` only), `apps/mcp` (server), `apps/cli` (`jobwatch`). Tool definitions live in code; each adapter package has a **generated** `catalog/` snapshot. Adapters are enabled/disabled with `jobwatch adapters enable|disable <id>` (`adapters.json`); nothing is enabled by default. Other commands: `jobwatch login start|stop <platform>` (manual sign-in via noVNC), `jobwatch catalog [--all]`, `jobwatch doctor`.
 - **Delivery:** GitHub Actions builds and pushes `jobwatch-router:latest` to a private registry; Watchtower on the host updates the router (`10-deployment.md`).
 
 ## Hard no rules
@@ -52,7 +52,7 @@ npm run build               # nx run-many -t build: bundle apps/mcp and apps/cli
 npm run test:integration    # builds the browser image and drives a REAL browser container (needs docker; never in CI): tests/integration/run.sh
 npm run catalog:gen         # regenerate every adapter's catalog/ snapshot (runs the adapter contract tests in update mode); commit the result
 npm run new:adapter -- <id> [--kind http|browser]   # scaffold a new adapter package, register it in packages/adapters, first snapshot
-npm run jobwatch -- adapters list|enable|disable <id...> | login <platform> [--done] | catalog | doctor   # which installed adapters the router plugs in (JW_DATA_DIR=./data for local use)
+npm run jobwatch -- adapters list|enable|disable <id...> | login start|stop <platform> | catalog | doctor   # which installed adapters the router plugs in (JW_DATA_DIR=./data for local use)
 docker build -t jobwatch-router:dev .   # the router image (multi-arch in CI)
 docker compose -f deploy/compose.yml --env-file deploy/.env up -d      # as mcpuser
 ```
