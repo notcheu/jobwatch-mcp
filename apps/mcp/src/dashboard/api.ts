@@ -24,6 +24,7 @@ import {
   type CallLog,
   type CircuitBreaker,
   type InstalledAdapters,
+  type PlatformStatus,
   type RateLimiter,
   type Registry,
   type RuntimeManager,
@@ -45,6 +46,8 @@ export interface DashboardData {
   /** `JW_ADAPTERS` pins the list of adapters. */
   pinned: boolean;
   runtime: () => RuntimeManager | undefined;
+  /** The last session check of each browser platform (what `session_status` found); the dashboard never runs a check. */
+  sessionStates: () => ReadonlyMap<string, PlatformStatus>;
 }
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -241,6 +244,12 @@ export function listSearches(data: DashboardData, query: unknown): Searches {
 
 // ---------------------------------------------------------------------------------------------------------- tools
 
+function sessionOf(data: DashboardData, platform: string, kind: 'browser' | 'http') {
+  if (kind !== 'browser') return null;
+  const status = data.sessionStates().get(platform);
+  return status === undefined ? null : { state: status.state, checkedAt: status.checked_at, note: status.note ?? null };
+}
+
 export async function getTools(data: DashboardData): Promise<Tools> {
   const registry = data.registry();
   const enabled = new Set(registry.enabled.map((adapter) => adapter.id));
@@ -282,6 +291,7 @@ export async function getTools(data: DashboardData): Promise<Tools> {
       rateDay: rate?.day ?? null,
       boards,
       breaker: open ? { reason: open.reason, until: open.until === null ? null : iso(open.until) } : null,
+      session: sessionOf(data, platform, entry.summary.kind),
     });
   }
   const status = data.runtime()?.status();

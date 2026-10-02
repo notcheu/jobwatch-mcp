@@ -30,6 +30,7 @@ export const tools = {
       rateDay: null,
       boards: [],
       breaker: null,
+      session: null,
     },
     {
       id: 'apec',
@@ -44,6 +45,7 @@ export const tools = {
       rateDay: null,
       boards: [],
       breaker: null,
+      session: null,
     },
     {
       id: 'wttj',
@@ -58,6 +60,7 @@ export const tools = {
       rateDay: null,
       boards: [],
       breaker: null,
+      session: null,
     },
   ],
   runtime: { enabled: true, state: 'cold', platform: null, peakMb: null, waiting: 0 },

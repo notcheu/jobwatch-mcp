@@ -27,6 +27,8 @@ import {
   type ConnectBrowser,
   policyFor,
   resolveEnabledAdapters,
+  setAdaptersEnabled,
+  type PlatformStatus,
   type Clock,
   type ContextProvider,
   type InstalledAdapters,
@@ -36,6 +38,7 @@ import {
 import { installed } from '@jobwatch/adapters';
 import { createApp } from './app';
 import { DashboardManager } from './dashboard/manager';
+import { ChangeRefused, registerWrites } from './dashboard/writes';
 import { createMetricsServer } from './metrics-server';
 
 /** The call log keeps 30 days and usage events 2 days: tidy up at startup and every six hours. */
@@ -207,7 +210,9 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     });
   // The holder is created after `ops`, which needs it: the ops tools read the live list of enabled adapters through this function.
   const live: { holder?: RegistryHolder } = {};
+  const sessionCache = new Map<string, PlatformStatus>();
   const ops = createOpsAdapter({
+    sessionCache,
     enabledAdapters: () => live.holder?.current().enabled ?? enabledOnly.adapters,
     runtime: () => runtime,
     store,
@@ -306,9 +311,39 @@ export async function start(options: StartOptions): Promise<RunningServer> {
       installed: table,
       pinned: config.adaptersFromEnv !== undefined,
       runtime: () => runtime,
+      sessionStates: () => sessionCache,
     },
     logger,
     clock,
+    {
+      writes: (router) =>
+        registerWrites(
+          router,
+          {
+            setAdapter: async (id, enabled) => {
+              if (config.adaptersFromEnv !== undefined)
+                throw new ChangeRefused(409, 'pinned', 'JW_ADAPTERS sets the list of adapters; unset it to change them from here.');
+              if (!(id in table)) throw new ChangeRefused(404, 'not_found', 'No such adapter is installed.');
+              await setAdaptersEnabled(config, Object.keys(table).sort(), [id], enabled);
+              try {
+                const result = await reloadAdapters();
+                return { enabledAdapters: result.enabled, addedTools: result.addedTools, removedTools: result.removedTools };
+              } catch (error) {
+                // the file was written but the list does not load: put it back so the next start is not broken
+                await setAdaptersEnabled(config, Object.keys(table).sort(), [id], !enabled).catch(() => undefined);
+                throw new ChangeRefused(
+                  422,
+                  'not_loadable',
+                  error instanceof Error ? (error.message.split('\n')[0] ?? 'The adapter did not load.') : 'The adapter did not load.',
+                );
+              }
+            },
+            running: () => callLog.all().filter((call) => call.state === 'running').length,
+            restart: () => void process.kill(process.pid, 'SIGTERM'),
+          },
+          logger,
+        ),
+    },
   );
 
   const controlServer =

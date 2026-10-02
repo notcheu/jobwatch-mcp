@@ -1,8 +1,9 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+/* eslint-disable @typescript-eslint/no-explicit-any -- the tests read JSON answers field by field */
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sendControl, controlSocketPath } from '@jobwatch/core';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installedFixtures, connectClient } from './harness';
@@ -152,5 +153,84 @@ describe('the dashboard through the control socket', () => {
     await running?.close(500);
     running = undefined;
     await expect(fetch(`http://127.0.0.1:${port}/dashboard/api/v1/me`)).rejects.toThrow();
+  });
+});
+
+describe('changing adapters from the dashboard', () => {
+  const freePort = (): Promise<number> =>
+    new Promise((resolve) => {
+      const probe = createServer();
+      probe.listen(0, '127.0.0.1', () => {
+        const port = (probe.address() as AddressInfo).port;
+        probe.close(() => resolve(port));
+      });
+    });
+  const send = (port: number, method: string, path: string, body: unknown): Promise<{ status: number; body: any }> =>
+    new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path,
+          method,
+          headers: { 'content-type': 'application/json', 'x-jw-csrf': '1', origin: 'http://127.0.0.1:18999' },
+        },
+        (res) => {
+          let text = '';
+          res.on('data', (chunk) => (text += String(chunk)));
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(text) }));
+        },
+      );
+      req.on('error', reject);
+      req.end(JSON.stringify(body));
+    });
+
+  it('enables an adapter: the file is written, the registry reloaded and Claude would see the tools on its next list', async () => {
+    await enable(['probe']);
+    const port = await freePort();
+    const { url } = await boot({ JW_DASHBOARD_PORT: String(port) });
+    await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
+    expect(await toolNames(url)).not.toContain('other_ping');
+
+    const answer = await send(port, 'PUT', '/dashboard/api/v1/adapters/other', { enabled: true });
+    expect(answer.status).toBe(200);
+    expect(answer.body).toMatchObject({ id: 'other', enabled: true, reconnectNeeded: true, addedTools: ['other_ping'] });
+    expect(JSON.parse(await readFile(join(dir, 'adapters.json'), 'utf8'))).toEqual({ enabled: ['other', 'probe'] });
+    expect(await toolNames(url)).toContain('other_ping');
+
+    const off = await send(port, 'PUT', '/dashboard/api/v1/adapters/other', { enabled: false });
+    expect(off.body).toMatchObject({ removedTools: ['other_ping'] });
+    expect(await toolNames(url)).not.toContain('other_ping');
+  });
+
+  it('refuses an adapter that is not installed and writes nothing', async () => {
+    await enable(['probe']);
+    const port = await freePort();
+    await boot({ JW_DASHBOARD_PORT: String(port) });
+    await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
+    const answer = await send(port, 'PUT', '/dashboard/api/v1/adapters/nothing-here', { enabled: true });
+    expect(answer.status).toBe(404);
+    expect(JSON.parse(await readFile(join(dir, 'adapters.json'), 'utf8'))).toEqual({ enabled: ['probe'] });
+  });
+
+  it('refuses while JW_ADAPTERS pins the list', async () => {
+    const port = await freePort();
+    await boot({ JW_DASHBOARD_PORT: String(port), JW_ADAPTERS: 'probe' });
+    await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
+    const answer = await send(port, 'PUT', '/dashboard/api/v1/adapters/other', { enabled: true });
+    expect(answer).toMatchObject({ status: 409, body: { error: 'pinned' } });
+  });
+
+  it('refuses a change without the CSRF header or the right Origin', async () => {
+    await enable(['probe']);
+    const port = await freePort();
+    await boot({ JW_DASHBOARD_PORT: String(port) });
+    await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
+    const bare = await fetch(`http://127.0.0.1:${port}/dashboard/api/v1/adapters/other`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: '{"enabled":true}',
+    });
+    expect(bare.status).toBe(403);
   });
 });

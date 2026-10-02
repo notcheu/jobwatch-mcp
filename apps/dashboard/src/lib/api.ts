@@ -1,20 +1,24 @@
 import {
   API_PREFIX,
+  adapterToggleSchema,
   callDetailSchema,
   callsPageSchema,
   jobDetailSchema,
   jobsPageSchema,
   meSchema,
   overviewSchema,
+  restartSchema,
   searchesSchema,
   toolsSchema,
   usageSchemaResponse,
+  type AdapterToggle,
   type CallDetail,
   type CallsPage,
   type JobDetail,
   type JobsPage,
   type Me,
   type Overview,
+  type Restart,
   type Searches,
   type Tools,
   type Usage,
@@ -32,8 +36,11 @@ export class ApiError extends Error {
   }
 }
 
-/** Where to send the browser when its session is gone. A function so tests can replace it. */
+/** Where to send the browser when its session is gone, or when a change needs a fresh sign-in. A function so tests can replace it. */
 export const navigation = {
+  toReauth: (): void => {
+    window.location.assign(`/dashboard/auth/login?reauth=1&next=${encodeURIComponent(window.location.pathname)}`);
+  },
   toLogin: (): void => {
     window.location.assign(`/dashboard/login?next=${encodeURIComponent(window.location.pathname)}`);
   },
@@ -82,4 +89,8 @@ export const api = {
     request(searchesSchema, `/searches${query(params)}`),
   tools: (): Promise<Tools> => request(toolsSchema, '/tools'),
   usage: (params: { tool?: string; platform?: string }): Promise<Usage> => request(usageSchemaResponse, `/usage${query(params)}`),
+  setAdapter: (id: string, enabled: boolean): Promise<AdapterToggle> =>
+    request(adapterToggleSchema, `/adapters/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+  restart: (force: boolean): Promise<Restart> =>
+    request(restartSchema, '/router/restart', { method: 'POST', body: JSON.stringify({ force }) }),
 };

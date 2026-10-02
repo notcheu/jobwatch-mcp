@@ -5,6 +5,7 @@ import { Jobs } from '@/pages/Jobs';
 import { Overview } from '@/pages/Overview';
 import { Runs } from '@/pages/Runs';
 import { Searches } from '@/pages/Searches';
+import { Tools } from '@/pages/Tools';
 import { Soon } from '@/pages/Soon';
 
 export function AppRoutes() {
@@ -18,7 +19,7 @@ export function AppRoutes() {
         <Route path="jobs" element={<Jobs />} />
         <Route path="jobs/:source/:id" element={<Jobs />} />
         <Route path="searches" element={<Searches />} />
-        <Route path="tools" element={<Soon name="Tools & status" />} />
+        <Route path="tools" element={<Tools />} />
         <Route path="settings" element={<Soon name="Settings" />} />
         <Route path="*" element={<Soon name="This page" />} />
       </Route>

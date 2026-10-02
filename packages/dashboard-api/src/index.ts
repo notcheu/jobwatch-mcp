@@ -145,6 +145,11 @@ export const toolStateSchema = z
     rateDay: usageSchema.nullable(),
     boards: z.array(z.object({ board: z.string(), rateHour: usageSchema, rateDay: usageSchema }).strict()),
     breaker: z.object({ reason: z.string(), until: iso.nullable() }).strict().nullable(),
+    /** What the last `session_status` found, if it ran; the dashboard never runs a check. */
+    session: z
+      .object({ state: z.enum(['ok', 'needs_login', 'checkpoint', 'unknown']), checkedAt: iso, note: z.string().nullable() })
+      .strict()
+      .nullable(),
   })
   .strict();
 export type ToolState = z.infer<typeof toolStateSchema>;
@@ -164,6 +169,25 @@ export const toolsSchema = z
   })
   .strict();
 export type Tools = z.infer<typeof toolsSchema>;
+
+// ------------------------------------------------------------------------------------------------------ changes
+
+export const adapterToggleSchema = z
+  .object({
+    id: z.string(),
+    enabled: z.boolean(),
+    /** The list of enabled adapters after the change. */
+    enabledAdapters: z.array(z.string()),
+    addedTools: z.array(z.string()),
+    removedTools: z.array(z.string()),
+    /** The server is stateless: Claude sees the new tool list when its connector refreshes or reconnects. */
+    reconnectNeeded: z.boolean(),
+  })
+  .strict();
+export type AdapterToggle = z.infer<typeof adapterToggleSchema>;
+
+export const restartSchema = z.object({ restarting: z.boolean() }).strict();
+export type Restart = z.infer<typeof restartSchema>;
 
 // ------------------------------------------------------------------------------------------------------ overview and usage
 
