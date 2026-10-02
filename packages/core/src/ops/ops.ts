@@ -71,6 +71,16 @@ const memoryReportSchema = z.object({
       rate_hour: z.object({ used: z.number(), limit: z.number() }),
       rate_day: z.object({ used: z.number(), limit: z.number() }),
       breaker: z.object({ reason: z.string(), until: z.string().nullable() }).optional(),
+      boards: z
+        .array(
+          z.object({
+            board: z.string(),
+            rate_hour: z.object({ used: z.number(), limit: z.number() }),
+            rate_day: z.object({ used: z.number(), limit: z.number() }),
+          }),
+        )
+        .optional()
+        .describe('Company boards used in the last 24 hours with their own budget, most used first (at most 25).'),
     }),
   ),
   recent_calls: z.array(z.object({ at: z.string(), tool: z.string(), outcome: z.string(), duration_ms: z.number() })),
@@ -241,11 +251,24 @@ export function createOpsAdapter(deps: OpsDeps): AdapterModule {
         platforms: [...platforms.values()].map((adapter) => {
           const rate = deps.limiter.status(adapter.platform);
           const breaker = deps.breaker.state(adapter.platform);
+          // The boards of a platform with a budget per board (an ATS), those used in the last 24 hours, busiest first.
+          const boards =
+            adapter.keyRate === undefined
+              ? []
+              : deps.store
+                  .usageKeys(adapter.platform, now - 24 * 3600 * 1000)
+                  .map((board) => ({
+                    board,
+                    ...(({ hour, day }) => ({ rate_hour: hour, rate_day: day }))(deps.limiter.status(`${adapter.platform}#${board}`)),
+                  }))
+                  .sort((a, b) => b.rate_day.used - a.rate_day.used || a.board.localeCompare(b.board))
+                  .slice(0, 25);
           return {
             platform: adapter.platform,
             kind: adapter.kind,
             rate_hour: rate.hour,
             rate_day: rate.day,
+            ...(boards.length > 0 ? { boards } : {}),
             ...(breaker
               ? { breaker: { reason: breaker.reason, until: breaker.until === null ? null : new Date(breaker.until).toISOString() } }
               : {}),

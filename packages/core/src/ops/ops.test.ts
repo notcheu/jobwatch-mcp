@@ -74,6 +74,30 @@ const httpOnly: AdapterModule = defineAdapter({
   ],
 } as never);
 
+const boardPlatform: AdapterModule = defineAdapter({
+  id: 'boards',
+  displayName: 'Boards',
+  description: 'A platform with a budget per company board.',
+  sdkApi: SDK_API_VERSION,
+  platform: 'boards',
+  kind: 'http',
+  allowedHosts: ['api.boards.example.com'],
+  rate: { perHour: 600, perDay: 3000 },
+  keyRate: { perHour: 20, perDay: 100 },
+  tools: [
+    defineBrowserTool({
+      name: 'boards_noop',
+      title: 'Noop (read-only)',
+      description: 'Nothing. Read-only, no side effects.',
+      input: z.object({}).strict(),
+      output: z.object({ ok: z.boolean() }),
+      annotations,
+      limits: { timeoutS: 5, cost: 1, outputMaxBytes: 2048 },
+      handler: async () => ({ data: { ok: true }, warnings: [] }),
+    }) as never,
+  ],
+} as never);
+
 let now: number;
 
 async function setup(adapters: AdapterModule[], over: { contexts?: ContextProvider; withRuntime?: boolean } = {}) {
@@ -378,6 +402,35 @@ describe('memory_report', () => {
       expect.objectContaining({ platform: 'plain', kind: 'http', rate_hour: { used: 0, limit: 600 } }),
     ]);
     await lease.release();
+  });
+
+  it('shows the usage of each company board of a platform that has a budget per board, busiest first', async () => {
+    const t = await setup([boardPlatform, httpOnly]);
+    for (const board of ['algolia', 'algolia', 'algolia', 'doctolib']) t.limiter.take(`boards#${board}`, 1);
+    t.limiter.take('boards', 4);
+    const r = (await report(t.deps)) as unknown as {
+      platforms: {
+        platform: string;
+        rate_hour: { used: number; limit: number };
+        boards?: { board: string; rate_hour: { used: number; limit: number }; rate_day: { limit: number } }[];
+      }[];
+    };
+    const entry = r.platforms.find((p) => p.platform === 'boards');
+    expect(entry?.rate_hour).toEqual({ used: 4, limit: 600 }); // the platform budget is its own
+    expect(entry?.boards).toEqual([
+      expect.objectContaining({ board: 'algolia', rate_hour: { used: 3, limit: 20 }, rate_day: expect.objectContaining({ limit: 100 }) }),
+      expect.objectContaining({ board: 'doctolib', rate_hour: { used: 1, limit: 20 } }),
+    ]);
+    expect(r.platforms.find((p) => p.platform === 'plain')).not.toHaveProperty('boards'); // a platform without per-board budgets shows none
+  });
+
+  it('shows no boards that were last used more than a day ago', async () => {
+    const t = await setup([boardPlatform]);
+    t.limiter.take('boards#old', 1);
+    now += 25 * 3600 * 1000;
+    t.limiter.take('boards#new', 1);
+    const r = (await report(t.deps)) as unknown as { platforms: { boards?: { board: string }[] }[] };
+    expect(r.platforms[0]?.boards?.map((b) => b.board)).toEqual(['new']);
   });
 
   it('lists the recent calls, newest first, with no arguments and no hashes', async () => {

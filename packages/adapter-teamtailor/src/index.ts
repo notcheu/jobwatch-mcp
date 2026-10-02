@@ -52,6 +52,8 @@ const teamtailorJobs = defineHttpTool({
     cost: MAX_BOARDS,
     // one request per distinct company board; a board that needs the page read to be found costs one or two more
     estimate: (args) => new Set(args.boards.map((board) => board.trim())).size,
+    // the company boards this call will request, one budget each (`keyRate`): the resolver's own name for them
+    keys: (args) => [...new Set(args.boards.flatMap((board) => resolveBoard(board.trim())?.label ?? []))],
     outputMaxBytes: 262_144,
   },
   handler: (args, ctx) => runBoardTool(ctx, 'teamtailor', teamtailor, args),
@@ -68,7 +70,9 @@ export default defineAdapter({
   // address checks of 09-security.md, and must answer with a Teamtailor feed to be believed.
   allowedHosts: ['*.teamtailor.com'],
   openHttps: true,
-  rate: { perHour: 120, perDay: 600 },
+  // one budget per company board (a request every 3 minutes at most, a few a day in practice), and a high ceiling for the platform
+  keyRate: { perHour: 20, perDay: 100 },
+  rate: { perHour: 600, perDay: 3000 },
   tools: [teamtailorJobs],
 });
 

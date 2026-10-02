@@ -196,3 +196,24 @@ describe('ashby_jobs', () => {
     }
   });
 });
+
+describe('the budget per company board', () => {
+  const keys = (boards: string[]): readonly string[] => {
+    const keysOf = tool.limits.keys;
+    if (keysOf === undefined) throw new Error('the tool names no budget keys');
+    return (keysOf as (args: { boards: string[] }) => readonly string[])({ boards });
+  };
+
+  it('names each distinct company once, whichever way it was written, and none for what cannot be a board', () => {
+    expect(keys(['pennylane', 'https://jobs.ashbyhq.com/pennylane', 'backmarket', 'https://evil.example/x', 'a/b'])).toEqual([
+      'pennylane',
+      'backmarket',
+    ]);
+    expect(keys([])).toEqual([]);
+  });
+
+  it('gives every company its own budget and the whole platform a high ceiling', () => {
+    expect(adapter.keyRate).toEqual({ perHour: 20, perDay: 100 });
+    expect(adapter.rate).toEqual({ perHour: 600, perDay: 3000 });
+  });
+});

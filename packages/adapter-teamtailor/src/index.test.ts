@@ -327,7 +327,8 @@ describe('the adapter declares what it reaches', () => {
   it('lists the teamtailor.com wildcard, is open for custom domains, and has its own budget', () => {
     expect(adapter.allowedHosts).toEqual(['*.teamtailor.com']);
     expect(adapter.kind === 'http' && adapter.openHttps).toBe(true);
-    expect(adapter.rate).toEqual({ perHour: 120, perDay: 600 });
+    expect(adapter.rate).toEqual({ perHour: 600, perDay: 3000 }); // a ceiling for the platform
+    expect(adapter.keyRate).toEqual({ perHour: 20, perDay: 100 }); // the real budget: per company handle
   });
 });
 
@@ -490,5 +491,33 @@ describe('teamtailor_jobs on a site that is not at the guessed address', () => {
     const result = await run(c.ctx, { boards: ['ghost'] });
     expect(data(result).boards[0]).toMatchObject({ status: 'not_found' });
     expect(c.http.requests).toHaveLength(1);
+  });
+});
+
+describe('the budget per company board', () => {
+  const keys = (boards: string[]): readonly string[] => {
+    const keysOf = tool.limits.keys;
+    if (keysOf === undefined) throw new Error('the tool names no budget keys');
+    return (keysOf as (args: { boards: string[] }) => readonly string[])({ boards });
+  };
+
+  it('names each distinct company once, whichever way it was written, and none for what cannot be a board', () => {
+    expect(
+      keys([
+        'bsport',
+        ' bsport ',
+        'https://bsport.teamtailor.com/jobs/8429717-vp',
+        'https://careers.bsport.io/',
+        'https://www.acme.com/careers/jobs/1-x',
+        'Not A Handle',
+        'https://192.168.1.1/',
+      ]),
+    ).toEqual(['bsport', 'careers.bsport.io', 'www.acme.com/careers']);
+    expect(keys([])).toEqual([]);
+  });
+
+  it('gives every company its own budget and the whole platform a high ceiling', () => {
+    expect(adapter.keyRate).toEqual({ perHour: 20, perDay: 100 });
+    expect(adapter.rate).toEqual({ perHour: 600, perDay: 3000 });
   });
 });
