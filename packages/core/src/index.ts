@@ -74,6 +74,7 @@ export type { Metrics } from './metrics';
 export {
   CALL_LOG_RETENTION_MS,
   DEFAULT_JOB_RETENTION_DAYS,
+  DAILY_USAGE_RETENTION_DAYS,
   JOB_SORT_COLUMNS,
   MAX_JOB_DESCRIPTION_CHARS,
   SCHEMA_VERSION,
@@ -81,7 +82,17 @@ export {
   StoreError,
   USAGE_RETENTION_MS,
 } from './store/store';
-export type { BreakerReason, BreakerRow, CallRecord, Clock, NewJobRow, StoredJobRow, UsageEvent } from './store/store';
+export type {
+  BreakerReason,
+  BreakerRow,
+  CallRecord,
+  Clock,
+  DailyUsageDelta,
+  DailyUsageRow,
+  NewJobRow,
+  StoredJobRow,
+  UsageEvent,
+} from './store/store';
 export { DEFAULT_RATE, effectiveRate } from './limits/policy';
 export { RateLimiter } from './limits/ratelimit';
 export type { RateStatus, UsageTicket, WindowUsage } from './limits/ratelimit';

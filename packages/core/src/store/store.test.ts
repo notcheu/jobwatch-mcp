@@ -478,3 +478,93 @@ describe('search history', () => {
     short.close();
   });
 });
+
+describe('daily tool totals', () => {
+  const T = Date.UTC(2026, 9, 5, 23, 30);
+  const call = (over: object = {}) => ({
+    ts: T,
+    tool: 'linkedin_search',
+    platform: 'linkedin',
+    error: false,
+    responseBytes: 2000,
+    tokens: 570,
+    units: 3,
+    durationMs: 400,
+    textAvailable: 8000,
+    textReturned: 700,
+    ...over,
+  });
+  let store: Store;
+  beforeEach(() => {
+    store = Store.open(':memory:');
+  });
+  afterEach(() => store.close());
+
+  it('adds each call to the totals of its UTC day and tool', () => {
+    store.recordDailyUsage(call());
+    store.recordDailyUsage(call({ error: true, durationMs: 900, tokens: 30, units: 1, textAvailable: 0, textReturned: 0 }));
+    store.recordDailyUsage(call({ ts: T + 2 * 3600 * 1000 })); // after midnight UTC: the next day
+    store.recordDailyUsage(call({ tool: 'apec_search', platform: 'apec' }));
+    expect(store.dailyUsage('2026-10-05', '2026-10-06')).toEqual([
+      {
+        day: '2026-10-05',
+        tool: 'apec_search',
+        platform: 'apec',
+        calls: 1,
+        errors: 0,
+        responseBytes: 2000,
+        tokens: 570,
+        units: 3,
+        durationMs: 400,
+        maxDurationMs: 400,
+        textAvailable: 8000,
+        textReturned: 700,
+      },
+      {
+        day: '2026-10-05',
+        tool: 'linkedin_search',
+        platform: 'linkedin',
+        calls: 2,
+        errors: 1,
+        responseBytes: 4000,
+        tokens: 600,
+        units: 4,
+        durationMs: 1300,
+        maxDurationMs: 900,
+        textAvailable: 8000,
+        textReturned: 700,
+      },
+      {
+        day: '2026-10-06',
+        tool: 'linkedin_search',
+        platform: 'linkedin',
+        calls: 1,
+        errors: 0,
+        responseBytes: 2000,
+        tokens: 570,
+        units: 3,
+        durationMs: 400,
+        maxDurationMs: 400,
+        textAvailable: 8000,
+        textReturned: 700,
+      },
+    ]);
+  });
+
+  it('reads a range of days, both ends included', () => {
+    for (const day of [4, 5, 6, 7]) store.recordDailyUsage(call({ ts: Date.UTC(2026, 9, day, 12) }));
+    expect(store.dailyUsage('2026-10-05', '2026-10-06').map((row) => row.day)).toEqual(['2026-10-05', '2026-10-06']);
+  });
+
+  it('keeps counts and durations only, and is pruned after the retention', () => {
+    const columns = (store as unknown as { db: { prepare(sql: string): { all(): { name: string }[] } } }).db
+      .prepare('PRAGMA table_info(tool_usage_daily)')
+      .all()
+      .map((c) => c.name);
+    expect(columns.join(' ')).not.toMatch(/param|arg|keyword|query/);
+    store.recordDailyUsage(call({ ts: T - 401 * 24 * 3600 * 1000 }));
+    store.recordDailyUsage(call());
+    store.prune(T);
+    expect(store.dailyUsage('2000-01-01', '2099-01-01')).toHaveLength(1);
+  });
+});

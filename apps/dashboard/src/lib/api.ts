@@ -88,7 +88,13 @@ export const api = {
   searches: (params: { since?: string; until?: string; source?: string }): Promise<Searches> =>
     request(searchesSchema, `/searches${query(params)}`),
   tools: (): Promise<Tools> => request(toolsSchema, '/tools'),
-  usage: (params: { tool?: string; platform?: string }): Promise<Usage> => request(usageSchemaResponse, `/usage${query(params)}`),
+  usage: (params: {
+    scope?: 'session' | 'lifetime' | 'historical';
+    from?: string;
+    to?: string;
+    tool?: string;
+    platform?: string;
+  }): Promise<Usage> => request(usageSchemaResponse, `/usage${query(params)}`),
   setAdapter: (id: string, enabled: boolean): Promise<AdapterToggle> =>
     request(adapterToggleSchema, `/adapters/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
   restart: (force: boolean): Promise<Restart> =>
