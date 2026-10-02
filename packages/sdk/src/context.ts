@@ -74,11 +74,20 @@ export interface NewJob {
   company: string | null;
   location: string | null;
   url: string;
+  /**
+   * Where, within the platform, the posting was found: the company handle at an ATS (`bsport` on Teamtailor, `algolia` on
+   * Greenhouse), `null` for a platform that is one big board (LinkedIn, Apec). The platform itself is recorded by the engine from
+   * the adapter, never trusted from here. At most 120 characters.
+   */
+  board?: string | null;
   /** Capped by the engine (20 000 characters). */
   description: string;
 }
 
 export interface StoredJob extends NewJob {
+  /** The platform the job was found on (`linkedin`, `teamtailor`, `apec`...): the adapter's platform, set by the engine. */
+  source: string;
+  board: string | null;
   /**
    * ISO times: first stored; last time the page was read (`fetchedAt`); last time the job was seen anywhere, search card
    * included (`lastSeen`, always >= `fetchedAt`). Retention counts from `lastSeen`.

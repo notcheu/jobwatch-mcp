@@ -308,6 +308,16 @@ describe('createJobStore', () => {
     const linkedin = createJobStore(store, 'linkedin', () => now);
     const apec = createJobStore(store, 'apec', () => now);
     await linkedin.put({ id: '4000000001', title: 'T', company: 'C', location: null, url: 'https://x.test/1', description: 'D' });
+    await apec.put({
+      id: '4000000009',
+      board: 'acme',
+      title: 'T',
+      company: 'C',
+      location: null,
+      url: 'https://x.test/9',
+      description: 'D',
+    });
+    expect(await apec.get('4000000009')).toMatchObject({ source: 'apec', board: 'acme' });
     now += 3600_000;
     await linkedin.put({ id: '4000000001', title: 'T2', company: 'C', location: null, url: 'https://x.test/1', description: 'D2' });
     expect(await linkedin.known(['4000000001', '4000000009'])).toEqual(new Set(['4000000001']));
@@ -318,6 +328,7 @@ describe('createJobStore', () => {
       fetchedAt: '2026-10-01T11:00:00.000Z',
     });
     expect(await apec.get('4000000001')).toBeNull();
+    expect(await linkedin.get('4000000001')).toMatchObject({ source: 'linkedin', board: null });
     store.close();
   });
 });

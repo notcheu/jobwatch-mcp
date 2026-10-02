@@ -129,6 +129,10 @@
         "items": {
           "additionalProperties": false,
           "properties": {
+            "board": {
+              "description": "LinkedIn is one board for everyone: there is no company board.",
+              "type": "null"
+            },
             "company": {
               "type": [
                 "string",
@@ -164,6 +168,14 @@
               "description": "true when this call stored the job for the first time.",
               "type": "boolean"
             },
+            "read_from": {
+              "description": "fetched: read from LinkedIn in this call. stored: read from the router database, LinkedIn not visited.",
+              "enum": [
+                "fetched",
+                "stored"
+              ],
+              "type": "string"
+            },
             "remote_hints": {
               "items": {
                 "type": "string"
@@ -177,11 +189,8 @@
               ]
             },
             "source": {
-              "description": "fetched: read from LinkedIn in this call. stored: read from the router database, LinkedIn not visited.",
-              "enum": [
-                "fetched",
-                "stored"
-              ],
+              "const": "linkedin",
+              "description": "The platform the job comes from.",
               "type": "string"
             },
             "stack_hints": {
@@ -215,6 +224,8 @@
             "description_truncated",
             "url",
             "source",
+            "board",
+            "read_from",
             "new",
             "first_seen",
             "fetched_at",

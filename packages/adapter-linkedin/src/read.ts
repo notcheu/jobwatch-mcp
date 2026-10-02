@@ -28,7 +28,8 @@ export interface AcceptedJob extends Hints {
   location: string | null;
   url: string;
   description: string;
-  source: 'fetched' | 'stored';
+  /** Where this call got the text: the page just read, or the router database. */
+  readFrom: 'fetched' | 'stored';
   /** First time this job was stored: true when this very call stored it. */
   isNew: boolean;
   firstSeen: string;
@@ -48,7 +49,7 @@ const fromStored = (row: StoredJob): AcceptedJob => ({
   location: row.location,
   url: row.url,
   description: row.description,
-  source: 'stored',
+  readFrom: 'stored',
   isNew: false,
   firstSeen: row.firstSeen,
   fetchedAt: row.fetchedAt,
@@ -94,7 +95,7 @@ async function visit(
   return {
     accepted: {
       ...row,
-      source: 'fetched',
+      readFrom: 'fetched',
       isNew: !known,
       firstSeen: now,
       fetchedAt: now,

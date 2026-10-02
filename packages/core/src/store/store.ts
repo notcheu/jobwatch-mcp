@@ -48,7 +48,7 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Each entry upgrades the schema by one version (`PRAGMA user_version`). Never edit a released migration: add a new one.
- * Migration 2 adds the `jobs` table, 3 its `last_seen` column.
+ * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column.
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -102,6 +102,11 @@ const MIGRATIONS: readonly string[] = [
   UPDATE jobs SET last_seen = fetched_at;
   DROP INDEX jobs_fetched_at;
   CREATE INDEX jobs_last_seen ON jobs (last_seen);
+  `,
+  // 4: board = where within the platform the job was found (an ATS company handle); `platform` is the source platform.
+  `
+  ALTER TABLE jobs ADD COLUMN board TEXT;
+  CREATE INDEX jobs_platform_board ON jobs (platform, board);
   `,
 ];
 
@@ -294,10 +299,10 @@ export class Store {
     const text = (value: string | null, max: number): string | null => (value === null ? null : value.slice(0, max));
     this.db
       .prepare(
-        `INSERT INTO jobs (platform, id, first_seen, fetched_at, last_seen, title, company, location, url, description)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO jobs (platform, id, first_seen, fetched_at, last_seen, title, company, location, board, url, description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (platform, id) DO UPDATE SET
-           fetched_at = excluded.fetched_at, last_seen = excluded.last_seen, title = excluded.title, company = excluded.company, location = excluded.location,
+           fetched_at = excluded.fetched_at, last_seen = excluded.last_seen, title = excluded.title, company = excluded.company, location = excluded.location, board = excluded.board,
            url = excluded.url, description = excluded.description`,
       )
       .run(
@@ -309,6 +314,7 @@ export class Store {
         text(job.title, 300),
         text(job.company, 300),
         text(job.location, 300),
+        text(job.board ?? null, 120),
         job.url.slice(0, 500),
         job.description.slice(0, MAX_JOB_DESCRIPTION_CHARS),
       );
@@ -349,6 +355,7 @@ export class Store {
 
 export interface NewJobRow {
   id: string;
+  board?: string | null;
   title: string | null;
   company: string | null;
   location: string | null;
@@ -370,6 +377,7 @@ function toJob(row: Rows): StoredJobRow {
     title: nullable(row['title']),
     company: nullable(row['company']),
     location: nullable(row['location']),
+    board: nullable(row['board']),
     url: String(row['url']),
     description: String(row['description']),
     firstSeen: Number(row['first_seen']),

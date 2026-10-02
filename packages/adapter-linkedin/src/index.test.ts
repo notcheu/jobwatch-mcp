@@ -138,7 +138,7 @@ describe('linkedin_job', () => {
   it('opens, stores and returns a job, truncating what it returns but not what it stores', async () => {
     const c = context({ '4000000001': 'A'.repeat(4000) });
     const result = await run(c.ctx, { description_max_chars: 500 });
-    expect(result.data.jobs[0]).toMatchObject({ id: '4000000001', source: 'fetched', new: true, description_truncated: true });
+    expect(result.data.jobs[0]).toMatchObject({ id: '4000000001', read_from: 'fetched', new: true, description_truncated: true });
     expect(result.data.jobs[0]?.description).toHaveLength(500);
     expect((await c.jobs.get('4000000001'))?.description).toHaveLength(4000);
     expect(visitedJobs(c.session.visited)).toEqual(['4000000001']);
@@ -149,12 +149,12 @@ describe('linkedin_job', () => {
     await run(c.ctx, {});
     c.session.visited.length = 0;
     const again = await run(c.ctx, {});
-    expect(again.data.jobs[0]).toMatchObject({ source: 'stored', new: false, description: 'Original text' });
+    expect(again.data.jobs[0]).toMatchObject({ read_from: 'stored', new: false, description: 'Original text' });
     expect(again.cost).toBe(0);
     expect(c.session.visited).toEqual([]);
     const refreshed = await run(c.ctx, { refresh: true });
     expect(visitedJobs(c.session.visited)).toEqual(['4000000001']);
-    expect(refreshed.data.jobs[0]).toMatchObject({ source: 'fetched', new: false });
+    expect(refreshed.data.jobs[0]).toMatchObject({ read_from: 'fetched', new: false });
   });
 
   it('does not store a closed or unloaded page, and reports it as failed', async () => {
@@ -191,7 +191,7 @@ describe('linkedin_job', () => {
     await run(c.ctx, { disallowed_terms: ['Angular'], disallowed_scope: 'title_then_description' });
     c.session.visited.length = 0;
     const other = await run(c.ctx, { disallowed_terms: ['Java'], disallowed_scope: 'title_then_description' });
-    expect(other.data.jobs.map((j) => [j.id, j.source])).toEqual([['4000000001', 'stored']]);
+    expect(other.data.jobs.map((j) => [j.id, j.read_from])).toEqual([['4000000001', 'stored']]);
     expect(c.session.visited).toEqual([]);
     const again = await run(c.ctx, { disallowed_terms: ['angular'], disallowed_scope: 'title_then_description' });
     expect(again.data.excluded[0]).toMatchObject({ reason: 'description' });
@@ -207,7 +207,7 @@ describe('linkedin_search_and_read', () => {
       ['4000000001', 'title', 'frontend'],
       ['4000000002', 'title', 'intern'],
     ]);
-    expect(result.data.jobs.map((j) => [j.id, j.source, j.new])).toEqual([
+    expect(result.data.jobs.map((j) => [j.id, j.read_from, j.new])).toEqual([
       ['4000000003', 'fetched', true],
       ['4000000004', 'fetched', true],
     ]);
@@ -224,7 +224,7 @@ describe('linkedin_search_and_read', () => {
     const backend = await tools.searchAndRead.handler(read({ keywords: 'backend', disallowed_terms: ['staff'] }), c.ctx);
     expect(visitedJobs(c.session.visited)).toEqual(['4000000001', '4000000002']);
     expect(backend.data.excluded.map((e) => [e.id, e.reason])).toEqual([['4000000003', 'title']]);
-    expect(backend.data.jobs.map((j) => [j.id, j.source, j.new])).toEqual([
+    expect(backend.data.jobs.map((j) => [j.id, j.read_from, j.new])).toEqual([
       ['4000000001', 'fetched', true],
       ['4000000002', 'fetched', true],
       ['4000000004', 'stored', false],
@@ -245,7 +245,7 @@ describe('linkedin_search_and_read', () => {
     c.session.visited.length = 0;
     const two = await tools.searchAndRead.handler(read({ disallowed_terms: ['golang'], skip_ids: ['4000000001', '4000000002'] }), c.ctx);
     // job 4 was stored by the first call too (it passed), so neither is read from the page again
-    expect(two.data.jobs.map((j) => [j.id, j.source])).toEqual([
+    expect(two.data.jobs.map((j) => [j.id, j.read_from])).toEqual([
       ['4000000003', 'stored'],
       ['4000000004', 'stored'],
     ]);
@@ -285,7 +285,7 @@ describe('linkedin_search_and_read', () => {
     c.session.visited.length = 0;
     const second = await tools.searchAndRead.handler(read({ max_jobs: 3 }), c.ctx);
     expect(visitedJobs(c.session.visited)).toEqual(['4000000004']);
-    expect(second.data.jobs.map((j) => [j.id, j.source])).toEqual([
+    expect(second.data.jobs.map((j) => [j.id, j.read_from])).toEqual([
       ['4000000004', 'fetched'],
       ['4000000001', 'stored'],
       ['4000000002', 'stored'],
@@ -445,7 +445,7 @@ describe('max_results and several pages', () => {
     expect(result.data.excluded.map((e) => e.id)).toEqual(['5000000001']);
     // 25 newly read jobs plus the stored one pass; max_returned (25) keeps the new ones and names the stored one
     expect(result.data.jobs).toHaveLength(25);
-    expect(result.data.jobs.every((job) => job.source === 'fetched')).toBe(true);
+    expect(result.data.jobs.every((job) => job.read_from === 'fetched')).toBe(true);
     expect(result.data.not_returned_ids).toEqual(['5000000002']);
     expect(result.data.remaining_ids).toHaveLength(50 - 1 - 1 - 25);
     expect(result.cost).toBe(2 + 25);
@@ -484,6 +484,27 @@ describe('last seen', () => {
     const result = await tools.searchAndRead.handler(read(), c.ctx);
     expect(c.jobs.jobs.get('4999999999')?.lastSeen).toBe(old);
     expect(result.data.jobs.every((job) => job.last_seen !== old)).toBe(true);
+  });
+});
+
+describe('where a job comes from', () => {
+  it('every job says it comes from linkedin, without a company board, and is stored under that source', async () => {
+    const c = createBrowserTestContext({
+      allowedHosts: adapter.allowedHosts,
+      platform: 'linkedin',
+      pages: {
+        [SEARCH_URL]: searchPage(),
+        [jobUrl('4000000001')]: jobPage('Text'),
+        [jobUrl('4000000002')]: jobPage('Text'),
+        [jobUrl('4000000003')]: jobPage('Text'),
+        [jobUrl('4000000004')]: jobPage('Text'),
+      },
+    });
+    const result = await tools.searchAndRead.handler(read(), c.ctx);
+    expect(result.data.jobs.every((job) => job.source === 'linkedin' && job.board === null)).toBe(true);
+    expect([...c.jobs.jobs.values()].every((job) => job.source === 'linkedin' && job.board === null)).toBe(true);
+    const again = await tools.job.handler(tools.job.input.parse({ ids: ['4000000001'] }), c.ctx);
+    expect(again.data.jobs[0]).toMatchObject({ source: 'linkedin', board: null, read_from: 'stored' });
   });
 });
 
