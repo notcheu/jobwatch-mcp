@@ -22,7 +22,8 @@ interface Meter {
 
 export interface ContextProviderDeps {
   /** Undefined when no browser adapter is enabled. */
-  runtime: RuntimeManager | undefined;
+  /** The browser runtime, or a function that returns it (it can appear while the router runs, when an adapter is enabled). */
+  runtime: RuntimeManager | undefined | (() => RuntimeManager | undefined);
   connect: ConnectBrowser;
   logger: EngineLogger;
   /** Overridable for tests. */
@@ -121,13 +122,14 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
       };
       if (adapter.kind === 'http') return { ctx: base, release: async () => undefined, spent };
 
-      if (deps.runtime === undefined) throw new JobwatchError('internal', 'No browser runtime is available.');
+      const runtime = typeof deps.runtime === 'function' ? deps.runtime() : deps.runtime;
+      if (runtime === undefined) throw new JobwatchError('internal', 'No browser runtime is available.');
       const budgets = adapter.tools.map((tool) => tool.limits.memory).filter((memory) => memory !== undefined);
       const memory =
         budgets.length === 0
           ? undefined
           : { highMb: Math.max(...budgets.map((b) => b.highMb)), maxMb: Math.max(...budgets.map((b) => b.maxMb)) };
-      const lease = await deps.runtime.lease(adapter.platform, memory ? { memory } : {});
+      const lease = await runtime.lease(adapter.platform, memory ? { memory } : {});
       let connection: Awaited<ReturnType<ConnectBrowser>>;
       try {
         connection = await deps.connect(lease.handle.address, adapter.allowedHosts, { maxTabs: deps.maxTabs ?? 1 });

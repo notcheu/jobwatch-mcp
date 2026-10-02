@@ -1,6 +1,8 @@
 import { parseArgs } from 'node:util';
 import {
   ConfigError,
+  controlSocketPath,
+  sendControl,
   loadStorageSettings,
   readEnabledFile,
   resolveEnabledAdapters,
@@ -172,6 +174,30 @@ async function list(deps: Deps, args: string[]): Promise<number> {
   return broken.length > 0 ? EXIT.broken : EXIT.ok;
 }
 
+/**
+ * Tell a running router to re-read the list (hot reload, docs/plans/17-dashboard.md, section 6.4). With no router listening the file
+ * is all there is to change, so say that a start or restart applies it.
+ */
+async function applyToRunningRouter(deps: Deps, dataDir: string): Promise<void> {
+  let answer;
+  try {
+    answer = await sendControl(controlSocketPath(dataDir), { command: 'adapters.reload' });
+  } catch {
+    answer = undefined;
+  }
+  if (answer === undefined) {
+    deps.io.out(`${RESTART_HINT}\n`);
+  } else if (answer.ok) {
+    const list = (value: unknown): string => (Array.isArray(value) && value.length > 0 ? value.join(', ') : 'none');
+    deps.io.out(
+      `Applied to the running router (no restart). Tools added: ${list(answer['addedTools'])}; removed: ${list(answer['removedTools'])}.\n`,
+    );
+    deps.io.out('Reconnect the Claude connector to see the new tool list.\n');
+  } else {
+    deps.io.out(`The running router did not apply it: ${answer.error}\n${RESTART_HINT}\n`);
+  }
+}
+
 async function toggle(deps: Deps, args: string[], enable: boolean): Promise<number> {
   const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
   const verb = enable ? 'enable' : 'disable';
@@ -186,7 +212,7 @@ async function toggle(deps: Deps, args: string[], enable: boolean): Promise<numb
   if (changed.length > 0) deps.io.out(`${enable ? 'Enabled' : 'Disabled'}: ${changed.join(', ')}\n`);
   if (unchanged.length > 0) deps.io.out(`Already ${enable ? 'enabled' : 'disabled'}: ${unchanged.join(', ')}\n`);
   deps.io.out(`Enabled now: ${ids.length === 0 ? 'none' : ids.join(', ')}\n`);
-  if (changed.length > 0 && before.join() !== ids.join()) deps.io.out(`${RESTART_HINT}\n`);
+  if (changed.length > 0 && before.join() !== ids.join()) await applyToRunningRouter(deps, settings.dataDir);
   return EXIT.ok;
 }
 

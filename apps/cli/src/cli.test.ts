@@ -220,6 +220,43 @@ describe('adapters list', () => {
 });
 
 describe('adapters enable / disable', () => {
+  it('tells a running router to reload instead of asking for a restart', async () => {
+    const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
+    const control = await startControlServer(controlSocketPath(dataDir), {
+      'adapters.reload': async () => ({
+        enabled: ['linkedin'],
+        addedAdapters: ['linkedin'],
+        removedAdapters: [],
+        addedTools: ['linkedin_search'],
+        removedTools: [],
+      }),
+    });
+    try {
+      expect(await cli(['adapters', 'enable', 'linkedin'])).toBe(EXIT.ok);
+    } finally {
+      await control.close();
+    }
+    expect(out).toContain('Applied to the running router (no restart). Tools added: linkedin_search; removed: none.');
+    expect(out).toContain('Reconnect the Claude connector');
+    expect(out).not.toContain('Restart the router to apply');
+  });
+
+  it('says why when the running router refuses, and still asks for a restart', async () => {
+    const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
+    const control = await startControlServer(controlSocketPath(dataDir), {
+      'adapters.reload': async () => {
+        throw new Error('JW_ADAPTERS sets the list of adapters');
+      },
+    });
+    try {
+      await cli(['adapters', 'enable', 'linkedin']);
+    } finally {
+      await control.close();
+    }
+    expect(out).toContain('did not apply it: JW_ADAPTERS sets the list of adapters');
+    expect(out).toContain('Restart the router to apply');
+  });
+
   it('enables, writes the file, and tells the operator to restart the router', async () => {
     expect(await cli(['adapters', 'enable', 'linkedin'])).toBe(EXIT.ok);
     expect(await enabledFile()).toEqual({ enabled: ['linkedin'] });

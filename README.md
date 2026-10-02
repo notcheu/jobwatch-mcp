@@ -109,17 +109,16 @@ alias jobwatch='docker compose -f deploy/compose.yml --env-file deploy/.env exec
 
 ## Enable and disable adapters
 
-Nothing is enabled by default. The list lives in `data/router/adapters.json`; the router reads it at startup, so restart it after a change.
+Nothing is enabled by default. The list lives in `data/router/adapters.json`. The commands below also tell a running router to reload the list, so no restart is needed (unless `JW_ADAPTERS` pins the list); reconnect the Claude connector afterwards so it sees the new tools.
 
 ```bash
 jobwatch adapters list                       # every installed adapter and whether it is enabled
 jobwatch adapters list --tools linkedin      # the tools of an adapter with their parameters (what Claude will see)
 jobwatch adapters enable apec wttj teamtailor greenhouse lever ashby
 jobwatch adapters disable linkedin
-docker compose -f deploy/compose.yml --env-file deploy/.env restart router
 ```
 
-Setting `JW_ADAPTERS=apec,wttj` in the environment overrides the file and makes it read-only.
+Setting `JW_ADAPTERS=apec,wttj` in the environment overrides the file, makes it read-only and disables hot reload.
 
 | Adapter id | Tools | Needs |
 |---|---|---|
@@ -182,7 +181,7 @@ After pulling a new router image, reconnect the connector so Claude reloads the 
 | `doctor` | Check configuration, data directory, Docker, images, network and profiles. |
 | `--help`, `--version` | |
 
-Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is broken or Docker failed. Changes take effect after the router restarts.
+Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is broken or Docker failed. `adapters enable|disable` reloads a running router at once.
 
 ### Repo scripts
 

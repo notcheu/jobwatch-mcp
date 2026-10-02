@@ -41,6 +41,15 @@ export { DEFAULT_BROWSER_PACING, createPacer } from './browser/pacer';
 export { createBrowserHooks, waitForDevTools } from './browser/hooks';
 export type { BrowserHooksOptions, FingerprintMode } from './browser/hooks';
 export { connectBrowser } from './browser/session';
+export { createRegistryHolder, type RegistryHolder, type ReloadResult } from './registryHolder';
+export {
+  controlSocketPath,
+  sendControl,
+  startControlServer,
+  type ControlHandler,
+  type ControlRequest,
+  type ControlResponse,
+} from './control';
 export { CallLog, keywordsOf, type CallEntry, type CallQuery } from './dashboard/callLog';
 export { DEFAULT_CHARS_PER_TOKEN, estimateTokens, jobTextChars } from './dashboard/tokens';
 export type { BrowserConnection, ConnectBrowser } from './browser/session';
