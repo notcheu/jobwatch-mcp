@@ -14,6 +14,7 @@ Only **how sources are read**. Profile, criteria, triage, mail template/rules, m
 | LinkedIn Paris daily (2 keyword sets, 50 results each, `f_TPR=r86400`) | `linkedin_search(keywords=…, geo="paris_idf", posted_within="last_24_hours", max_results=50, disallowed_terms=[…per search…], disallowed_scope="title_then_description")`; repeat a call while `remaining_ids` is not empty |
 | LinkedIn France remote (post-filter) | `linkedin_search(geo="france", remote_only=true, posted_within="last_24_hours", max_results=50, max_jobs=0)` (cards only) then `linkedin_job` for plausible ones |
 | Wednesday sweep (5 pages, no time filter, all offers) | `linkedin_search(posted_within="any", max_results=125, max_jobs=0)` (+ `linkedin_job` for unseen plausible cards); promoted flag available in cards |
+| Weekly summary and keyword review | `stored_jobs(since="<monday>", until="<next monday>", terms=[…the search keywords…])` for the counts per source, board, day and keyword (no text), then `stored_jobs(detail="summary", only_matching=true, offset=…)` or `stored_job_texts` for the few jobs worth reading. No adapter is called |
 | WTTJ matches | `wttj_matches` (Phase 3) |
 | WTTJ company pages | the company's own ATS tool (`teamtailor_jobs`, later `greenhouse_jobs`, `lever_jobs`, `ashby_jobs`) for companies with a public ATS (WTTJ `robots.txt` disallows the `jobs?query=` URLs) |
 | APEC searches | `apec_search` (reads the new offers; `max_jobs=0` for cards only), `apec_job` for specific ones (Phase 3) |
