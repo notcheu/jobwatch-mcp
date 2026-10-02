@@ -1,0 +1,120 @@
+import { describe, expect, it } from 'vitest';
+import { boardFilters, judgeBoardPostings, type BoardPosting } from './boards';
+import { z } from 'zod';
+import { FakeJobStore } from './testkit/fakes';
+
+const filters = (over: object = {}) => z.object(boardFilters).parse(over);
+const DAY = 86_400_000;
+const NOW = Date.UTC(2026, 9, 2, 12);
+const at = (days: number): string => new Date(NOW - days * DAY).toISOString();
+
+const posting = (id: string, title: string, over: Partial<BoardPosting> = {}): BoardPosting => ({
+  id,
+  board: 'acme',
+  company: 'Acme',
+  title,
+  locations: ['Paris, FR'],
+  url: `https://jobs.example.com/${id}`,
+  postedAt: at(1),
+  description: 'We use React and TypeScript. 5 years of experience.',
+  ...over,
+});
+
+const postings = [
+  posting('1', 'Senior Frontend Engineer', { postedAt: at(2) }),
+  posting('2', 'Backend Engineer (Java)', { postedAt: at(10) }),
+  posting('3', 'Frontend Tech Lead', { locations: ['Barcelona, ES'], postedAt: at(60) }),
+  posting('4', 'Fullstack Developer', { description: 'Angular and Node.js.', postedAt: at(1) }),
+  posting('5', 'Platform Engineer', { postedAt: null }),
+];
+
+const judge = (over: object = {}, store = new FakeJobStore(() => new Date(NOW), 'ats')) =>
+  judgeBoardPostings(store, 'ats', postings, filters(over), NOW).then((judged) => ({ judged, store }));
+const ids = (jobs: { id: string }[]) => jobs.map((job) => job.id);
+
+describe('judgeBoardPostings', () => {
+  it('returns every job newest first, undated ones last, and stores them with the board', async () => {
+    const { judged, store } = await judge();
+    expect(ids(judged.jobs)).toEqual(['4', '1', '2', '3', '5']);
+    expect(judged.jobs[0]).toMatchObject({ source: 'ats', board: 'acme', read_from: 'fetched', new: true });
+    expect([...store.jobs.values()].every((job) => job.source === 'ats' && job.board === 'acme')).toBe(true);
+    expect(store.jobs.size).toBe(5);
+  });
+
+  it('filters by date range (undated kept), title words, and office, accents and case ignored', async () => {
+    expect(ids((await judge({ posted_within: 'past_week' })).judged.jobs)).toEqual(['4', '1', '5']);
+    expect(ids((await judge({ posted_within: 'past_month' })).judged.jobs)).toEqual(['4', '1', '2', '5']);
+    expect(ids((await judge({ title_any: ['FRONT'] })).judged.jobs)).toEqual(['1', '3']);
+    expect(ids((await judge({ location_any: ['barcelona'] })).judged.jobs)).toEqual(['3']);
+    expect(ids((await judge({ location_any: ['paris'], title_any: ['tech lead'] })).judged.jobs)).toEqual([]);
+  });
+
+  it('reports which postings were relevant, for per-board counts', async () => {
+    const { judged } = await judge({ title_any: ['engineer'] });
+    expect([...judged.relevantIds].sort()).toEqual(['1', '2', '5']);
+  });
+
+  it('a disallowed title is neither stored nor returned; a disallowed description is stored but not returned', async () => {
+    const { judged, store } = await judge({ disallowed_terms: ['java', 'angular'], disallowed_scope: 'title_then_description' });
+    expect(judged.excluded.map((e) => [e.id, e.reason, e.term])).toEqual([
+      ['4', 'description', 'angular'],
+      ['2', 'title', 'java'],
+    ]);
+    expect(store.jobs.has('2')).toBe(false);
+    expect(store.jobs.has('4')).toBe(true);
+    expect(ids(judged.jobs)).toEqual(['1', '3', '5']);
+    const titleOnly = await judge({ disallowed_terms: ['angular'] });
+    expect(ids(titleOnly.judged.jobs)).toContain('4'); // scope title: the description is not looked at
+  });
+
+  it('marks new jobs, and only_new drops the ones stored before', async () => {
+    const store = new FakeJobStore(() => new Date(NOW), 'ats');
+    await judgeBoardPostings(store, 'ats', postings, filters(), NOW);
+    const again = await judgeBoardPostings(store, 'ats', postings, filters(), NOW);
+    expect(again.jobs.every((job) => job.new === false)).toBe(true);
+    const more = [...postings, posting('6', 'Design System Engineer')];
+    const onlyNew = await judgeBoardPostings(store, 'ats', more, filters({ only_new: true }), NOW);
+    expect(ids(onlyNew.jobs)).toEqual(['6']);
+  });
+
+  it('refreshes last_seen of every posting still listed, even the filtered-out ones', async () => {
+    const store = new FakeJobStore(() => new Date(NOW), 'ats');
+    await judgeBoardPostings(store, 'ats', postings, filters(), NOW);
+    for (const [id, job] of store.jobs) store.jobs.set(id, { ...job, lastSeen: '2026-01-01T00:00:00.000Z' });
+    await judgeBoardPostings(store, 'ats', postings, filters({ title_any: ['zzz'] }), NOW);
+    expect([...store.jobs.values()].every((job) => job.lastSeen === new Date(NOW).toISOString())).toBe(true);
+  });
+
+  it('caps the results, names the rest, and truncates descriptions without shortening what is stored', async () => {
+    const { judged, store } = await judge({ max_results: 2, description_max_chars: 10 });
+    expect(judged.jobs).toHaveLength(2);
+    expect(judged.notReturned).toHaveLength(3);
+    expect(judged.jobs[0]?.description).toHaveLength(10);
+    expect(judged.jobs[0]?.description_truncated).toBe(true);
+    expect((store.jobs.get('4')?.description.length ?? 0) > 10).toBe(true);
+    expect((await judge({ description_max_chars: 0 })).judged.jobs[0]?.description).toBe('');
+  });
+
+  it('hands back fewer jobs rather than failing when many long descriptions do not fit', async () => {
+    const big = Array.from({ length: 40 }, (_, i) => posting(`b${i}`, `Engineer ${i}`, { description: 'x'.repeat(6000) }));
+    const judged = await judgeBoardPostings(
+      new FakeJobStore(),
+      'ats',
+      big,
+      filters({ description_max_chars: 6000, max_results: 200 }),
+      NOW,
+    );
+    expect(judged.jobs.length).toBeGreaterThan(5);
+    expect(judged.jobs.length).toBeLessThan(40);
+    expect(judged.jobs.length + judged.notReturned.length).toBe(40);
+  });
+
+  it('validates the filter arguments', () => {
+    const parse = (over: object) => z.object(boardFilters).safeParse(over).success;
+    expect(parse({})).toBe(true);
+    expect(parse({ posted_within: '24h' })).toBe(false);
+    expect(parse({ max_results: 201 })).toBe(false);
+    expect(parse({ disallowed_scope: 'everywhere' })).toBe(false);
+    expect(parse({ title_any: Array.from({ length: 21 }, (_, i) => `t${i}`) })).toBe(false);
+  });
+});

@@ -68,3 +68,6 @@ export {
   termMatcher,
 } from './jobtext';
 export type { Hints, PostedWithin } from './jobtext';
+
+export { boardExcludedSchema, boardFilters, boardJobSchema, boardReportSchema, judgeBoardPostings } from './boards';
+export type { BoardExcluded, BoardFilters, BoardJob, BoardPosting, BoardReport, Judged } from './boards';

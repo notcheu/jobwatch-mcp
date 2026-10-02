@@ -1,20 +1,7 @@
-import { htmlToText, z } from '@jobwatch/sdk';
+import { htmlToText, z, type BoardPosting } from '@jobwatch/sdk';
 
-/** One posting from a Teamtailor feed, in the shape the tool works with. */
-export interface Posting {
-  /** Teamtailor's numeric job id (the number in the job URL): unique across all Teamtailor boards. */
-  id: string;
-  title: string;
-  company: string | null;
-  /** `Paris, FR` style, one entry per office. */
-  locations: string[];
-  /** Everything location-like, for matching: city, region, postal code, country. */
-  locationText: string;
-  url: string;
-  /** ISO time, or null. */
-  postedAt: string | null;
-  description: string;
-}
+/** One posting from a Teamtailor feed; the caller adds the `board`. The id is Teamtailor's numeric job id (the number in the job URL), unique across all Teamtailor boards. */
+export type Posting = Omit<BoardPosting, 'board'>;
 
 export interface Feed {
   /** The company name the feed announces (`bsport`, `PayFit`). */

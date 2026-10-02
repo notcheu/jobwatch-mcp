@@ -259,8 +259,8 @@ describe('teamtailor_jobs', () => {
     expect(data(result).boards.map((b) => [b.board, b.status])).toEqual([
       ['acme', 'ok'],
       ['ghost', 'not_found'],
-      ['careers.notatt.io', 'not_teamtailor'],
-      ['careers.broken.io', 'not_teamtailor'],
+      ['careers.notatt.io', 'not_this_ats'],
+      ['careers.broken.io', 'not_this_ats'],
       ['down', 'error'],
       ['Not A Handle', 'invalid'],
     ]);
