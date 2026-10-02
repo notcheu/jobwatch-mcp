@@ -84,8 +84,8 @@ describe('request hygiene', () => {
     const res = await post(server.url, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
     expect(res.headers.get('mcp-session-id')).toBeNull();
     const [a, b] = await Promise.all([connectClient(server.url), connectClient(server.url)]);
-    expect((await a.listTools()).tools).toHaveLength(8); // 4 fixture tools + 4 built-in ops tools
-    expect((await b.listTools()).tools).toHaveLength(8);
+    expect((await a.listTools()).tools).toHaveLength(9); // 4 fixture tools + 5 built-in ops tools
+    expect((await b.listTools()).tools).toHaveLength(9);
     await a.close();
     await b.close();
   });
@@ -100,6 +100,7 @@ describe('tools/list', () => {
       'session_status',
       'memory_report',
       'stored_jobs',
+      'stored_searches',
       'stored_job_texts',
       'probe_echo',
       'probe_login',
@@ -123,7 +124,7 @@ describe('tools/list', () => {
     // the ops tools legitimately talk about platforms in their own schema; the fixture adapters' tools must not leak anything
     const text = JSON.stringify(
       (await client.listTools()).tools.filter(
-        (tool) => !['session_status', 'memory_report', 'stored_jobs', 'stored_job_texts'].includes(tool.name),
+        (tool) => !['session_status', 'memory_report', 'stored_jobs', 'stored_searches', 'stored_job_texts'].includes(tool.name),
       ),
     );
     for (const secret of ['api.probe.example.com', 'allowedHosts', 'platform', 'timeoutS', 'outputMaxBytes'])
@@ -138,6 +139,7 @@ describe('tools/list', () => {
       'session_status',
       'memory_report',
       'stored_jobs',
+      'stored_searches',
       'stored_job_texts',
       'other_ping',
     ]);
@@ -152,6 +154,7 @@ describe('tools/list', () => {
       'session_status',
       'memory_report',
       'stored_jobs',
+      'stored_searches',
       'stored_job_texts',
     ]); // only the built-in ops tools
     await client.close();
@@ -258,7 +261,7 @@ describe('authentication: JW_AUTH=front with a shared secret', () => {
   it('accepts the right credential', async () => {
     server = await startTestServer(front);
     const client = await connectClient(server.url, { authorization: `Bearer ${SHARED}` });
-    expect((await client.listTools()).tools).toHaveLength(8);
+    expect((await client.listTools()).tools).toHaveLength(9);
     await client.close();
   });
 

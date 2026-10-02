@@ -6,7 +6,7 @@
 1. The owner's LinkedIn (and other) sessions: cookies in the browser profiles.
 2. The home network / machine.
 3. The OAuth tokens and client secrets.
-4. The job-search data (low sensitivity) and the owner's identity.
+4. The job-search data (low sensitivity; it includes the search keywords the history of searches keeps for `JW_JOB_RETENTION_DAYS`) and the owner's identity.
 
 ## Threats and mitigations
 | Threat | Mitigation |

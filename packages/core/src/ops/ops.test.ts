@@ -184,9 +184,15 @@ beforeEach(() => {
 });
 
 describe('the ops adapter is a normal adapter', () => {
-  it('exposes exactly session_status, memory_report, stored_jobs and stored_job_texts, read-only, and is loaded even when nothing is enabled', async () => {
+  it('exposes exactly session_status, memory_report, stored_jobs, stored_searches and stored_job_texts, read-only, and is loaded even when nothing is enabled', async () => {
     const t = await setup([]);
-    expect([...t.deps.registry.tools.keys()].sort()).toEqual(['memory_report', 'session_status', 'stored_job_texts', 'stored_jobs']);
+    expect([...t.deps.registry.tools.keys()].sort()).toEqual([
+      'memory_report',
+      'session_status',
+      'stored_job_texts',
+      'stored_jobs',
+      'stored_searches',
+    ]);
     expect(t.deps.registry.enabled).toEqual([]);
     for (const { tool } of t.deps.registry.tools.values()) expect(tool.annotations.readOnlyHint).toBe(true);
   });

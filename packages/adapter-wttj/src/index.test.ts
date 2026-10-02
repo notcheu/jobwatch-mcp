@@ -333,6 +333,14 @@ describe('wttj_job', () => {
 });
 
 describe('wttj_matches (read)', () => {
+  it('records the matches as a search without keywords', async () => {
+    const c = context();
+    await runRead(c.ctx);
+    expect(c.jobs.searches).toHaveLength(1);
+    expect(c.jobs.searches[0]?.query).toBe('');
+    expect(c.jobs.searches[0]?.found.length).toBeGreaterThan(0);
+  });
+
   it('returns no cards while it reads jobs: the cards are for max_jobs=0', async () => {
     const result = await runRead(context().ctx);
     expect(result.data.cards).toEqual([]);

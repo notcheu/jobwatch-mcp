@@ -9,6 +9,7 @@ import {
   fitToBytes,
   readByIds,
   readNew,
+  returnedIds,
   termMatcher,
   z,
   type AcceptedJob,
@@ -253,6 +254,15 @@ const search = defineBrowserTool({
       matchDescription: args.disallowed_scope === 'title_then_description' ? matches : null,
       deadline,
       visit: (id) => readOffer(ctx, id),
+    });
+    await ctx.jobs.recordSearch({
+      query: args.keywords,
+      found: found.cards.map((card) => card.id),
+      returned: returnedIds(
+        found.cards.map((card) => card.id),
+        outcome,
+        args.max_jobs === 0,
+      ),
     });
     const byId = new Map(found.cards.map((card) => [card.id, card] as const));
     const { fit, rest } = fitToBytes(

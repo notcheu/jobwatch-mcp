@@ -48,7 +48,7 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Each entry upgrades the schema by one version (`PRAGMA user_version`). Never edit a released migration: add a new one.
- * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column.
+ * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`).
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -108,6 +108,26 @@ const MIGRATIONS: readonly string[] = [
   ALTER TABLE jobs ADD COLUMN board TEXT;
   CREATE INDEX jobs_platform_board ON jobs (platform, board);
   `,
+  // 5: the search keywords and the job ids each search listed (what a search brought in). Evicted with the jobs, by ts.
+  `
+  CREATE TABLE search_runs (
+    id       INTEGER PRIMARY KEY,
+    ts       INTEGER NOT NULL,
+    platform TEXT    NOT NULL,
+    query    TEXT    NOT NULL COLLATE NOCASE,
+    found    INTEGER NOT NULL,
+    returned INTEGER NOT NULL
+  );
+  CREATE INDEX search_runs_ts ON search_runs (ts);
+  CREATE INDEX search_runs_platform_query ON search_runs (platform, query);
+  CREATE TABLE search_hits (
+    run_id   INTEGER NOT NULL,
+    job_id   TEXT    NOT NULL,
+    returned INTEGER NOT NULL,
+    PRIMARY KEY (run_id, job_id)
+  ) WITHOUT ROWID;
+  CREATE INDEX search_hits_job ON search_hits (job_id);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -119,8 +139,9 @@ interface Rows {
 /**
  * The router's only persistent state: rate-limit usage, circuit breakers and the call log (SQLite, WAL).
  * Synchronous on purpose: one process, tiny rows, and a rate check must be atomic with its decision.
- * Also holds the job postings adapters chose to remember (`jobs`: public text, retention below). Never stores cookies, tokens,
- * tool arguments or raw pages: otherwise only counters, platform names and hashes.
+ * Also holds the job postings adapters chose to remember (`jobs`: public text, retention below) and the history of searches (the
+ * search keywords and the job ids each search listed). Never stores cookies, tokens, other tool arguments or raw pages: otherwise
+ * only counters, platform names and hashes.
  */
 export class Store {
   private closed = false;
@@ -348,6 +369,12 @@ export class Store {
       where.push(`platform IN (${filter.sources.map(() => '?').join(', ')})`);
       params.push(...filter.sources);
     }
+    if (filter.search !== undefined) {
+      where.push(
+        'EXISTS (SELECT 1 FROM search_hits h JOIN search_runs r ON r.id = h.run_id WHERE h.job_id = jobs.id AND r.platform = jobs.platform AND r.query = ?)',
+      );
+      params.push(filter.search);
+    }
     if (filter.boards.length > 0) {
       where.push(`board IN (${filter.boards.map(() => '?').join(', ')})`);
       params.push(...filter.boards);
@@ -377,8 +404,75 @@ export class Store {
     return Number(row?.['n'] ?? 0);
   }
 
+  // ------------------------------------------------------------------------------------------------------ searches
+
+  /**
+   * Remember one search: its keywords (`query`, trimmed and capped; reported in lower case; empty = no keyword, as for a whole-board listing) and the ids it
+   * listed. `found` and `returned` are the real counts; at most MAX_SEARCH_HITS ids are kept, the returned ones first.
+   */
+  recordSearch(platform: string, search: SearchRecord, now: number): void {
+    const query = search.query.replace(/\s+/g, ' ').trim().slice(0, MAX_QUERY_CHARS);
+    const returned = new Set(search.returned);
+    const found = [...new Set(search.found)];
+    const kept = [...found.filter((id) => returned.has(id)), ...found.filter((id) => !returned.has(id))].slice(0, MAX_SEARCH_HITS);
+    this.transaction(() => {
+      const run = this.db
+        .prepare('INSERT INTO search_runs (ts, platform, query, found, returned) VALUES (?, ?, ?, ?, ?)')
+        .run(now, platform, query, found.length, returned.size);
+      const insert = this.db.prepare('INSERT OR IGNORE INTO search_hits (run_id, job_id, returned) VALUES (?, ?, ?)');
+      for (const id of kept) if (JOB_ID.test(id)) insert.run(Number(run.lastInsertRowid), id, returned.has(id) ? 1 : 0);
+    });
+  }
+
+  /** Per platform and keyword, over [since, until): how often it ran and how many distinct jobs it listed, returned and found first. */
+  searchStats(filter: { since: number; until: number; platform?: string; limit: number }): SearchStat[] {
+    const rows = this.db
+      .prepare(
+        `SELECT r.platform AS platform, lower(r.query) AS query, count(DISTINCT r.id) AS runs, max(r.ts) AS last_run,
+                count(DISTINCT h.job_id) AS jobs_found,
+                count(DISTINCT CASE WHEN h.returned = 1 THEN h.job_id END) AS jobs_returned,
+                count(DISTINCT CASE WHEN j.first_seen >= ? THEN h.job_id END) AS jobs_new
+         FROM search_runs r
+         LEFT JOIN search_hits h ON h.run_id = r.id
+         LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
+         WHERE r.ts >= ? AND r.ts < ? ${filter.platform === undefined ? '' : 'AND r.platform = ?'}
+         GROUP BY r.platform, lower(r.query)
+         ORDER BY jobs_found DESC, runs DESC, r.platform, lower(r.query)
+         LIMIT ?`,
+      )
+      .all(
+        ...[filter.since, filter.since, filter.until, ...(filter.platform === undefined ? [] : [filter.platform]), filter.limit],
+      ) as Rows[];
+    return rows.map((row) => ({
+      platform: String(row['platform']),
+      query: String(row['query']),
+      runs: Number(row['runs']),
+      lastRun: Number(row['last_run']),
+      jobsFound: Number(row['jobs_found']),
+      jobsReturned: Number(row['jobs_returned']),
+      jobsNew: Number(row['jobs_new']),
+    }));
+  }
+
+  /** For each of these jobs, the distinct keywords of the searches that listed it (empty keywords left out). */
+  foundBy(platform: string, ids: readonly string[]): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    const stmt = this.db.prepare(
+      `SELECT DISTINCT lower(r.query) AS query FROM search_hits h JOIN search_runs r ON r.id = h.run_id
+       WHERE r.platform = ? AND h.job_id = ? AND r.query <> '' ORDER BY lower(r.query)`,
+    );
+    for (const id of new Set(ids)) {
+      const queries = (stmt.all(platform, id) as Rows[]).map((row) => String(row['query']));
+      if (queries.length > 0) out.set(id, queries);
+    }
+    return out;
+  }
+
   /** Delete what is past retention. Returns how many rows went. */
   prune(now: number): { calls: number; usage: number; jobs: number } {
+    const oldRuns = now - this.jobRetentionMs;
+    this.db.prepare('DELETE FROM search_hits WHERE run_id IN (SELECT id FROM search_runs WHERE ts < ?)').run(oldRuns);
+    this.db.prepare('DELETE FROM search_runs WHERE ts < ?').run(oldRuns);
     const jobs = Number(this.db.prepare('DELETE FROM jobs WHERE last_seen < ?').run(now - this.jobRetentionMs).changes);
     const calls = Number(this.db.prepare('DELETE FROM call_log WHERE ts < ?').run(now - CALL_LOG_RETENTION_MS).changes);
     const usage = Number(this.db.prepare('DELETE FROM usage WHERE ts < ?').run(now - USAGE_RETENTION_MS).changes);
@@ -391,6 +485,26 @@ export class Store {
     this.closed = true;
     this.db.close();
   }
+}
+
+const MAX_QUERY_CHARS = 200;
+/** Ids kept per search: a board listing can hold thousands of postings, and the counts stay exact whatever is kept. */
+const MAX_SEARCH_HITS = 1000;
+
+export interface SearchRecord {
+  query: string;
+  found: readonly string[];
+  returned: readonly string[];
+}
+
+export interface SearchStat {
+  platform: string;
+  query: string;
+  runs: number;
+  lastRun: number;
+  jobsFound: number;
+  jobsReturned: number;
+  jobsNew: number;
 }
 
 export interface NewJobRow {
@@ -415,6 +529,8 @@ export interface JobListFilter {
   /** Empty = every source / board. */
   sources: readonly string[];
   boards: readonly string[];
+  /** Only jobs a search with exactly these keywords (case-insensitive) listed. */
+  search?: string;
   /** Most rows returned; `total` still counts them all. */
   limit: number;
   withDescription: boolean;

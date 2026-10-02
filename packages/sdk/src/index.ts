@@ -84,7 +84,7 @@ export {
 } from './boards';
 export type { BoardAddress, BoardExcluded, BoardFilters, BoardJob, BoardPosting, BoardReport, BoardSource, Judged } from './boards';
 
-export { readByIds, readNew } from './visit';
+export { readByIds, readNew, returnedIds } from './visit';
 export type {
   AcceptedJob,
   ByIdOutcome,

@@ -129,6 +129,12 @@ export interface JobStore {
   touch(ids: readonly string[]): Promise<void>;
   /** Insert, or replace and refresh `fetchedAt` and `lastSeen` (keeps `firstSeen`). */
   put(job: NewJob): Promise<void>;
+  /**
+   * Remember a search: its keywords and the ids it listed, so that a later summary can say which keyword brought which job in.
+   * `query` is the search text the caller typed (empty when there is none, for a whole-board listing); `found` is every id the
+   * search listed, `returned` the ones it handed back to the caller. Never pass anything else: no credentials, no page content.
+   */
+  recordSearch(search: { query: string; found: readonly string[]; returned: readonly string[] }): Promise<void>;
 }
 
 export interface BaseContext {

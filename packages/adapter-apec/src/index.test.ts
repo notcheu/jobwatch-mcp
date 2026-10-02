@@ -309,6 +309,14 @@ describe('apec_job', () => {
 });
 
 describe('apec_search (read)', () => {
+  it('records the keywords and the offers the search listed', async () => {
+    const c = context();
+    await runRead(c.ctx, { keywords: 'react engineer' });
+    expect(c.jobs.searches).toHaveLength(1);
+    expect(c.jobs.searches[0]?.query).toBe('react engineer');
+    expect(c.jobs.searches[0]?.found.length).toBeGreaterThan(0);
+  });
+
   it('returns no cards while it reads offers: the cards are for max_jobs=0', async () => {
     const result = await runRead(context().ctx);
     expect(result.data.cards).toEqual([]);

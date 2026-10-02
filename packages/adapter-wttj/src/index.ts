@@ -9,6 +9,7 @@ import {
   fitToBytes,
   readByIds,
   readNew,
+  returnedIds,
   termMatcher,
   z,
   type AcceptedJob,
@@ -273,6 +274,16 @@ const matches = defineBrowserTool({
         },
       },
     );
+    // the matches have no keyword: the search is recorded with an empty query
+    await ctx.jobs.recordSearch({
+      query: '',
+      found: cards.map((card) => card.id),
+      returned: returnedIds(
+        cards.map((card) => card.id),
+        outcome,
+        args.max_jobs === 0,
+      ),
+    });
     const { fit, rest } = fitToBytes(
       outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, byId)),
       JOBS_JSON_BUDGET,

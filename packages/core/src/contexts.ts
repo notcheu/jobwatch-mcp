@@ -55,6 +55,7 @@ export function createJobStore(store: Store, platform: string, clock: () => numb
     },
     put: async (job) => store.putJob(platform, job, clock()),
     touch: async (ids) => store.touchJobs(platform, ids, clock()),
+    recordSearch: async (search) => store.recordSearch(platform, search, clock()),
   };
 }
 

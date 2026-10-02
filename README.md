@@ -131,7 +131,7 @@ Setting `JW_ADAPTERS=apec,wttj` in the environment overrides the file and makes 
 | `lever` | `lever_jobs` | Nothing (HTTP). |
 | `ashby` | `ashby_jobs` | Nothing (HTTP). |
 
-The built-in tools `session_status`, `memory_report`, `stored_jobs` and `stored_job_texts` are always available.
+The built-in tools `session_status`, `memory_report`, `stored_jobs`, `stored_searches` and `stored_job_texts` are always available. The router remembers the search keywords you used and the jobs each one listed, for `JW_JOB_RETENTION_DAYS`, so that `stored_searches` can tell you which keywords bring jobs in.
 
 ## Log in to the sites that need it
 
@@ -336,7 +336,7 @@ A board is the job board name, spelled exactly (`pennylane`), or its page URL (`
 </details>
 
 <details>
-<summary><strong>Built-in tools</strong> — <code>session_status</code>, <code>memory_report</code>, <code>stored_jobs</code>, <code>stored_job_texts</code></summary>
+<summary><strong>Built-in tools</strong> — <code>session_status</code>, <code>memory_report</code>, <code>stored_jobs</code>, <code>stored_searches</code>, <code>stored_job_texts</code></summary>
 
 Is the LinkedIn session still valid?
 
@@ -366,6 +366,18 @@ Only the matching jobs, with a summary, from one source:
 
 ```json
 { "since": "2026-10-05", "sources": ["linkedin"], "terms": ["react"], "only_matching": true, "detail": "summary" }
+```
+
+How did each search keyword do this week? Runs, jobs listed, returned and new, per keyword:
+
+```json
+{ "since": "2026-10-05", "until": "2026-10-12", "source": "linkedin" }
+```
+
+The jobs one keyword listed (and, on every job, the keywords that listed it in `found_by`):
+
+```json
+{ "since": "2026-10-05", "found_by": "react", "detail": "none" }
 ```
 
 The text of chosen stored jobs, batched (up to 25). `part` is `full`, `summary`, `outline` or one section (`role`, `requirements`, `nice_to_have`, `offer`, `about`, `process`, `legal`):

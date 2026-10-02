@@ -139,6 +139,19 @@ describe('resolving a board', () => {
 });
 
 describe('teamtailor_jobs', () => {
+  it('records the title words as the search and every posting of the board as listed', async () => {
+    const c = context();
+    const result = await run(c.ctx, { title_any: ['front', 'react'] });
+    const [search] = c.jobs.searches;
+    expect(c.jobs.searches).toHaveLength(1);
+    expect(search?.query).toBe('front | react');
+    expect(search?.found.length).toBeGreaterThanOrEqual(search?.returned.length ?? 0);
+    expect([...(search?.returned ?? [])].sort()).toEqual(result.data.jobs.map((j) => j.id).sort());
+    const none = context();
+    await run(none.ctx, {});
+    expect(none.jobs.searches[0]?.query).toBe('');
+  });
+
   it('reads a feed, stores every job whose title passes, and reports the board', async () => {
     const c = context();
     const result = await run(c.ctx, {});
