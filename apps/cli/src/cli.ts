@@ -35,8 +35,8 @@ Usage:
   jobwatch adapters list [--json]      every installed adapter and whether it is enabled
   jobwatch adapters enable <id...>     enable adapters (written to adapters.json)
   jobwatch adapters disable <id...>    disable adapters
-  jobwatch login <platform>            start a visible browser to sign in by hand (noVNC on loopback)
-  jobwatch login <platform> --done     stop it again
+  jobwatch login start <platform>      start a visible browser to sign in by hand (noVNC on loopback)
+  jobwatch login stop <platform>       stop it again
   jobwatch catalog [--all]             print the static tool catalog of the enabled adapters (JSON lines)
   jobwatch doctor                      check configuration, data directory, Docker, image, network, profiles
   jobwatch --help | --version

@@ -40,7 +40,7 @@ jobwatch-mcp/
     mcp/                @jobwatch/mcp      composition root: reads config, asks @jobwatch/adapters for the ENABLED adapters,
                                            hands them to core, serves stateless Streamable HTTP, /healthz, /metrics.
                                            The router Dockerfile builds this app.
-    cli/                @jobwatch/cli      `jobwatch` binary: adapters list|enable|disable, login <platform>, catalog gen|check, doctor
+    cli/                @jobwatch/cli      `jobwatch` binary: adapters list|enable|disable, login start|stop <platform>, catalog gen|check, doctor
   tools/new-adapter/                       `npm run new:adapter -- <id> [--kind http|browser]`: scaffolds a new adapter package
                                            (a plain Node script, not an Nx plugin generator: no build pipeline for ten small files)
   images/browser/       Dockerfile, entrypoint.sh, chrome-seccomp.json (see 05)
@@ -187,7 +187,7 @@ Tools are built with `defineHttpTool` (handler context: `{ http, jobs, log, pace
 jobwatch adapters list [--json]      all INSTALLED adapters: id, platform, kind, tools, allowed hosts, ENABLED / disabled
 jobwatch adapters enable  <id...>    add to adapters.json (validates the id exists in `installed`)
 jobwatch adapters disable <id...>    remove from adapters.json
-jobwatch login <platform>            browser login mode (05); only for enabled browser adapters
+jobwatch login start|stop <platform>  browser login mode (05); only for enabled browser adapters
 jobwatch catalog gen | check         regenerate / verify the committed per-adapter catalog snapshots
 jobwatch doctor                      config, Docker socket, image, data dir, enabled adapters, SDK version compatibility
 ```
