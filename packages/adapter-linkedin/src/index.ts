@@ -1,10 +1,10 @@
 import { SDK_API_VERSION, defineAdapter, defineBrowserTool, describeJob, detailFields, z } from '@jobwatch/sdk';
-import type { BrowserSession, Detail, SessionStatus } from '@jobwatch/sdk';
+import type { BrowserAdapterContext, BrowserSession, Detail, SessionStatus } from '@jobwatch/sdk';
 import { EXTRACT_PAGE_STATE, type ExtractedPageState } from './extract';
 import { aiSearchResultsLayout } from './layouts/aiSearchResults';
 import { classicLayout } from './layouts/classic';
 import type { SearchLayout } from './layouts/layout';
-import { POSTED_WITHIN, classifyPage, termMatcher } from './parse';
+import { POSTED_WITHIN, classifyPage, termMatcher, type Card } from './parse';
 import { readByIds, readNew, type AcceptedJob } from './read';
 import { MAX_PAGE, pagesFor, searchCards, type SearchArgs } from './search';
 
@@ -179,7 +179,7 @@ function fitJobs(jobs: readonly z.infer<typeof jobSchema>[]): { fit: z.infer<typ
 
 const annotations = { readOnlyHint: true, openWorldHint: true, idempotentHint: true } as const;
 
-/** Soft limit inside `linkedin_search_and_read`: stop opening jobs and report the rest, so the call ends before its timeout. */
+/** Soft limit inside `linkedin_search`: stop opening jobs and report the rest, so the call ends before its timeout. */
 const OPEN_BUDGET_MS = 200_000;
 
 export interface LinkedinOptions {
@@ -201,31 +201,13 @@ async function checkSession(session: BrowserSession): Promise<SessionStatus> {
   return page.nav ? { state: 'ok' } : { state: 'unknown', note: 'The page loaded but does not look like LinkedIn.' };
 }
 
-export function createLinkedinTools(layout: SearchLayout) {
-  const search = defineBrowserTool({
-    name: 'linkedin_search',
-    title: 'LinkedIn job search (read-only)',
-    description: `Read-only. Lists LinkedIn job cards, 25 per result page (max_results 50 loads two pages): id, title, company, location, work mode, salary, posted time, and known=true when a previous run already opened and stored that job. Opens no job page. Needs a signed-in session. ${UNTRUSTED}`,
-    input: searchInput,
-    output: z.object({
-      cards: z.array(cardSchema),
-      page: z.number(),
-      pages_loaded: z.number(),
-      has_more: z.boolean(),
-      truncated: z.boolean(),
-    }),
-    annotations,
-    limits: { timeoutS: 180, cost: MAX_PAGE, estimate: (args) => pagesFor(args), outputMaxBytes: 120_000 },
-    handler: async (args, ctx) => {
-      const { warnings, cards, ...rest } = await searchCards(ctx, layout, args);
-      const stored = await ctx.jobs.known(cards.map((card) => card.id));
-      return {
-        data: { ...rest, cards: cards.map((card) => ({ ...card, known: stored.has(card.id) })) },
-        warnings,
-      };
-    },
-  });
+/** The result cards with their `known` flag (already stored by an earlier call). */
+async function withKnown(ctx: Pick<BrowserAdapterContext, 'jobs'>, cards: readonly Card[]) {
+  const stored = await ctx.jobs.known(cards.map((card) => card.id));
+  return cards.map((card) => ({ ...card, known: stored.has(card.id) }));
+}
 
+export function createLinkedinTools(layout: SearchLayout) {
   const job = defineBrowserTool({
     name: 'linkedin_job',
     title: 'LinkedIn job details (read-only)',
@@ -264,10 +246,10 @@ export function createLinkedinTools(layout: SearchLayout) {
     },
   });
 
-  const searchAndRead = defineBrowserTool({
-    name: 'linkedin_search_and_read',
-    title: 'LinkedIn search then read the new jobs (read-only)',
-    description: `Read-only. Scans max_results search results (25 per page). Drops titles with a disallowed term, judges stored jobs from the database, and opens only the rest (stored at once, then judged). Returns passing jobs, excluded, known_ids and remaining_ids: if not empty, call again with the same arguments. ${UNTRUSTED}`,
+  const search = defineBrowserTool({
+    name: 'linkedin_search',
+    title: 'LinkedIn search, then read the new jobs (read-only)',
+    description: `Read-only. Scans max_results search results (25 per page). Drops titles with a disallowed term, judges stored jobs from the database, and opens only the rest (stored at once, then judged). Returns passing jobs, excluded, known_ids and remaining_ids: if not empty, call again with the same arguments. With max_jobs=0 it opens no job page and also returns the result cards (work mode, salary, posted time, known). ${UNTRUSTED}`,
     input: searchInput
       .extend({
         skip_ids: z.array(jobId).max(500).default([]).describe('Job ids to leave alone entirely, e.g. the ones you already reported.'),
@@ -287,6 +269,7 @@ export function createLinkedinTools(layout: SearchLayout) {
       .strict(),
     output: z.object({
       jobs: z.array(jobSchema),
+      cards: z.array(cardSchema).describe('Only with max_jobs=0: every result card, known=true when already stored. Empty otherwise.'),
       known_ids: z.array(z.string()),
       not_returned_ids: z.array(z.string()),
       excluded: z.array(excludedSchema),
@@ -328,6 +311,7 @@ export function createLinkedinTools(layout: SearchLayout) {
       return {
         data: {
           jobs: fit,
+          cards: args.max_jobs === 0 ? await withKnown(ctx, found.cards) : [],
           known_ids: outcome.knownIds,
           not_returned_ids: notReturned,
           excluded: outcome.excluded,
@@ -343,11 +327,11 @@ export function createLinkedinTools(layout: SearchLayout) {
     },
   });
 
-  return { search, job, searchAndRead };
+  return { search, job };
 }
 
 export function createLinkedinAdapter(options: LinkedinOptions = {}) {
-  const { search, job, searchAndRead } = createLinkedinTools(pickLayout(options));
+  const { search, job } = createLinkedinTools(pickLayout(options));
   return defineAdapter({
     id: 'linkedin',
     displayName: 'LinkedIn',
@@ -358,7 +342,7 @@ export function createLinkedinAdapter(options: LinkedinOptions = {}) {
     allowedHosts: HOSTS,
     sessionCheck: checkSession,
     rate: { perHour: 200, perDay: 400 },
-    tools: [search, job, searchAndRead],
+    tools: [search, job],
   });
 }
 

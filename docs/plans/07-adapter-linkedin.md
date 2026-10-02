@@ -46,18 +46,13 @@ Selectors / DOM facts (as of 2026-09-30; expect drift):
 ### `session_status("linkedin")`
 Navigate to `https://www.linkedin.com/jobs/` (allowed host only), wait for the main content or a login/checkpoint marker. Return `ok | needs_login | checkpoint | unknown`.
 
-### `linkedin_search`
-1. Build the URL from validated args (keywords are URL-encoded; `OR` operators allowed: e.g. `Staff Frontend Engineer OR Lead Frontend OR Frontend Tech Lead`).
-2. `goto`, wait for cards (timeout 15 s). Zero cards after load ⇒ `adapter_broken` unless the page shows an explicit "no results" text.
-3. Extract cards in the page with a JS function (port of the card parsing in `linkedin-extract.js`: dedupe by id, strip noise, title/company/location/salary/posted/promoted/easy_apply).
-4. Post-filter `remote_only`; compute `work_mode` from the location suffix; build `url`.
-5. Return cards (+ `warnings`). One page view = 1 rate-limit cost unit.
-
 ### `linkedin_job`
 Reads up to 25 jobs by id with the same rules as the search tool. A job that is already stored is **judged from the database** with this call's terms (`read_from: "stored"`, no visit, no pacing, cost 0) unless `refresh: true`. Otherwise: navigate to the details URL, wait for the About-the-job element (12 s), read the full text, pace 2.5-5 s between jobs. `not_loaded` and `closed` go to `failed` and are **not stored**. Once the page is read and its title passes the terms, the job is **stored at once** (full description, max 20 000 characters); then, with `disallowed_scope: "title_then_description"`, a description match puts it in `excluded` (`reason: description`) but it stays in the database. A title match is excluded and **not stored**. The text returned is cut to `description_max_chars` (500-6000, default 3000) and the list is trimmed to fit the result size (the others come back in `not_returned_ids`).
 
-### `linkedin_search_and_read`
-The tool for the daily routine. One call scans `max_results` search results (25 per LinkedIn page, so 50 = pages 1 and 2, 250 = ten pages). For every search card, in order, cheapest check first:
+### `linkedin_search`
+The tool for the daily routine, which also serves as a plain listing (`max_jobs: 0`, below). The page loading and card extraction are the same either way: build the URL from validated args (keywords URL-encoded; `OR` operators allowed), `goto`, wait for the cards (an empty page is `adapter_broken` unless it says "no results"), extract the cards in the page, post-filter `remote_only`, compute `work_mode` from the location suffix. With `max_jobs: 0` no job page is opened and `cards` holds every result (work mode, salary, posted time, promoted, easy apply, `known`).
+
+One call scans `max_results` search results. One call scans `max_results` search results (25 per LinkedIn page, so 50 = pages 1 and 2, 250 = ten pages). For every search card, in order, cheapest check first:
 1. **In `skip_ids`** (your own "already reported" list): left alone entirely, reported in `known_ids`.
 2. **Disallowed term in the card title**: `excluded` (`reason: title`), **not stored, not opened**. Reading the search page already gave us the card (id, title, company, location), so judging it again with other terms next time costs nothing; there is nothing worth storing.
 3. **Already stored** (read by an earlier call, whatever terms it had then): judged **from the database** with this call's terms. No visit, no pacing, no budget. With `disallowed_scope: "title_then_description"` a description match goes to `excluded`; otherwise the job is returned with `read_from: "stored"`. (`stored_jobs: "skip"` lists them in `known_ids` instead, for a plain "only what is new" run.)
@@ -72,23 +67,22 @@ Passing jobs are returned newly read first (`new: true`), then stored ones, **at
 | Tool | Use it to | Reserved | Spent |
 |---|---|---|---|
 | `session_status` | check the LinkedIn session before a run (`ok`, `needs_login`, `checkpoint`) | 1 | 1 |
-| `linkedin_search` | peek at results: `max_results` cards over as many pages as needed, with `known` flags. Opens and stores nothing | 10 | search pages loaded |
 | `linkedin_job` | read specific jobs by id (up to 25). Stored ones come from the database with no visit | 25 | job pages visited, 0 for stored jobs |
-| `linkedin_search_and_read` | the routine: scan `max_results` results, read every job that is new and acceptable | 35 | search pages + job pages visited |
+| `linkedin_search` | the routine: scan `max_results` results, read every job that is new and acceptable. `max_jobs: 0` = list the cards only | 35 (pages only with `max_jobs: 0`) | search pages + job pages visited |
 
 Typical run, two searches over 50 results each (2 calls):
 ```
-linkedin_search_and_read { keywords: "full stack engineer", geo: "paris_idf", max_results: 50,
+linkedin_search { keywords: "full stack engineer", geo: "paris_idf", max_results: 50,
                            disallowed_terms: ["frontend", "front-end", "Angular"], disallowed_scope: "title_then_description" }
-linkedin_search_and_read { keywords: "backend engineer", max_results: 50, disallowed_terms: ["fullstack", "full-stack", "full stack"] }
+linkedin_search { keywords: "backend engineer", max_results: 50, disallowed_terms: ["fullstack", "full-stack", "full stack"] }
 ```
 For a deep sweep use `max_results: 250` (ten pages). If a result has `remaining_ids`, repeat that same call until it is empty.
 
-**Budget accounting.** A call reserves what its own arguments need (`linkedin_search_and_read` with 25 results: one search page plus up to 25 job reads, at most 60) so that two concurrent calls cannot both take the last units, and is settled to what the engine measured: page loads actually made. A failed call is charged what it did, not the reservation; a stored or excluded job costs nothing (`03-router-spec.md`, "Cost model"). With 200 per hour, 6 to 7 `linkedin_search_and_read` calls of 25 results fit in an hour (it was 6 when the maximum was always reserved).
+**Budget accounting.** A call reserves what its own arguments need (`linkedin_search` with 25 results: one search page plus up to 25 job reads, at most 60) so that two concurrent calls cannot both take the last units, and is settled to what the engine measured: page loads actually made. A failed call is charged what it did, not the reservation; a stored or excluded job costs nothing (`03-router-spec.md`, "Cost model"). With 200 per hour, 6 to 7 `linkedin_search` calls of 25 results fit in an hour (it was 6 when the maximum was always reserved).
 
 ### How much text a tool returns: `detail`
 A description is 3,000 to 6,000 characters, mostly the company's pitch, benefits and legal notices. The search tools therefore return a **summary by default** and the full text only on request; the full text is always stored.
-- `detail: "summary"` (default for `linkedin_search_and_read`): `summary` = the start of the role and of the requirements sections (about 700 characters), `summary_kind` = `sections` when those were found or `excerpt` when the text has no recognisable headings and the summary is only the start of the text after the company's pitch (then read the full text if it matters), and `description_chars` = the length of the whole text. Rule-based, no model, in English, French, German and Spanish; measured on 24 real descriptions from Greenhouse, Lever, Ashby and Teamtailor: 142,000 characters in, 16,000 out (11%), `sections` for 20 of 24.
+- `detail: "summary"` (default for `linkedin_search`): `summary` = the start of the role and of the requirements sections (about 700 characters), `summary_kind` = `sections` when those were found or `excerpt` when the text has no recognisable headings and the summary is only the start of the text after the company's pitch (then read the full text if it matters), and `description_chars` = the length of the whole text. Rule-based, no model, in English, French, German and Spanish; measured on 24 real descriptions from Greenhouse, Lever, Ashby and Teamtailor: 142,000 characters in, 16,000 out (11%), `sections` for 20 of 24.
 - `detail: "full"` (default for `linkedin_job`): the description, cut at `description_max_chars` (500 to 6000, default 3000).
 - `detail: "none"`: neither, only the metadata and the hints.
 To read the text of jobs already seen, call `linkedin_job` with their ids (up to 25 per call); a stored job is answered from the database. `stored_job_texts` (built into the router, `03-router-spec.md`) reads stored jobs of any platform without opening a browser, a site or spending budget: use it for the full text of jobs a search has already read.
@@ -129,7 +123,7 @@ Labels above are the **English** LinkedIn UI. Keep the account/browser language 
 - Tested with a fake browser and synthetic data only. **VERIFY:** the in-page scripts and the `f_TPR` / `start=` parameters on layout A against the live site, from the NUC after a manual login.
 
 ## Verification status (updated 2026-10-02)
-- **First live run (2026-10-01, NUC):** the session check returned `ok` and the tools were listed, but `linkedin_search_and_read` skipped 18 of 25 cards and every job page came back `not_loaded`. Two causes, both found by reading the live search page and the original `linkedin-extract.js` / `linkedin-read-job.js`:
+- **First live run (2026-10-01, NUC):** the session check returned `ok` and the tools were listed, but `linkedin_search` skipped 18 of 25 cards and every job page came back `not_loaded`. Two causes, both found by reading the live search page and the original `linkedin-extract.js` / `linkedin-read-job.js`:
   1. **The classic result list is virtualized.** LinkedIn renders only the cards near the viewport; the 25 `li[data-occludable-job-id]` exist at once but 18 of them are empty (7 were filled in the page inspected). The in-page reader now scrolls the result list in steps of 80 % of its height, keeps the fullest read of each card, and stops when all cards are read or two steps in a row add nothing, then scrolls back to the top.
   2. **The job description is rendered lazily.** The `JobDetails_AboutTheJob_` container exists before its text does, so reading once found nothing. The reader now polls inside the page, up to 10 s, until the text is not empty.
 - **Checked in a real Chromium container** against a synthetic page that behaves the same way (cards filled only near the viewport and emptied when they leave it, a description that appears 3 s after its container): 25 of 25 cards read in about 5.6 s (a single pass saw 4), the description read after 3.2 s, and `null` after 10 s when it never comes. This proves the scripts' logic, not LinkedIn's current markup.

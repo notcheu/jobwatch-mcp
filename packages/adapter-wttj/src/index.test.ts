@@ -5,7 +5,7 @@ import { CLICK_NEXT, EXTRACT_GATE, EXTRACT_JOB, EXTRACT_MATCHES, EXTRACT_PAGE_ST
 import adapter, { tools } from './index';
 import { MATCHES_URL, jobId, jobUrl } from './parse';
 
-const { matches, job, matchesAndRead } = tools;
+const { matches, job } = tools;
 const ago = (days: number): string => new Date(Date.now() - days * 86_400_000).toISOString();
 const FR_MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const frDate = (days: number): string => {
@@ -126,10 +126,11 @@ function site(b: Behaviour = {}) {
 
 const context = (b: Behaviour = {}) => createBrowserTestContext({ allowedHosts: adapter.allowedHosts, platform: 'wttj', pages: site(b) });
 type Ctx = ReturnType<typeof context>['ctx'];
-const runMatches = (ctx: Ctx, over: object = {}) => matches.handler(matches.input.parse(over), ctx);
+/** A plain listing: max_jobs=0 reads no job page. */
+const runMatches = (ctx: Ctx, over: object = {}) => matches.handler(matches.input.parse({ max_jobs: 0, ...over }), ctx);
 const runJob = (ctx: Ctx, over: object = {}) =>
   job.handler(job.input.parse({ urls: [jobUrl({ company: S1.company, offer: S1.offer })], ...over }), ctx);
-const runRead = (ctx: Ctx, over: object = {}) => matchesAndRead.handler(matchesAndRead.input.parse(over), ctx);
+const runRead = (ctx: Ctx, over: object = {}) => matches.handler(matches.input.parse(over), ctx);
 
 interface Out {
   jobs: {
@@ -162,13 +163,12 @@ const ids = (list: { id: string }[]) => list.map((x) => x.id);
 describeAdapterContract(adapter, {
   snapshotDir: new URL('../catalog', import.meta.url).pathname,
   samples: {
-    wttj_matches: { args: {}, run: (args) => matches.handler(args, context().ctx) },
     wttj_job: { args: { urls: [jobUrl({ company: S1.company, offer: S1.offer })] }, run: (args) => job.handler(args, context().ctx) },
-    wttj_matches_and_read: { args: {}, run: (args) => matchesAndRead.handler(args, context().ctx) },
+    wttj_matches: { args: {}, run: (args) => matches.handler(args, context().ctx) },
   },
 });
 
-describe('wttj_matches', () => {
+describe('wttj_matches with max_jobs=0 (listing)', () => {
   it('lists the cards of the first page, with the date, contract, city and the announced total, reading no job page', async () => {
     const c = context();
     const result = await runMatches(c.ctx);
@@ -332,7 +332,13 @@ describe('wttj_job', () => {
   });
 });
 
-describe('wttj_matches_and_read', () => {
+describe('wttj_matches (read)', () => {
+  it('returns no cards while it reads jobs: the cards are for max_jobs=0', async () => {
+    const result = await runRead(context().ctx);
+    expect(result.data.cards).toEqual([]);
+    expect(result.data.jobs.length).toBeGreaterThan(0);
+  });
+
   it('scans, drops excluded titles without reading them, reads and stores the rest under their company', async () => {
     const evaluated: string[] = [];
     const c = context({ evaluated });
@@ -402,7 +408,7 @@ describe('wttj_matches_and_read', () => {
       { stored_jobs: 'maybe' },
       { extra: 1 },
     ]) {
-      expect(matchesAndRead.input.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+      expect(matches.input.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
     }
   });
 });

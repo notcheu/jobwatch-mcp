@@ -175,7 +175,7 @@ export interface ReadOutcome {
 }
 
 /**
- * The visiting strategy of the `*_search_and_read` tools, cheapest first, for every search card in order:
+ * The visiting strategy of the search tools (`linkedin_search`, `apec_search`, `wttj_matches`), cheapest first, for every search card in order:
  *  1. in `skip` -> left alone;
  *  2. a disallowed term in the card title -> excluded, NOT stored, no visit (the card is free to read again with other terms);
  *  3. already stored -> judged from the database with the current terms, no visit;

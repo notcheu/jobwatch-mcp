@@ -11,12 +11,12 @@ Only **how sources are read**. Profile, criteria, triage, mail template/rules, m
 | Old step (Chrome extension) | New step (orchestrator tools) |
 |---|---|
 | Check Chrome availability (`tabs_context_mcp`) | Check connector availability: call `session_status("all")`; `needs_login`/`checkpoint` → notify Matthieu, fall back if possible |
-| LinkedIn Paris daily (2 keyword sets, 50 results each, `f_TPR=r86400`) | `linkedin_search_and_read(keywords=…, geo="paris_idf", posted_within="last_24_hours", max_results=50, disallowed_terms=[…per search…], disallowed_scope="title_then_description")`; repeat a call while `remaining_ids` is not empty |
-| LinkedIn France remote (post-filter) | `linkedin_search(geo="france", remote_only=true, posted_within="last_24_hours", max_results=50)` then `linkedin_job` for plausible ones |
-| Wednesday sweep (5 pages, no time filter, all offers) | `linkedin_search(posted_within="any", max_results=125)` (+ `linkedin_job` for unseen plausible cards); promoted flag available in cards |
+| LinkedIn Paris daily (2 keyword sets, 50 results each, `f_TPR=r86400`) | `linkedin_search(keywords=…, geo="paris_idf", posted_within="last_24_hours", max_results=50, disallowed_terms=[…per search…], disallowed_scope="title_then_description")`; repeat a call while `remaining_ids` is not empty |
+| LinkedIn France remote (post-filter) | `linkedin_search(geo="france", remote_only=true, posted_within="last_24_hours", max_results=50, max_jobs=0)` (cards only) then `linkedin_job` for plausible ones |
+| Wednesday sweep (5 pages, no time filter, all offers) | `linkedin_search(posted_within="any", max_results=125, max_jobs=0)` (+ `linkedin_job` for unseen plausible cards); promoted flag available in cards |
 | WTTJ matches | `wttj_matches` (Phase 3) |
 | WTTJ company pages | the company's own ATS tool (`teamtailor_jobs`, later `greenhouse_jobs`, `lever_jobs`, `ashby_jobs`) for companies with a public ATS (WTTJ `robots.txt` disallows the `jobs?query=` URLs) |
-| APEC searches | `apec_search`, then `apec_job` for plausible offers (Phase 3) |
+| APEC searches | `apec_search` (reads the new offers; `max_jobs=0` for cards only), `apec_job` for specific ones (Phase 3) |
 | Career pages | the ATS tool of the company's provider (Phase 3) |
 | Indeed | unchanged (separate Claude connector) |
 | Dedup vs memory | the router remembers every job whose page it read (`JW_JOB_RETENTION_DAYS`, default 30) and never reads that page again, judging it from the database with each call's terms (`new` and `first_seen` tell the routine what is fresh; `stored_jobs: "skip"` hides stored jobs); `skip_ids` (e.g. built from `claude/offres-vues.md`) stays available for ids the router never opened |
