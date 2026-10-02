@@ -3,6 +3,7 @@ import {
   CircuitBreaker,
   ConfigError,
   DockerCliBackend,
+  CallLog,
   connectBrowser,
   createBrowserHooks,
   createContextProvider,
@@ -39,6 +40,8 @@ export interface RunningServer {
   store: Store;
   limiter: RateLimiter;
   breaker: CircuitBreaker;
+  /** The last calls, in memory (what the dashboard shows). */
+  callLog: CallLog;
   /** Present only when a browser adapter is enabled. */
   runtime: RuntimeManager | undefined;
   /** The MCP listener. */
@@ -193,6 +196,8 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   policyAdapters = registry.adapters;
   logger.info({ enabled: enabled.ids, source: enabled.source, tools: [...registry.tools.keys()] }, 'adapters_loaded');
 
+  // The last calls, in memory, for the dashboard (docs/plans/17-dashboard.md). Their parameters are kept nowhere else.
+  const callLog = new CallLog(config.callBuffer);
   const app = createApp({
     registry,
     contexts,
@@ -201,7 +206,10 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     version: options.version,
     config,
     guard: createGuard(limiter, breaker),
-    record: (outcome) =>
+    started: (call) => callLog.start(call),
+    tokenCharsPerToken: config.charsPerToken,
+    record: (outcome) => {
+      callLog.finish(outcome);
       store.recordCall({
         ts: clock(),
         requestId: outcome.requestId,
@@ -211,7 +219,8 @@ export async function start(options: StartOptions): Promise<RunningServer> {
         outcome: outcome.code,
         durationMs: outcome.durationMs,
         argsHash: outcome.argsHash,
-      }),
+      });
+    },
   });
   const mcpServer = createHttpServer(app);
   await listen(mcpServer, options.port ?? config.port, config.listenHost);
@@ -230,6 +239,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     store,
     limiter,
     breaker,
+    callLog,
     runtime,
     mcp: mcpServer,
     metrics: metricsServer,

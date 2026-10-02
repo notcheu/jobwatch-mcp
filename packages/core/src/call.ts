@@ -8,6 +8,7 @@ import {
   type ErrorBody,
   type ErrorCode,
 } from '@jobwatch/sdk';
+import { DEFAULT_CHARS_PER_TOKEN, estimateTokens, jobTextChars } from './dashboard/tokens';
 import type { EngineLogger } from './logging';
 import type { Registry } from './registry';
 
@@ -37,6 +38,8 @@ export const noRuntime: ContextProvider = {
  */
 /** Returned by `admit`: lets the call hand back budget it did not use. */
 export interface Admission {
+  /** Units reserved for the call before it ran. */
+  reserved?: number;
   settle(actualCost: number): void;
 }
 
@@ -48,12 +51,25 @@ export interface CallGuard {
 /** Receives the outcome of every call (the call log). A recorder that throws never affects the call. */
 export type CallRecorder = (outcome: ToolOutcome) => void;
 
+/** Told when a call is admitted to run, so the dashboard can show it as running. */
+export interface CallStart {
+  requestId: string;
+  tool: string;
+  adapter: string;
+  platform: string;
+  startedAt: number;
+}
+
 export interface CallDeps {
   registry: Registry;
   contexts: ContextProvider;
   logger: EngineLogger;
   guard?: CallGuard;
   record?: CallRecorder;
+  /** Called once per call, before the arguments are validated. */
+  started?: (call: CallStart) => void;
+  /** Characters per token for the estimate of what a result costs Claude (default 3.5). */
+  tokenCharsPerToken?: number;
   /** Overridable for tests. */
   newRequestId?: () => string;
 }
@@ -81,6 +97,35 @@ export interface ToolOutcome {
   requestId: string;
   /** Hash of the arguments, for correlating calls without storing them. */
   argsHash: string;
+  /** What the dashboard keeps in memory about the call. Never persisted. */
+  detail?: CallDetail;
+}
+
+/** The in-memory part of a call record (docs/plans/17-dashboard.md, section 4.2). */
+export interface CallDetail {
+  startedAt: number;
+  unitsReserved: number;
+  unitsSpent: number;
+  /** Bytes of the text put in the MCP result. */
+  responseBytes: number;
+  /** Estimated tokens of that text: an estimate, not Claude's count. */
+  estimatedTokens: number;
+  warnings: number;
+  /** The validated arguments, capped at MAX_PARAMS_BYTES. Memory only: not logged, not stored in the database. */
+  params: Record<string, unknown> | null;
+  paramsTruncated: boolean;
+  jobText?: { available: number; returned: number };
+}
+
+/** Most bytes of one call's parameters kept in memory; a longer object is replaced by its first bytes. */
+export const MAX_PARAMS_BYTES = 16_384;
+
+/** The parameters as a JSON object for the call history, cut at MAX_PARAMS_BYTES. */
+export function paramsForHistory(args: unknown): { params: Record<string, unknown> | null; truncated: boolean } {
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) return { params: null, truncated: false };
+  const json = JSON.stringify(args);
+  if (json.length <= MAX_PARAMS_BYTES) return { params: JSON.parse(json) as Record<string, unknown>, truncated: false };
+  return { params: { _preview: json.slice(0, MAX_PARAMS_BYTES) }, truncated: true };
 }
 
 export class UnknownToolError extends Error {
@@ -149,9 +194,31 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
   const started = performance.now();
   const log = deps.logger.child({ request_id: requestId, tool: name, adapter: adapter.id });
 
+  const startedAt = Date.now();
+  deps.started?.({ requestId, tool: name, adapter: adapter.id, platform: adapter.platform, startedAt });
+  let admission: Admission | undefined;
+  let lease: Awaited<ReturnType<ContextProvider['acquire']>> | undefined;
+  // Units the handler reported itself (success only). Otherwise the engine's own count of what the call did is used.
+  let reported: number | undefined;
+  const seen: { validated?: unknown } = {};
+
   const finish = (result: ToolCallResult, code: ToolOutcome['code']): { result: ToolCallResult; outcome: ToolOutcome } => {
     const durationMs = Math.round(performance.now() - started);
     const hash = argsHash(rawArgs);
+    const text = result.content.map((part) => part.text).join('');
+    const history = paramsForHistory(seen.validated ?? rawArgs);
+    const jobText = jobTextChars(result.structuredContent);
+    const detail: CallDetail = {
+      startedAt,
+      unitsReserved: admission?.reserved ?? 0,
+      unitsSpent: reported ?? lease?.spent?.() ?? 0,
+      responseBytes: Buffer.byteLength(text),
+      estimatedTokens: estimateTokens(text, deps.tokenCharsPerToken ?? DEFAULT_CHARS_PER_TOKEN),
+      warnings: result._meta?.jobwatch.warnings.length ?? 0,
+      params: history.params,
+      paramsTruncated: history.truncated,
+      ...(jobText === undefined ? {} : { jobText }),
+    };
     log.info({ outcome: code, duration_ms: durationMs, args_hash: hash }, 'tool_call');
     const outcome: ToolOutcome = {
       tool: name,
@@ -161,6 +228,7 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
       durationMs,
       requestId,
       argsHash: hash,
+      detail,
     };
     try {
       deps.record?.(outcome);
@@ -183,7 +251,7 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
     });
   }
 
-  let admission: Admission | undefined;
+  seen.validated = parsed.data;
   try {
     admission = deps.guard?.admit(adapter, tool, parsed.data);
   } catch (error) {
@@ -191,9 +259,6 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
     throw error;
   }
 
-  let lease: Awaited<ReturnType<ContextProvider['acquire']>> | undefined;
-  // Units the handler reported itself (success only). Otherwise the engine's own count of what the call did is used.
-  let reported: number | undefined;
   try {
     lease = await deps.contexts.acquire(adapter, requestId);
     // One cast, here: the registry stores tools with their argument type erased; `input` has just validated the arguments.

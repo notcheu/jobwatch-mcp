@@ -13,7 +13,16 @@ import {
   type BaseContext,
 } from '@jobwatch/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { argsHash, callTool, noRuntime, UnknownToolError, type CallDeps, type ContextProvider } from './call';
+import {
+  MAX_PARAMS_BYTES,
+  argsHash,
+  callTool,
+  noRuntime,
+  paramsForHistory,
+  UnknownToolError,
+  type CallDeps,
+  type ContextProvider,
+} from './call';
 import { createLogger } from './logging';
 import { loadAdapters } from './registry';
 
@@ -324,5 +333,65 @@ describe('callTool: a lease signal that aborts', () => {
     await callTool(deps, 'probe_run', { q: 'x' });
     expect(add).toHaveBeenCalledTimes(1);
     expect(remove).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('callTool: the in-memory detail of a call', () => {
+  it('reports the parameters, the size and the estimated tokens of what was sent, and the units', async () => {
+    const { deps } = await depsFor(async () => ({ data: { n: 1 }, warnings: ['w1', 'w2'] }));
+    const started: string[] = [];
+    deps.started = (call) => started.push(`${call.requestId}:${call.tool}`);
+    deps.tokenCharsPerToken = 4;
+    const guard = { admit: () => ({ reserved: 7, settle: () => undefined }), failed: () => undefined };
+    const { result, outcome } = await callTool({ ...deps, guard }, 'probe_run', { q: 'react' });
+    const text = result.content[0]?.text ?? '';
+    expect(started).toEqual(['req-1:probe_run']);
+    expect(outcome.detail).toMatchObject({
+      unitsReserved: 7,
+      params: { q: 'react' },
+      paramsTruncated: false,
+      warnings: 2,
+      responseBytes: Buffer.byteLength(text),
+      estimatedTokens: Math.ceil(text.length / 4),
+    });
+    expect(outcome.detail?.startedAt).toBeGreaterThan(0);
+  });
+
+  it('keeps the arguments of an invalid call too, and an empty detail for none', async () => {
+    const { deps } = await depsFor(async () => ({ data: { n: 1 }, warnings: [] }));
+    const { outcome } = await callTool(deps, 'probe_run', { q: 'x'.repeat(50) });
+    expect(outcome.code).toBe('invalid_arguments');
+    expect(outcome.detail?.params).toEqual({ q: 'x'.repeat(50) });
+  });
+
+  it('cuts parameters over 16 KB to a preview and marks them', async () => {
+    expect(paramsForHistory({ a: 'x'.repeat(MAX_PARAMS_BYTES) })).toMatchObject({ truncated: true });
+    const cut = paramsForHistory({ a: 'x'.repeat(MAX_PARAMS_BYTES) });
+    expect(Object.keys(cut.params ?? {})).toEqual(['_preview']);
+    expect(paramsForHistory(['not', 'an', 'object'])).toEqual({ params: null, truncated: false });
+    expect(paramsForHistory({ ok: 1 })).toEqual({ params: { ok: 1 }, truncated: false });
+  });
+
+  it('never writes the parameters to the log line', async () => {
+    const { deps, sink } = await depsFor(async () => ({ data: { n: 1 }, warnings: [] }));
+    await callTool(deps, 'probe_run', { q: 'secret-ish-keyword' });
+    expect(sink.text()).not.toContain('secret-ish-keyword');
+  });
+
+  it('counts the units spent as the lease measured them when the call fails half way', async () => {
+    const provider: ContextProvider = {
+      acquire: async () => ({
+        ctx: { http: {} as never, jobs: {} as never, log: {} as never, pace: async () => undefined, spend: () => undefined },
+        release: async () => undefined,
+        spent: () => 3,
+      }),
+    };
+    const { deps } = await depsFor(
+      async () => {
+        throw new JobwatchError('upstream_error', 'down');
+      },
+      { provider },
+    );
+    expect((await callTool(deps, 'probe_run', { q: 'x' })).outcome.detail?.unitsSpent).toBe(3);
   });
 });

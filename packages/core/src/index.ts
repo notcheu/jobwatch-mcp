@@ -15,8 +15,19 @@ export {
 export type { EnabledAdapters, EnabledSource, ToggleResult } from './adapters-config';
 export { RegistryError, listTools, loadAdapters } from './registry';
 export type { InstalledAdapters, ListedTool, RegisteredTool, Registry } from './registry';
-export { UnknownToolError, argsHash, callTool, noRuntime } from './call';
-export type { Admission, CallDeps, CallGuard, CallRecorder, ContextProvider, ToolCallResult, ToolContent, ToolOutcome } from './call';
+export { MAX_PARAMS_BYTES, UnknownToolError, argsHash, callTool, noRuntime, paramsForHistory } from './call';
+export type {
+  Admission,
+  CallDeps,
+  CallDetail,
+  CallGuard,
+  CallRecorder,
+  CallStart,
+  ContextProvider,
+  ToolCallResult,
+  ToolContent,
+  ToolOutcome,
+} from './call';
 export { createMetrics } from './metrics';
 export { createContextProvider, createJobStore } from './contexts';
 export type { ContextProviderDeps } from './contexts';
@@ -30,6 +41,8 @@ export { DEFAULT_BROWSER_PACING, createPacer } from './browser/pacer';
 export { createBrowserHooks, waitForDevTools } from './browser/hooks';
 export type { BrowserHooksOptions, FingerprintMode } from './browser/hooks';
 export { connectBrowser } from './browser/session';
+export { CallLog, keywordsOf, type CallEntry, type CallQuery } from './dashboard/callLog';
+export { DEFAULT_CHARS_PER_TOKEN, estimateTokens, jobTextChars } from './dashboard/tokens';
 export type { BrowserConnection, ConnectBrowser } from './browser/session';
 export { BackendError } from './runtime/backend';
 export type { ContainerState, RuntimeBackend, RuntimeHandle, RuntimeSpec } from './runtime/backend';
