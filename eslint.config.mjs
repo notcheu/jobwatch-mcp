@@ -52,7 +52,7 @@ export default [
   },
   {
     // Module boundaries between package types (tags are set in each package.json under "nx.tags").
-    files: ['**/*.ts', '**/*.mjs', '**/*.js'],
+    files: ['**/*.ts', '**/*.tsx', '**/*.mjs', '**/*.js'],
     rules: {
       '@nx/enforce-module-boundaries': [
         'error',
@@ -93,6 +93,38 @@ export default [
     // Tests may read fixtures from disk, but still never reach the engine or the browser library.
     files: ['packages/adapter-*/**/*.test.ts'],
     rules: { 'no-restricted-imports': ['error', { paths: [PLAYWRIGHT, ...ENGINE] }] },
+  },
+  {
+    // The dashboard runs in the operator's browser and shows text from third-party sites, call parameters and keywords: it renders text
+    // only (never HTML), and it reaches the router through its API types, never through the engine, the SDK or an adapter.
+    files: ['apps/dashboard/**/*.{ts,tsx}'],
+    ignores: ['apps/dashboard/*.config.ts'],
+    languageOptions: { globals: { ...globals.browser } },
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+          message: 'The dashboard renders text, never HTML (docs/plans/17-dashboard.md, section 8).',
+        },
+        {
+          selector: 'AssignmentExpression[left.property.name=/^(innerHTML|outerHTML)$/]',
+          message: 'The dashboard renders text, never HTML.',
+        },
+        { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'The dashboard renders text, never HTML.' },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@jobwatch/core', '@jobwatch/sdk', '@jobwatch/adapters', '@jobwatch/adapter-*', '@jobwatch/mcp', 'node:*'],
+              message: 'The dashboard imports @jobwatch/dashboard-api only.',
+            },
+          ],
+        },
+      ],
+    },
   },
   {
     // The single file allowed to import playwright-core.

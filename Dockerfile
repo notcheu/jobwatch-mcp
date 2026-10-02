@@ -21,7 +21,8 @@ COPY tools ./tools
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 
 FROM deps AS build
-RUN npx nx run-many -t build -p @jobwatch/mcp @jobwatch/cli
+# The dashboard is built to static files; only those reach the image, never the front end's node_modules.
+RUN npx nx run-many -t build -p @jobwatch/mcp @jobwatch/cli @jobwatch/dashboard
 
 FROM node:${NODE_VERSION}-bookworm-slim AS prod-deps
 WORKDIR /app
@@ -38,11 +39,13 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     JW_PORT=8080 \
+    JW_DASHBOARD_STATIC_DIR=/app/dashboard \
     JW_BROWSER_SECCOMP=/etc/jobwatch/chrome-seccomp.json
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist/apps/mcp ./dist/mcp
 COPY --from=build /app/dist/apps/cli ./dist/cli
+COPY --from=build /app/dist/apps/dashboard ./dashboard
 # The Chrome seccomp profile is read by the docker CLI in THIS container when it starts a browser (docs/plans/05-browser-runtime.md, G6).
 COPY images/browser/chrome-seccomp.json /etc/jobwatch/chrome-seccomp.json
 # `jobwatch` available inside the container: docker compose exec router jobwatch adapters list

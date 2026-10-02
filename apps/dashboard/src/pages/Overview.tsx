@@ -1,0 +1,62 @@
+import { useQuery } from '@tanstack/react-query';
+import { StatCard } from '@/components/StatCard';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { api } from '@/lib/api';
+import { compact } from '@/lib/format';
+
+export function Overview() {
+  const overview = useQuery({ queryKey: ['overview'], queryFn: api.overview, refetchInterval: 5000 });
+  const o = overview.data;
+  if (overview.isError) return <p className="p-6 text-sm text-destructive">Could not load the overview.</p>;
+  if (o === undefined) return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
+  return (
+    <div className="w-full space-y-4 overflow-auto p-5">
+      <p className="text-xs text-muted-foreground">
+        Current router process · the history of calls is kept in memory and resets when it restarts
+      </p>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Request health</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-y-2 text-sm">
+            <span>Completed</span>
+            <span className="text-right tabular-nums">{compact(o.health.completed)}</span>
+            <span>Failed</span>
+            <span className={`text-right tabular-nums ${o.health.failed > 0 ? 'text-destructive' : ''}`}>{compact(o.health.failed)}</span>
+            <span>Rate limited</span>
+            <span className={`text-right tabular-nums ${o.health.rateLimited > 0 ? 'text-warning' : ''}`}>
+              {compact(o.health.rateLimited)}
+            </span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Live activity</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-y-2 text-sm">
+            <span>Running now</span>
+            <span className="text-right tabular-nums">{o.health.active}</span>
+            <span>Browser</span>
+            <span className="text-right">{o.runtimeState}</span>
+            <span>Enabled adapters</span>
+            <span className="text-right tabular-nums">{o.enabledAdapters}</span>
+            <span>Uptime</span>
+            <span className="text-right tabular-nums">
+              {Math.floor(o.uptimeS / 3600)} h {Math.floor((o.uptimeS % 3600) / 60)} min
+            </span>
+          </CardContent>
+        </Card>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard
+          title="Tokens returned to Claude"
+          value={`~${compact(o.tokensReturned)}`}
+          note="Estimated from the size of the text sent"
+        />
+        <StatCard title="Calls in memory" value={compact(o.callsInMemory)} note={`of ${compact(o.callBufferSize)} kept`} />
+        <StatCard title="Stored jobs" value={compact(o.storedJobs)} note="In the router database" />
+      </div>
+    </div>
+  );
+}
