@@ -74,6 +74,7 @@ export type { Metrics } from './metrics';
 export {
   CALL_LOG_RETENTION_MS,
   DEFAULT_JOB_RETENTION_DAYS,
+  JOB_SORT_COLUMNS,
   MAX_JOB_DESCRIPTION_CHARS,
   SCHEMA_VERSION,
   Store,
