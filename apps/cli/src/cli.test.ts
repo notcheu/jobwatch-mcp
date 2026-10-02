@@ -55,7 +55,7 @@ const linkedin: AdapterModule = defineAdapter({
       name: 'linkedin_search',
       title: 'Search (read-only)',
       description: 'Searches. Read-only, no side effects.',
-      input,
+      input: z.object({ keywords: z.string().min(1), max_jobs: z.number().int().default(50) }).strict(),
       output,
       annotations,
       limits,
@@ -139,6 +139,30 @@ describe('adapters list', () => {
     await cli(['adapters', 'list'], { env: { JW_DATA_DIR: dataDir, JW_ADAPTERS: 'apec' } });
     expect(out).toMatch(/apec\s+enabled/);
     expect(out).toContain('JW_ADAPTERS (environment, overrides the file)');
+  });
+
+  it('--tools adds each tool with its parameters, required ones starred, defaults shown', async () => {
+    expect(await cli(['adapters', 'list', '--tools', 'linkedin'])).toBe(EXIT.ok);
+    expect(out).not.toMatch(/^apec/m);
+    expect(out).toContain('linkedin (disabled)');
+    expect(out).toMatch(/linkedin_search {2}Search \(read-only\) {2}\(reserves up to 1 unit\(s\)\)/);
+    expect(out).toMatch(/keywords\*: string/);
+    expect(out).toMatch(/max_jobs: integer = 50/);
+  });
+
+  it('--tools --json puts the whole catalog entry (schemas, limits) on each tool', async () => {
+    expect(await cli(['adapters', 'list', '--tools', '--json', 'apec'])).toBe(EXIT.ok);
+    const json = JSON.parse(out) as { adapters: { id: string; tools: { name: string; inputSchema: object; limits: object }[] }[] };
+    expect(json.adapters.map((a) => a.id)).toEqual(['apec']);
+    expect(json.adapters[0]?.tools[0]).toMatchObject({ name: 'apec_search', inputSchema: { type: 'object' }, limits: { rate: {} } });
+  });
+
+  it('narrows the list to the ids given and refuses an unknown one', async () => {
+    expect(await cli(['adapters', 'list', 'apec'])).toBe(EXIT.ok);
+    expect(out).toMatch(/^apec/m);
+    expect(out).not.toMatch(/^linkedin/m);
+    expect(await cli(['adapters', 'list', 'nope'])).toBe(EXIT.usage);
+    expect(err).toContain('Unknown adapter: nope');
   });
 
   it('prints machine-readable JSON with --json and no table', async () => {
