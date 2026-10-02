@@ -189,7 +189,7 @@ Rules: every estimated number carries a "~" and a tooltip; empty states say what
 The dashboard exposes job-search data, the parameters of every call and a switch that changes which adapters are on. Reached at `https://<domain>/dashboard` (D10) it is a **public admin surface** on a host whose router holds the rootless Docker socket. The design below is the minimum; section 12 lists what still needs the owner's agreement.
 
 - **Off unless started, started only from the host.** The listener does not exist until `jobwatch dashboard start`, and nothing remote can start it (section 2). When it is off, `/dashboard` answers a static 503 from Nginx.
-- **Its own sign-in with Google, and an allowlist.** The OAuth front only protects `/mcp` and cannot be reused for another upstream (**VERIFY** in step 3: confirm `babs/mcp-auth-proxy` takes a single `UPSTREAM_MCP_URL`; if it can protect a second one, prefer that and drop the next point). Otherwise the dashboard does an OpenID Connect login itself, with the **same Google OAuth client** and one added redirect URI `https://<domain>/dashboard/auth/callback`: authorization code flow with PKCE, `state` and `nonce`, ID token checked (issuer, audience, signature, expiry), **`email_verified` true and the email in `JW_DASHBOARD_ALLOWED_EMAILS`**. The variable is **required**; the dashboard refuses to start with an empty list. The allowlist is the control: it does not rely on the Google app being in Testing mode.
+- **Its own sign-in with Google, and an allowlist.** The OAuth front cannot be reused for the dashboard, but the **Google OAuth setup can** (verified 2026-10-03, section 8.1). The dashboard therefore does an OpenID Connect login itself, with its own login screen, using a Google OAuth client and one added redirect URI `https://<domain>/dashboard/auth/callback`: authorization code flow with PKCE, `state` and `nonce`, ID token checked (issuer, audience, signature, expiry), **`email_verified` true and the email in `JW_DASHBOARD_ALLOWED_EMAILS`**. The variable is **required**; the dashboard refuses to start with an empty list. The allowlist is the control: it does not rely on the Google app being in Testing mode.
 - **Session.** After the callback the dashboard sets a random session id in a `Secure`, `HttpOnly`, `SameSite=Strict` cookie scoped to path `/dashboard`, kept server-side in memory (so a restart signs everyone out), idle timeout 30 minutes, absolute lifetime 8 hours, all revoked by `dashboard stop`. No token is ever placed in a URL.
 - **Writes need a recent sign-in** (PROPOSED). `PUT /adapters/:id` and `POST /router/restart` are refused unless the session authenticated within the last 10 minutes (OIDC `max_age`); otherwise the UI sends the user through Google again. A stolen idle session cannot change the router.
 - **CSRF and origin.** Every non-GET request needs a custom header the app sets, an `Origin` equal to the configured public origin, and the `SameSite=Strict` cookie. `Host` must equal the configured public host (no DNS rebinding, no open Host).
@@ -202,6 +202,22 @@ The dashboard exposes job-search data, the parameters of every call and a switch
 - **No Docker surface.** The dashboard process has no endpoint that reaches the Docker API, and the runtime manager is not callable from it except through the existing read-only `status()`.
 - **One new secret.** The sign-in needs a Google client secret in the router's environment, where today only the OAuth front holds one. Preferably a **separate Google OAuth client for the dashboard** (its own secret and redirect URI), so a leak of one does not affect the connector (§12.3). Adding it to the router is a change to what the router holds, so it needs the owner's agreement (`docs/plans/09`).
 - **Dependencies.** A UI adds hundreds of packages. `allowScripts` stays denied, the lockfile is committed, a CI job runs `npm audit --omit=dev --audit-level=high` for the dashboard workspace, and the production image contains only the built static files, not the front end's `node_modules`.
+
+### 8.1 Verified: what of the OAuth setup can be reused (2026-10-03)
+
+Read from the source and docs of `babs/mcp-auth-proxy` (`config/config.go`, `main.go`, `docs/configuration.md`, `proxy/proxy.go`) and from Google's discovery document.
+
+| Question | Finding | Consequence |
+|---|---|---|
+| Can the front serve `/dashboard`? | **No.** It has **one** `UPSTREAM_MCP_URL` with an explicit path; that path is both the public mount and the forwarded path (`r.Handle(mount)` and `mount/*`), and anything outside the mount is a 404. `PROXY_BASE_URL` must be origin-only (no path). | The dashboard cannot sit behind the front on the same domain. |
+| A second front instance for `/dashboard`? | **No.** Its OAuth routes are fixed at the root of the host (`/register`, `/authorize`, `/callback`, `/token`, `/.well-known`) and are reserved, so two fronts on one domain collide. | Not an option on one hostname. |
+| Is the front's login a browser login? | **No.** It is an OAuth 2.1 authorization server for MCP clients: dynamic registration, PKCE, consent page, then an **opaque sealed bearer token** (AES-GCM, access 1 h, refresh 7 d). It sets **no session cookie**, and a browser cannot attach a bearer token to a page navigation. | A browser dashboard needs its own login and cookie session. |
+| Reuse the front's tokens in the dashboard? | **Not sensibly.** They are opaque, sealed with `TOKEN_SIGNING_SECRET`, and the front has no introspection or JWKS endpoint. Using them would mean copying the signing secret into the router and re-implementing a private format. | Rejected. |
+| Does the router already know who calls `/mcp`? | Yes: the front injects `X-User-Sub`, `X-User-Email` and `X-User-Groups` upstream (and strips any the caller sent). | Useful for logging the actor of MCP calls; unrelated to the dashboard login. |
+| Reuse the **Google OAuth project and client**? | **Yes.** Google's discovery document confirms what the flow needs: authorization code flow, PKCE `S256`, scopes `openid email profile`, `email` and `email_verified` claims, RS256 id tokens and a public JWKS. A Google web client accepts several authorized redirect URIs. | Reuse the Google project and the "Testing" consent screen; add `https://<domain>/dashboard/auth/callback` to a client. |
+| Reuse the **same client secret**? | Possible, but the secret would then also live in the router. | Prefer a **second client in the same Google project** for the dashboard (§12.3): same consent screen and test users, its own secret and redirect URI. |
+
+What was **not** verified, because it needs real Google credentials and a deployed domain: an actual sign-in end to end. Step 3 proves it with a fake OIDC provider in tests and step 4 with a real sign-in behind Nginx.
 
 ## 9. Testing
 
@@ -253,11 +269,19 @@ Each step ends with `npm run ci` green and the docs updated in the same PR.
 
 **Still open, to settle before step 3 and 4:**
 
-1. **Writes need a recent sign-in** (section 8): 10 minutes, or a different value, or off?
+1. **Writes need a recent sign-in** (section 8): see the explanation below; 10 minutes, another value, or off?
 2. **Allowlisted email(s)** for `JW_DASHBOARD_ALLOWED_EMAILS`: the same Google account as the connector, or others?
 3. **Google client secret in the router's environment.** The sign-in needs it in the router, which today only the OAuth front holds. A separate Google OAuth client for the dashboard (own secret, own redirect URI, so a leak does not affect the connector) is the cleaner choice. Do you want a second client?
 4. **Public admin surface.** With D10 the dashboard is reachable from the internet whenever it is on. The plan keeps it off by default, started from the host only, behind its own Google sign-in and an allowlist. If you would rather add a second layer (an Nginx IP allowlist for your own addresses, or HTTP basic auth in front), say so; it costs a few lines in the Nginx block.
-5. **Session lifetime** (30 minutes idle, 8 hours absolute) and **listener idle stop** (30 minutes): keep?
+5. **Timers** (see the explanation below): the plan has three; the recommendation is to reduce them to two.
+
+**Recent sign-in, explained.** Being signed in to the dashboard lets you read. Two actions change the router: enabling or disabling an adapter and restarting it. "Recent sign-in" means those two actions are only accepted if you authenticated with Google within the last N minutes; if you signed in earlier, the dashboard sends you through Google again (one click when you already have a Google session) and then performs the action. The point is that a session left open on a shared screen, or a stolen cookie, can read but cannot change anything. With 10 minutes you sign in once, browse, and the first change after a long browse asks you to confirm. Off means any open session can write.
+
+**The timers, explained.** They are independent:
+1. **Listener idle stop (30 min).** If nobody calls the dashboard for 30 minutes the whole dashboard shuts down: `/dashboard` goes back to the 503 page and `jobwatch dashboard start` is needed again. Every request resets the countdown.
+2. **Session idle timeout (30 min).** Your browser cookie for the dashboard (not the Google or the Claude connector sign-in). After 30 minutes without a request it is no longer valid and you sign in again.
+3. **Session absolute lifetime (8 h).** Even if you keep using it, the cookie ends 8 hours after sign-in.
+They are unrelated to the Claude connector's OAuth tokens (1 h access, 7 d refresh), which belong to the OAuth front and are not touched. Because timer 1 already turns the dashboard off when idle, timers 2 and 3 mostly overlap with it. Recommendation: keep timer 1 at 30 minutes (adjustable with `dashboard start --ttl`), make the session last until the dashboard stops with a cap of 8 hours, and drop the separate session idle timer. That leaves two numbers to think about.
 
 ## 13. Risks
 
