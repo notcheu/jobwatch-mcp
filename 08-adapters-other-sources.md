@@ -47,7 +47,7 @@ A combined `ats_jobs` tool was dropped: every ATS has its own URLs, response sha
 | **Apec** (platform) | French "cadre" jobs | search `POST apec.fr/cms/webservices/rechercheOffre` (plain HTTP); full text `GET /cms/webservices/offre/public?numeroOffre=` only from a page (browser) | **first batch**, verified 2026-10-01 |
 | **Teamtailor** | bsport, PayFit, Ornikar, many European companies | `GET https://<handle>.teamtailor.com/jobs.json` (JSON Feed, all open jobs with full descriptions, no login), also `/jobs.rss`; the same paths work on a company's own domain (`careers.bsport.io`) | **adapter built** (`teamtailor_jobs`), verified live 2026-10-02 |
 | **WTTJ** (platform) | French tech | logged-in `jobs-matches` page, browser only (plain HTTP is 403; `robots.txt` disallows query strings) | **first batch**, see above |
-| Greenhouse | Doctolib, Algolia, Mirakl | `GET boards-api.greenhouse.io/v1/boards/<handle>/jobs?content=true` | verified 2026-10-01; next |
+| Greenhouse | Doctolib, Algolia, Mirakl | `GET boards-api.greenhouse.io/v1/boards/<handle>/jobs?content=true` | **adapter built** (`greenhouse_jobs`), verified live 2026-10-02 |
 | Lever | Pigment, Aircall, Swile, Malt, Brevo, BlaBlaCar | `GET api.lever.co/v0/postings/<handle>?mode=json` (handle is case-sensitive) | verified 2026-10-01; next |
 | Ashby | Alan, Pennylane, Nabla, Back Market, Ledger | `GET api.ashbyhq.com/posting-api/job-board/<handle>` (up to 4 MB) | verified 2026-10-01; next |
 | SmartRecruiters | large groups | `GET api.smartrecruiters.com/v1/companies/<handle>/postings` | documented API, matched no watched company; VERIFY |
@@ -75,6 +75,12 @@ Draft code for Greenhouse, Lever and Ashby (provider parsers, HTML-to-text, the 
 - **Output:** `jobs`, `excluded`, `not_returned_ids`, and one report per board (`ok`, `not_found`, `not_this_ats`, `invalid`, `refused`, `error`, with job counts), so one bad handle never fails the others.
 - **Budget:** one request per board (reserved 10, spent = boards requested); the adapter declares 120 per hour and 600 per day. Not a login-protected platform: no `needs_login` and no circuit breaker.
 - **Not verified:** a very large board (hundreds of jobs) in one feed response; the NUC's network reaching custom domains.
+
+## Greenhouse (`packages/adapter-greenhouse`, tool `greenhouse_jobs`)
+- **Endpoint (verified live 2026-10-02 on Algolia, Doctolib, Mirakl):** `GET https://boards-api.greenhouse.io/v1/boards/<token>/jobs?content=true` returns `{ jobs: [...], meta }`; each job has `id` (number), `title`, `absolute_url`, `company_name`, `location.name`, `first_published`, `updated_at` and `content` (the description as **entity-encoded** HTML, decoded by `htmlToText`). The whole board is one response (Doctolib: 156 jobs, about 2 MB, hence the 8 MB body cap).
+- **Input:** `boards` = up to 10 board tokens (`algolia`) or board URLs: `https://boards.greenhouse.io/<token>`, `https://job-boards.greenhouse.io/<token>[/jobs/<id>]`, the embed link (`.../embed/job_board?for=<token>`) or the API URL. Only the token is taken from a URL: the request always goes to `boards-api.greenhouse.io` (the only allowed host), so the adapter is not `openHttps`. URLs with a port or credentials, other hosts and other API versions are `invalid`. The same board named several ways is requested once.
+- **Filters, output, source and board, budget (120 per hour, 600 per day):** exactly as for every company-board tool (`03-router-spec.md`, "Company-board adapters"; `04`). `source: "greenhouse"`, job id = Greenhouse's numeric id, `board` = the company name the API reports (`algolia`, `doctolib`).
+- **Not verified:** boards on Greenhouse's EU hosts, if they differ from `boards-api.greenhouse.io`.
 
 ## Adapter checklist (for any new platform)
 1. Catalog entry (schemas, limits, hosts). 2. Adapter class (+ session check if logged-in). 3. Parser + fixtures. 4. Rate policy and budget. 5. Contract tests. 6. Docs: add a section here with URL patterns, DOM facts, pitfalls.

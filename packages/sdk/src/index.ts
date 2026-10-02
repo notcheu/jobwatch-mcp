@@ -69,5 +69,15 @@ export {
 } from './jobtext';
 export type { Hints, PostedWithin } from './jobtext';
 
-export { boardExcludedSchema, boardFilters, boardJobSchema, boardReportSchema, judgeBoardPostings } from './boards';
-export type { BoardExcluded, BoardFilters, BoardJob, BoardPosting, BoardReport, Judged } from './boards';
+export {
+  boardExcludedSchema,
+  boardFilters,
+  boardJobSchema,
+  boardReportSchema,
+  boardToolOutput,
+  boardsInput,
+  judgeBoardPostings,
+  runBoardTool,
+  slugify,
+} from './boards';
+export type { BoardAddress, BoardExcluded, BoardFilters, BoardJob, BoardPosting, BoardReport, BoardSource, Judged } from './boards';

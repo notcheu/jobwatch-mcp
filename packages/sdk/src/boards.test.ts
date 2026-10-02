@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { boardFilters, judgeBoardPostings, type BoardPosting } from './boards';
+import { boardFilters, judgeBoardPostings, runBoardTool, type BoardPosting } from './boards';
 import { z } from 'zod';
+import { AdapterBroken } from './errors';
 import { FakeJobStore } from './testkit/fakes';
 
 const filters = (over: object = {}) => z.object(boardFilters).parse(over);
@@ -116,5 +117,89 @@ describe('judgeBoardPostings', () => {
     expect(parse({ max_results: 201 })).toBe(false);
     expect(parse({ disallowed_scope: 'everywhere' })).toBe(false);
     expect(parse({ title_any: Array.from({ length: 21 }, (_, i) => `t${i}`) })).toBe(false);
+  });
+});
+
+describe('runBoardTool', () => {
+  const source = {
+    ats: 'Demo',
+    resolve: (input: string) =>
+      /^[a-z]+$/.test(input)
+        ? { feedUrl: `https://demo.example.com/${input}.json`, label: input }
+        : { feedUrl: `https://demo.example.com/${input.split('/').pop()}.json`, label: input },
+    parse: (parse: <T>(schema: z.ZodType<T>) => T) => {
+      const body = parse(z.object({ name: z.string(), jobs: z.array(z.object({ id: z.string(), title: z.string() })) }));
+      return {
+        name: body.name,
+        postings: body.jobs.map((j) => ({
+          id: j.id,
+          company: body.name,
+          title: j.title,
+          locations: [],
+          url: 'https://x.test',
+          postedAt: null,
+          description: 'text',
+        })),
+      };
+    },
+    invalidMessage: 'nope',
+  };
+  const http = (answers: Record<string, { status: number; body: unknown }>) => {
+    const seen: string[] = [];
+    return {
+      seen,
+      get: async (url: string) => {
+        seen.push(url);
+        const a = answers[url] ?? { status: 404, body: '' };
+        const text = typeof a.body === 'string' ? a.body : JSON.stringify(a.body);
+        return {
+          status: a.status,
+          ok: a.status < 300,
+          headers: {},
+          text,
+          json: <T>(schema: z.ZodType<T>): T => {
+            const parsed = schema.safeParse(JSON.parse(text));
+            if (!parsed.success) throw new AdapterBroken('Response does not match the expected shape.');
+            return parsed.data;
+          },
+        };
+      },
+      postJson: async () => {
+        throw new Error('unused');
+      },
+    };
+  };
+  const args = (over: object = {}) => ({ boards: ['acme'], ...z.object(boardFilters).parse(over) });
+
+  it('requests a board once however many ways it was named, and charges one unit', async () => {
+    const h = http({
+      'https://demo.example.com/acme.json': { status: 200, body: { name: 'Acme', jobs: [{ id: '1', title: 'Engineer' }] } },
+    });
+    const result = await runBoardTool({ http: h, jobs: new FakeJobStore() }, 'demo', source, {
+      ...args(),
+      boards: ['acme', ' acme ', 'https://demo.example.com/x/acme'],
+    });
+    expect(h.seen).toEqual(['https://demo.example.com/acme.json']);
+    expect(result.cost).toBe(1);
+    expect(result.data.boards).toHaveLength(1);
+    expect(result.data.jobs).toHaveLength(1);
+  });
+
+  it('maps failures to a status per board and counts only real requests', async () => {
+    const h = http({
+      'https://demo.example.com/acme.json': { status: 200, body: { name: 'Acme', jobs: [] } },
+      'https://demo.example.com/odd.json': { status: 200, body: { nope: 1 } },
+    });
+    const result = await runBoardTool({ http: h, jobs: new FakeJobStore() }, 'demo', source, {
+      ...args(),
+      boards: ['acme', 'ghost', 'odd'],
+    });
+    expect(result.data.boards.map((b) => [b.board, b.status])).toEqual([
+      ['acme', 'ok'],
+      ['ghost', 'not_found'],
+      ['odd', 'not_this_ats'],
+    ]);
+    expect(result.cost).toBe(3);
+    expect(result.warnings.join(' ')).toMatch(/ghost: not_found/);
   });
 });
