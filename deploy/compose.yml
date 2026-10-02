@@ -69,11 +69,17 @@ services:
       JW_JOB_RETENTION_DAYS: ${JW_JOB_RETENTION_DAYS:-30}
       JW_METRICS_ENABLED: ${JW_METRICS_ENABLED:-false}  # true => Prometheus /metrics on 9464
       JW_METRICS_PORT: 9464
+      # The operator dashboard (docs/plans/17-dashboard.md): off until `jobwatch dashboard start`. It signs in with Google, by default with
+      # the connector's OAuth client; add https://<domain>/dashboard/auth/callback to that client's redirect URIs in Google Cloud Console.
+      JW_DASHBOARD_OIDC_CLIENT_ID: ${JW_DASHBOARD_OIDC_CLIENT_ID:-${OIDC_CLIENT_ID}}
+      JW_DASHBOARD_OIDC_CLIENT_SECRET: ${JW_DASHBOARD_OIDC_CLIENT_SECRET:-${OIDC_CLIENT_SECRET}}
+      JW_DASHBOARD_IDLE_S: ${JW_DASHBOARD_IDLE_S:-1800}
     volumes:
       - "${JW_DOCKER_SOCKET:-${XDG_RUNTIME_DIR}/docker.sock}:/var/run/docker.sock"   # Linux rootless: $XDG_RUNTIME_DIR/docker.sock; Docker Desktop (macOS): /var/run/docker.sock
       - "../data/router:/data"             # owned by mcpuser = uid 0 in the container (hence user "0:0" above)
       # Browser profiles are named Docker volumes (jw-profile-<platform>) created by the router: no host paths, so the same file works on Linux and macOS.
     ports:
+      - "${JW_DASHBOARD_BIND:-127.0.0.1}:${JW_DASHBOARD_HOST_PORT:-18933}:8090"   # the dashboard, for Nginx (/dashboard); nothing listens until it is started
       - "${JW_METRICS_BIND:-127.0.0.1}:${JW_METRICS_PORT:-9464}:9464"   # Prometheus scrape target; nothing listens unless metrics are enabled
     networks: [ jobwatch-core, jobwatch-browsers ]   # MCP port is not published: only the front reaches it
     restart: unless-stopped

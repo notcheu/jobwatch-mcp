@@ -12,6 +12,7 @@ import {
 import { describeInstalled, type InstalledEntry } from '@jobwatch/adapters';
 import { buildCatalog, type CatalogEntry } from '@jobwatch/sdk';
 import type { DockerRunner, InstalledAdapters } from '@jobwatch/core';
+import { dashboard } from './dashboard';
 import { doctor } from './doctor';
 import { login } from './login';
 
@@ -41,6 +42,8 @@ Usage:
   jobwatch adapters disable <id...>    disable adapters
   jobwatch login start <platform>      start a visible browser to sign in by hand (noVNC on loopback)
   jobwatch login stop <platform>       stop it again
+  jobwatch dashboard start [--ttl <minutes>] | stop | status
+                                       open or close the operator dashboard on the running router (closed by default)
   jobwatch doctor                      check configuration, data directory, Docker, image, network, profiles
   jobwatch --help | --version
 
@@ -237,6 +240,11 @@ export async function run(argv: readonly string[], deps: Deps): Promise<number> 
     }
     if (command === 'login')
       return await login(
+        deps,
+        [subcommand, ...rest].filter((part): part is string => part !== undefined),
+      );
+    if (command === 'dashboard')
+      return await dashboard(
         deps,
         [subcommand, ...rest].filter((part): part is string => part !== undefined),
       );

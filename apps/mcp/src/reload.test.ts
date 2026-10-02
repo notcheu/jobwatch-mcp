@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sendControl, controlSocketPath } from '@jobwatch/core';
+import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installedFixtures, connectClient } from './harness';
@@ -90,5 +91,66 @@ describe('hot reload of adapters', () => {
     await running?.close(500);
     running = undefined;
     expect(await sendControl(controlSocketPath(dir), { command: 'ping' })).toBeUndefined();
+  });
+});
+
+describe('the dashboard through the control socket', () => {
+  const freePort = (): Promise<number> =>
+    new Promise((resolve) => {
+      const probe = createServer();
+      probe.listen(0, '127.0.0.1', () => {
+        const port = (probe.address() as AddressInfo).port;
+        probe.close(() => resolve(port));
+      });
+    });
+
+  it('is closed at startup, opens on dashboard.start, answers, and closes on dashboard.stop', async () => {
+    await enable(['probe']);
+    const port = await freePort();
+    await boot({ JW_DASHBOARD_PORT: String(port) });
+    const socket = controlSocketPath(dir);
+    expect(await sendControl(socket, { command: 'dashboard.status' })).toMatchObject({ ok: true, running: false });
+    await expect(fetch(`http://127.0.0.1:${port}/dashboard/api/v1/me`)).rejects.toThrow();
+
+    expect(await sendControl(socket, { command: 'dashboard.start', ttlMinutes: 5 })).toMatchObject({
+      ok: true,
+      running: true,
+      signIn: 'none',
+    });
+    const me = await fetch(`http://127.0.0.1:${port}/dashboard/api/v1/me`);
+    expect(await me.json()).toMatchObject({ mode: 'local', version: 'test' });
+
+    expect(await sendControl(socket, { command: 'dashboard.stop' })).toMatchObject({ ok: true, running: false });
+    await expect(fetch(`http://127.0.0.1:${port}/dashboard/api/v1/me`)).rejects.toThrow();
+  });
+
+  it('shows a call made through MCP in the dashboard, with its parameters in the detail only', async () => {
+    await enable(['probe']);
+    const port = await freePort();
+    const { url } = await boot({ JW_DASHBOARD_PORT: String(port) });
+    await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
+    const client = await connectClient(url);
+    await client.listTools();
+    await client.callTool({ name: 'probe_echo', arguments: { word: 'hello-dashboard' } });
+    await client.close();
+    const list = (await (await fetch(`http://127.0.0.1:${port}/dashboard/api/v1/calls`)).json()) as {
+      calls: { id: number; tool: string }[];
+    };
+    expect(list.calls[0]?.tool).toBe('probe_echo');
+    expect(JSON.stringify(list)).not.toContain('hello-dashboard');
+    const detail = (await (await fetch(`http://127.0.0.1:${port}/dashboard/api/v1/calls/${list.calls[0]?.id}`)).json()) as {
+      params: unknown;
+    };
+    expect(detail.params).toEqual({ word: 'hello-dashboard' });
+  });
+
+  it('is closed with the router', async () => {
+    await enable(['probe']);
+    const port = await freePort();
+    await boot({ JW_DASHBOARD_PORT: String(port) });
+    await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
+    await running?.close(500);
+    running = undefined;
+    await expect(fetch(`http://127.0.0.1:${port}/dashboard/api/v1/me`)).rejects.toThrow();
   });
 });

@@ -12,7 +12,9 @@ services:
     user: "0:0"                              # Docker Desktop's socket is not owned by uid 1000
     environment:
       JW_AUTH: none
+      JW_DASHBOARD_URL: http://127.0.0.1:18933/dashboard/
       JW_BASE_URL: http://127.0.0.1:18932
       JW_BROWSER_IMAGE: jobwatch-browser:dev  # built locally for the host architecture (arm64 uses Chromium, see 05)
     ports:
       - "127.0.0.1:18932:8080"
+      - "127.0.0.1:18933:8090"   # the dashboard, after `jobwatch dashboard start`: http://127.0.0.1:18933/dashboard/

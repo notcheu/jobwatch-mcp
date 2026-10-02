@@ -35,6 +35,7 @@ import {
 } from '@jobwatch/core';
 import { installed } from '@jobwatch/adapters';
 import { createApp } from './app';
+import { DashboardManager } from './dashboard/manager';
 import { createMetricsServer } from './metrics-server';
 
 /** The call log keeps 30 days and usage events 2 days: tidy up at startup and every six hours. */
@@ -47,6 +48,8 @@ export interface RunningServer {
   breaker: CircuitBreaker;
   /** The last calls, in memory (what the dashboard shows). */
   callLog: CallLog;
+  /** The on-demand dashboard listener (off until started). */
+  dashboard: DashboardManager;
   /** Present once a browser adapter has been enabled. */
   readonly runtime: RuntimeManager | undefined;
   /** Re-read the list of enabled adapters and swap the registry without a restart. Refused when `JW_ADAPTERS` pins the list. */
@@ -279,12 +282,49 @@ export async function start(options: StartOptions): Promise<RunningServer> {
 
   // The host-side commands (`jobwatch adapters enable ...` reloads a running router) reach the router through a Unix socket in the
   // data directory. A router without a writable data directory (tests, read-only setups) simply has no control channel.
+  // The dashboard listener starts only when the host asks for it through the control socket (docs/plans/17-dashboard.md).
+  const dashboard = new DashboardManager(
+    {
+      port: config.dashboard.port,
+      url: config.dashboard.url,
+      publicOrigin: new URL(config.baseUrl).origin,
+      authRequired: config.auth === 'front',
+      oidc: config.dashboard.oidc,
+      idleS: config.dashboard.idleS,
+      sessionMaxS: config.dashboard.sessionMaxS,
+      writeWindowS: config.dashboard.writeWindowS,
+      staticDir: config.dashboard.staticDir,
+    },
+    {
+      version: options.version,
+      clock,
+      store,
+      callLog,
+      limiter,
+      breaker,
+      registry: () => holder.current(),
+      installed: table,
+      pinned: config.adaptersFromEnv !== undefined,
+      runtime: () => runtime,
+    },
+    logger,
+    clock,
+  );
+
   const controlServer =
     options.controlSocket === false
       ? undefined
       : await startControlServer(
           options.controlSocket ?? controlSocketPath(config.dataDir),
-          { ping: async () => ({ version: options.version }), 'adapters.reload': async () => ({ ...(await reloadAdapters()) }) },
+          {
+            ping: async () => ({ version: options.version }),
+            'adapters.reload': async () => ({ ...(await reloadAdapters()) }),
+            'dashboard.start': async (request) => ({
+              ...(await dashboard.start(typeof request['ttlMinutes'] === 'number' ? { ttlMinutes: request['ttlMinutes'] } : {})),
+            }),
+            'dashboard.stop': async () => ({ ...(await dashboard.stop()) }),
+            'dashboard.status': async () => ({ ...dashboard.status() }),
+          },
           (error) => logger.warn({ err: error }, 'control_socket_error'),
         ).catch((error: unknown) => {
           logger.warn({ err: error }, 'control_socket_unavailable');
@@ -297,6 +337,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     limiter,
     breaker,
     callLog,
+    dashboard,
     get runtime() {
       return runtime;
     },
@@ -306,6 +347,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     close: (graceMs = 10_000) => {
       closing ??= (async () => {
         clearInterval(pruneTimer);
+        await dashboard.stop('shutdown');
         await controlServer?.close();
         await runtime?.shutdown();
         await Promise.all([closeServer(mcpServer, graceMs), metricsServer ? closeServer(metricsServer, graceMs) : Promise.resolve()]);

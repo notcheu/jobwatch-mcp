@@ -40,6 +40,8 @@ const envSchema = z.object({
     .optional(),
   JW_BROWSER_MAX_TABS: z.coerce.number().int().min(1).default(3),
   JW_DASHBOARD_PORT: integer(1024, 65535, 8090),
+  JW_DASHBOARD_URL: z.url().optional(),
+  JW_DASHBOARD_STATIC_DIR: z.string().min(1).optional(),
   JW_DASHBOARD_IDLE_S: integer(60, 86_400, 1800),
   JW_DASHBOARD_SESSION_MAX_S: integer(300, 604_800, 28_800),
   JW_DASHBOARD_WRITE_WINDOW_S: integer(0, 86_400, 600),
@@ -91,6 +93,10 @@ export interface Config {
   /** The operator dashboard (docs/plans/17-dashboard.md). Off until `jobwatch dashboard start`. */
   dashboard: {
     port: number;
+    /** Where the operator opens it (`JW_DASHBOARD_URL`); default `<JW_BASE_URL origin>/dashboard/`. */
+    url: string;
+    /** The built interface (`JW_DASHBOARD_STATIC_DIR`); without it a plain page says only the API is up. */
+    staticDir: string | undefined;
     /** The dashboard stops itself after this many seconds without a request. */
     idleS: number;
     /** A session never lasts longer than this. */
@@ -206,6 +212,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       maxTabs: parsed.JW_BROWSER_MAX_TABS,
       dashboard: {
         port: parsed.JW_DASHBOARD_PORT,
+        url: parsed.JW_DASHBOARD_URL ?? `${baseUrl.origin}/dashboard/`,
+        staticDir: parsed.JW_DASHBOARD_STATIC_DIR,
         idleS: parsed.JW_DASHBOARD_IDLE_S,
         sessionMaxS: parsed.JW_DASHBOARD_SESSION_MAX_S,
         writeWindowS: parsed.JW_DASHBOARD_WRITE_WINDOW_S,
