@@ -48,6 +48,7 @@ Tasks: update the routine docs per `13-…`; run old and new paths in parallel f
 **Exit**: 5 consecutive unattended daily runs meeting the global acceptance list in `11-…`.
 
 ## Backlog / ideas
+- **Future possibility, not planned (decided 2026-10-02): one shared tool definition for the company-board ATS tools.** `teamtailor_jobs`, `greenhouse_jobs`, `lever_jobs` and `ashby_jobs` have identical parameters and differ only in the resolver and the parser, so their schemas, descriptions and catalog entries are written four times. A `defineBoardTool(source)` factory in the SDK would remove that. The adapters stay separate (one per ATS, one budget each); only the tool definition would be shared. Not implemented.
 Smart caching of job details (by id, 24 h) to cut page views; `keep_warm_s` hint; Playwright→raw CDP swap if detection signals matter; a web status page; email the routine's "needs login" alert directly from the router; add Indeed/other platforms as adapters.
 
 ## Definition of done (every task)

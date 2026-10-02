@@ -59,7 +59,7 @@ docker compose -f deploy/compose.yml --env-file deploy/.env up -d      # as mcpu
 Pinned versions: TypeScript 5.9.3 on purpose (`typescript-eslint` 8.71 supports TypeScript below 6.1 only; revisit before moving to TypeScript 7). After adding or removing a package, the Nx project graph cache can be stale for direct `eslint` runs: run any `nx` command (for example `npx nx show projects`) first. After changing any tool definition, run `catalog:gen` (a contract test fails on drift).
 
 ## Sources of truth and paths
-- **Docs vs code:** until code exists, the numbered docs are the spec. Once code exists, code wins for behaviour; any change to behaviour or to a decision must update the affected doc (and the diagram in `16-…` if it shows it) in the same commit. A `VERIFY:` tag marks an assumption that is **not** a fact: verify it (Phase 0 or when implementing) and record the outcome in `14-risks-and-open-questions.md` and the affected file.
+- **Docs vs code:** until code exists, the numbered docs in `docs/plans/` are the spec. Once code exists, code wins for behaviour; any change to behaviour or to a decision must update the affected doc (and the diagram in `16-…` if it shows it) in the same commit. A `VERIFY:` tag marks an assumption that is **not** a fact: verify it (Phase 0 or when implementing) and record the outcome in `14-risks-and-open-questions.md` and the affected file.
 - **Generated, never hand-edited:** `packages/adapter-*/catalog/*.json`.
 - **Layout:** see `03-router-spec.md` ("Repo layout: Nx monorepo"). Module-boundary rules are lint errors: adapters import only `@jobwatch/sdk`; only `packages/core/src/browser/session.ts` imports `playwright-core`.
 - **LinkedIn extraction:** the proven logic of `linkedin-extract.js` now lives in `packages/adapter-linkedin/src/{extract,parse}.ts`.
@@ -78,6 +78,8 @@ Pinned versions: TypeScript 5.9.3 on purpose (`typescript-eslint` 8.71 supports 
 - Changing what the router can do through the Docker socket (new mounts, privileges, capabilities), the Watchtower scope, or the CI registry and its credentials.
 
 ## Documentation — load only what the task needs, but any doc may be pulled in
+All numbered docs (`00-overview.md` … `16-architecture-diagrams.md`) live in **`docs/plans/`**; names below are relative to that folder. In code comments they are written with the full path (`docs/plans/05-browser-runtime.md`). Phase 0 measurements: `docs/measurements.md`.
+
 The numbered docs cross-reference each other, so context is loaded **on demand, one task at a time**:
 1. Identify the task in the table and read the docs in its **Start with** column. Nothing else.
 2. Every numbered doc begins with a **Related** line saying which other docs to pull in and when. Follow a link only when the task actually touches that topic; if the current task does not need doc B, do not load it.

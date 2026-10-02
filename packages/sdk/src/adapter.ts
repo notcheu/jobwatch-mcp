@@ -11,7 +11,7 @@ export interface RatePolicy {
   perDay: number;
 }
 
-/** Human-like pause between page loads, drawn uniformly from [minMs, maxMs] (07-adapter-linkedin.md: 2.5 to 5 s). */
+/** Human-like pause between page loads, drawn uniformly from [minMs, maxMs] (docs/plans/07-adapter-linkedin.md: 2.5 to 5 s). */
 export interface Pacing {
   minMs: number;
   maxMs: number;
@@ -62,7 +62,7 @@ export interface HttpAdapter extends AdapterBase {
   /**
    * Also reach ANY public https host, for ATS boards on a company's own domain (`careers.bsport.io`). Off unless set, shown in
    * the catalog (`open_https`), and guarded by the HTTP client: GET and POST to https port 443 only, names that cannot be public
-   * are refused, and every address the name resolves to must be public, on every redirect hop (`09-security.md`).
+   * are refused, and every address the name resolves to must be public, on every redirect hop (`docs/plans/09-security.md`).
    * Declare it only when a tool takes a URL from the caller; `allowedHosts` still lists the ATS's own hosts.
    */
   openHttps?: boolean;

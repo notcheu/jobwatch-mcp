@@ -1,5 +1,5 @@
 /**
- * Error model shared by the engine and the adapters (03-router-spec.md, "Error model").
+ * Error model shared by the engine and the adapters (docs/plans/03-router-spec.md, "Error model").
  * Tool errors reach the client as `{ code, message, retry_after_s, details }`.
  * NEVER put cookies, tokens, full URLs with session parameters, or raw HTML in a message or in `details`
  * (use `redactUrl` for URLs).

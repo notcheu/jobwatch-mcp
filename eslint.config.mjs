@@ -1,4 +1,4 @@
-// Flat ESLint config. Besides style, this file ENFORCES the architecture (see 03-router-spec.md, "Repo layout: Nx monorepo"):
+// Flat ESLint config. Besides style, this file ENFORCES the architecture (see docs/plans/03-router-spec.md, "Repo layout: Nx monorepo"):
 //   - Nx module boundaries: which package type may depend on which.
 //   - Adapters import only @jobwatch/sdk: no engine, no browser library, no Node network/file/process APIs.
 //   - playwright-core is imported in exactly one file.

@@ -30,7 +30,7 @@ COPY apps/mcp/external-deps.package.json ./package.json
 RUN --mount=type=cache,target=/root/.npm npm install --omit=dev --no-audit --no-fund && mkdir -p node_modules
 
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
-# The router spawns browser containers through the host's rootless socket (see 10-deployment.md).
+# The router spawns browser containers through the host's rootless socket (see docs/plans/10-deployment.md).
 # Only the docker CLI is needed (no daemon): copy the static binary from the official CLI image (pin by digest later).
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 RUN apt-get update \
@@ -43,7 +43,7 @@ WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist/apps/mcp ./dist/mcp
 COPY --from=build /app/dist/apps/cli ./dist/cli
-# The Chrome seccomp profile is read by the docker CLI in THIS container when it starts a browser (05-browser-runtime.md, G6).
+# The Chrome seccomp profile is read by the docker CLI in THIS container when it starts a browser (docs/plans/05-browser-runtime.md, G6).
 COPY images/browser/chrome-seccomp.json /etc/jobwatch/chrome-seccomp.json
 # `jobwatch` available inside the container: docker compose exec router jobwatch adapters list
 RUN printf '#!/bin/sh\nexec node /app/dist/cli/main.js "$@"\n' > /usr/local/bin/jobwatch && chmod +x /usr/local/bin/jobwatch

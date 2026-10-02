@@ -53,7 +53,7 @@ const REDIRECT = new Set([301, 302, 303, 307, 308]);
 const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * The `HttpClient` adapters receive (03-router-spec.md). It enforces, for every request AND every redirect hop:
+ * The `HttpClient` adapters receive (docs/plans/03-router-spec.md). It enforces, for every request AND every redirect hop:
  * the host allowlist (https only, exact host), a timeout, a response size cap, a politeness gap per host and a concurrency
  * limit. It never sends or stores cookies, never exposes `Set-Cookie`, and forbids adapters from setting identity headers.
  */

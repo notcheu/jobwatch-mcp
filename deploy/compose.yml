@@ -1,6 +1,6 @@
 # Always-on services only. Browser containers are spawned by the router (label jobwatch.managed=true).
 # Your existing Nginx proxies https://mcp.noguetith.fr to the single published MCP port below (deploy/nginx/).
-# Runs on Linux (Ubuntu, rootless Docker) and on macOS (Docker Desktop, arm64) for development: see compose.dev.yml and 10-deployment.md.
+# Runs on Linux (Ubuntu, rootless Docker) and on macOS (Docker Desktop, arm64) for development: see compose.dev.yml and docs/plans/10-deployment.md.
 name: jobwatch
 volumes:
   redis-data:

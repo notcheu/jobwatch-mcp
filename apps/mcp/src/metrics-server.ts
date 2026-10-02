@@ -3,7 +3,7 @@ import type { Metrics } from '@jobwatch/core';
 
 /**
  * Prometheus scrape endpoint on its OWN listener (JW_METRICS_PORT), never on the MCP port, so it can never be reached
- * through the OAuth front or Nginx (03-router-spec.md). Serves GET /metrics and nothing else.
+ * through the OAuth front or Nginx (docs/plans/03-router-spec.md). Serves GET /metrics and nothing else.
  */
 export function createMetricsServer(metrics: Metrics): Server {
   return createServer((req, res) => {

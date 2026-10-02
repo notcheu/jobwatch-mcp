@@ -1,7 +1,7 @@
 import type { AdapterModule } from './adapter';
 import { inputJsonSchema, outputJsonSchema, type JsonSchema } from './schema';
 
-/** One tool as exposed by `tools/list`, in the snapshot format of 04-catalog-and-tool-schemas.md. */
+/** One tool as exposed by `tools/list`, in the snapshot format of docs/plans/04-catalog-and-tool-schemas.md. */
 export interface CatalogEntry {
   name: string;
   title: string;

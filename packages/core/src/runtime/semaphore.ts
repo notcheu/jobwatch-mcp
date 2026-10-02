@@ -1,7 +1,7 @@
 import { JobwatchError } from '@jobwatch/sdk';
 
 /**
- * FIFO async semaphore. The browser lease uses capacity 1: one browser at a time (RAM, 06-memory-and-lifecycle-policy.md).
+ * FIFO async semaphore. The browser lease uses capacity 1: one browser at a time (RAM, docs/plans/06-memory-and-lifecycle-policy.md).
  * Waiters are served strictly in arrival order; a waiter that is not served within `timeoutMs` gets a `busy` error
  * and leaves the queue (so it can never be served later by mistake).
  */

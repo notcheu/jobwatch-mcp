@@ -21,7 +21,7 @@ export function outputJsonSchema(schema: z.ZodType): JsonSchema {
 const isRecord = (value: unknown): value is JsonSchema => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
- * Walk an INPUT JSON Schema and report what the project forbids (04-catalog-and-tool-schemas.md):
+ * Walk an INPUT JSON Schema and report what the project forbids (docs/plans/04-catalog-and-tool-schemas.md):
  * objects that allow extra properties, strings without `maxLength` (unless an enum or const), arrays without `maxItems`.
  */
 export function findInputSchemaProblems(schema: JsonSchema, path = '$'): SchemaProblem[] {

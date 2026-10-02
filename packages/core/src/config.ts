@@ -10,7 +10,7 @@ const isLoopbackUrl = (url: URL): boolean => LOOPBACK_HOSTS.has(url.hostname);
 const integer = (min: number, max: number, fallback: number) => z.coerce.number().int().min(min).max(max).default(fallback);
 const flag = z.enum(['true', 'false']).transform((value) => value === 'true');
 
-/** Every JW_* variable the router reads (03-router-spec.md, "Configuration"). */
+/** Every JW_* variable the router reads (docs/plans/03-router-spec.md, "Configuration"). */
 const envSchema = z.object({
   JW_BASE_URL: z.url({
     protocol: /^https?$/,

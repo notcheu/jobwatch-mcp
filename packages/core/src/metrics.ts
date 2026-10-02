@@ -16,7 +16,7 @@ export interface Metrics {
 }
 
 /**
- * Prometheus metrics (03-router-spec.md, "Health and ops endpoints"). Labels are low-cardinality on purpose: tool,
+ * Prometheus metrics (docs/plans/03-router-spec.md, "Health and ops endpoints"). Labels are low-cardinality on purpose: tool,
  * platform and result code only; never arguments, URLs or ids. Served on a separate listener, never on the MCP port.
  */
 export function createMetrics(info: { version: string }): Metrics {

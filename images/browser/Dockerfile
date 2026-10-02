@@ -1,4 +1,4 @@
-# The browser image (05-browser-runtime.md): Xvfb + Google Chrome stable on amd64, Debian Chromium on arm64 (development only).
+# The browser image (docs/plans/05-browser-runtime.md): Xvfb + Google Chrome stable on amd64, Debian Chromium on arm64 (development only).
 # Promoted from the Phase 0 spikes; build: docker build -t jobwatch-browser:dev images/browser
 FROM debian:bookworm-slim
 ARG DEBIAN_FRONTEND=noninteractive

@@ -3,7 +3,7 @@
  * `BrowserSession` built here from the one existing tab; swapping Playwright for Patchright or raw CDP means changing
  * this file and nothing else.
  *
- * Rules (05-browser-runtime.md, 06-memory-and-lifecycle-policy.md): connect by IP; use the tab Chrome started with;
+ * Rules (docs/plans/05-browser-runtime.md, docs/plans/06-memory-and-lifecycle-policy.md): connect by IP; use the tab Chrome started with;
  * NEVER `newPage()`; close any other tab that appears; park the tab on about:blank instead of closing it.
  */
 import { isUrlAllowed, type BrowserSession } from '@jobwatch/sdk';
@@ -68,7 +68,7 @@ export const connectBrowser: ConnectBrowser = async (address, allowedHosts) => {
 
     // Documents and frames only: a navigation to a host the adapter did not declare (a redirect, a link, a popup) is refused.
     // Sub-resources (scripts, images) are the site's own business and load normally; blocking them would also change how
-    // the session looks to the site (decision recorded in 05-browser-runtime.md).
+    // the session looks to the site (decision recorded in docs/plans/05-browser-runtime.md).
     await context.route('**/*', async (route) => {
       const request = route.request();
       if (request.isNavigationRequest() && !isUrlAllowed(request.url(), allowedHosts)) await route.abort('blockedbyclient');

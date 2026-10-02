@@ -50,7 +50,7 @@ function check(label: string, value: string, pattern: RegExp): void {
 }
 
 /**
- * Every `docker run` flag of 06-memory-and-lifecycle-policy.md, as an argument ARRAY. Exported for the tests, which
+ * Every `docker run` flag of docs/plans/06-memory-and-lifecycle-policy.md, as an argument ARRAY. Exported for the tests, which
  * pin the hardening: nothing here may be dropped without the test (and the doc) changing.
  */
 export function runArgs(spec: RuntimeSpec): string[] {
@@ -122,7 +122,7 @@ export const LOGIN_LABEL = 'jobwatch.login=true';
 export const LOGIN_PORT = 6080;
 
 /**
- * `docker run` arguments of the manual-login container (05-browser-runtime.md, "Login procedure"): the same hardening as a
+ * `docker run` arguments of the manual-login container (docs/plans/05-browser-runtime.md, "Login procedure"): the same hardening as a
  * run container plus noVNC published on the host's loopback ONLY, and a label of its own so the orphan reaper (which only
  * knows `jobwatch.managed`) never kills a login in progress. The caller puts `MODE=login` and `VNC_PASSWORD` in `spec.env`.
  */

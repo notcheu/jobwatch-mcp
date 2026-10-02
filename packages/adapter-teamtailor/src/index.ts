@@ -67,7 +67,7 @@ export default defineAdapter({
   platform: 'teamtailor',
   kind: 'http',
   // `<handle>.teamtailor.com` is listed; a company's own domain (careers.bsport.io) is reached through openHttps, with the
-  // address checks of 09-security.md, and must answer with a Teamtailor feed to be believed.
+  // address checks of docs/plans/09-security.md, and must answer with a Teamtailor feed to be believed.
   allowedHosts: ['*.teamtailor.com'],
   openHttps: true,
   // one budget per company board (a request every 3 minutes at most, a few a day in practice), and a high ceiling for the platform

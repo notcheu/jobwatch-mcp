@@ -17,7 +17,7 @@ export interface RuntimeSpec {
   profileVolume: string;
   /** Internal Docker network shared with the router. */
   network: string;
-  /** Path of the custom seccomp profile, as seen by the `docker` CLI process (05-browser-runtime.md, G6). */
+  /** Path of the custom seccomp profile, as seen by the `docker` CLI process (docs/plans/05-browser-runtime.md, G6). */
   seccompProfile?: string;
   env?: Readonly<Record<string, string>>;
 }
