@@ -204,7 +204,7 @@ flowchart TB
     LSR["linkedin_search_and_read"]
     WM["wttj_matches<br/>Phase 3"]
     AS["apec_search, apec_job<br/>Phase 3"]
-    AJ["ats_jobs<br/>Phase 3"]
+    AJ["ATS tools: teamtailor_jobs, greenhouse_jobs, ...<br/>Phase 3"]
     MR["memory_report"]
   end
 
