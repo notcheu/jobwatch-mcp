@@ -35,18 +35,37 @@ Filters in the URL were ignored (mix of freelance/CDI/support). Skip in v1 unles
 ## Indeed
 An Indeed connector already exists on the Claude side (tools `search_jobs`, `get_job_details`, …). Keep using it directly; it is **not** part of the orchestrator. (It failed to connect on 2026-09-29/30 and appeared later: test it during Phase 5.)
 
-## Company career pages / public ATS job boards — plain HTTP, no browser (high value)
-Many watch-list companies host jobs on Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Teamtailor, etc., which expose public JSON/RSS endpoints. A `ats_jobs(provider, company, query)` tool calls them with built-in `fetch` (no container, no semaphore).
-**S9 result (2026-10-01):** probed the 24 watch-list slugs (`spikes/s9/probe-ats.mjs`, draft mapping in `spikes/s9/companies.draft.yaml`). **15 of 24 have a working public board**: Ashby (nabla, doctolib, sorare, alan, back-market, pennylane, ledger, spendesk), Lever (pigment, contentsquare, swile, aircall, malt, brevo, blablacar, modjo), Greenhouse (doctolib, mirakl, algolia). Doctolib answers on both Greenhouse (154 jobs) and Ashby (151): check which is current. Empty or tiny boards (modjo 0, spendesk 0, sorare 4, ledger 5, mirakl 10) may be partial. **No public ATS found** for: bsport-1, payfit, leboncoin, ornikar, manomano, criteo (Workable widgets exist for some but return 0 jobs); they likely use Teamtailor, Personio, Welcome to the Jungle itself or a custom site. Verified endpoints: Greenhouse `/v1/boards/<token>/jobs`, Lever `/v0/postings/<token>?mode=json`, Ashby `/posting-api/job-board/<token>` (token may be case- or name-sensitive, e.g. `backmarket`, `Modjo`). SmartRecruiters and Recruitee were probed and matched nothing; Teamtailor was not probed.
-Original patterns:
-- Greenhouse: `https://boards-api.greenhouse.io/v1/boards/<token>/jobs?content=true`
-- Lever: `https://api.lever.co/v0/postings/<company>?mode=json`
-- Ashby: `https://api.ashbyhq.com/posting-api/job-board/<name>`
-- SmartRecruiters: `https://api.smartrecruiters.com/v1/companies/<id>/postings`
-- Workable: public widget/API under `apply.workable.com`
-- Teamtailor: per-company `/jobs.rss`
-Plan: (1) `catalog/companies.yaml` maps each watched company to `{provider, token, careers_url}`; (2) a one-off discovery script probes each careers page for ATS links and fills the file; (3) the tool filters by title keywords and location and returns normalized cards with `source=<provider>`; (4) companies without a public ATS fall back to `careers_page` via the browser adapter (Phase 3+, only if worth it).
-Large groups from the routine (Kering, Lefebvre Dalloz, TotalEnergies Digital Factory, Siemens, Disneyland Paris, Decathlon, SNCF Connect & Tech, BPCE SI, Crédit Agricole, Amundi, La Banque Postale, Bpifrance, Orange, L'Oréal, LVMH, AFP, FDJ United) often use SAP SuccessFactors/Workday/Taleo: usually no clean public API → low priority; LinkedIn already surfaces many of them.
+## Applicant tracking systems (ATS): one dedicated adapter each (decided 2026-10-02)
+A combined `ats_jobs` tool was dropped: every ATS has its own URLs, response shape, quirks and failure modes, so each one gets its own adapter package, tool and tests (`packages/adapter-<ats>`, tool `<ats>_jobs`), sharing only the SDK helpers (`termMatcher`, `extractHints`, the job store). A company is passed to the tool as a **handle** (its name at that ATS, `bsport`) **or as the URL of its board** (`https://careers.bsport.io/`, `https://boards.greenhouse.io/algolia`), up to a few per call; the adapter works out the provider-specific API from either. A URL must belong to that ATS or, for Teamtailor, be a company's own custom domain that turns out to be a Teamtailor site.
+
+**Hosts that cannot be listed in advance.** Greenhouse, Lever and Ashby have fixed API hosts, so their `allowedHosts` stay exact. Teamtailor boards live on `<handle>.teamtailor.com` (a wildcard suffix) or on any custom domain (`careers.bsport.io`). Letting a model-supplied URL reach arbitrary hosts is a request-forgery risk (the router could be pointed at the home network or a cloud metadata address), so the SDK gets two explicit, visible capabilities, off by default and shown in the catalog: wildcard suffixes (`*.teamtailor.com`) and an `openHttps` flag for custom domains. With `openHttps` the HTTP client still enforces: GET only; https on port 443 only; no IP literals, no `localhost`/`.local`/`.internal`; every address the name resolves to must be public (loopback, private, link-local and metadata ranges are refused), re-checked on every redirect hop; size, time and per-host pacing limits; no cookies or identity headers. See `09-security.md`. The first batch is **Apec, Teamtailor and WTTJ**; the rest are listed here so the choice of the next one is deliberate.
+
+"Verified" means checked against the live service. Everything else is from memory and carries **VERIFY**: probe it (plain GET, honest user agent, one request) before writing the adapter, and never assume a shape.
+
+| ATS | Used by | Public access (handle = the company's name at the ATS) | Status |
+|---|---|---|---|
+| **Apec** (platform) | French "cadre" jobs | search `POST apec.fr/cms/webservices/rechercheOffre` (plain HTTP); full text `GET /cms/webservices/offre/public?numeroOffre=` only from a page (browser) | **first batch**, verified 2026-10-01 |
+| **Teamtailor** | many European companies, strong in France and Nordics | `https://<handle>.teamtailor.com/jobs` (HTML) and `/jobs.rss`; some companies use their own domain | **first batch**, VERIFY |
+| **WTTJ** (platform) | French tech | logged-in `jobs-matches` page, browser only (plain HTTP is 403; `robots.txt` disallows query strings) | **first batch**, see above |
+| Greenhouse | Doctolib, Algolia, Mirakl | `GET boards-api.greenhouse.io/v1/boards/<handle>/jobs?content=true` | verified 2026-10-01; next |
+| Lever | Pigment, Aircall, Swile, Malt, Brevo, BlaBlaCar | `GET api.lever.co/v0/postings/<handle>?mode=json` (handle is case-sensitive) | verified 2026-10-01; next |
+| Ashby | Alan, Pennylane, Nabla, Back Market, Ledger | `GET api.ashbyhq.com/posting-api/job-board/<handle>` (up to 4 MB) | verified 2026-10-01; next |
+| SmartRecruiters | large groups | `GET api.smartrecruiters.com/v1/companies/<handle>/postings` | documented API, matched no watched company; VERIFY |
+| Workable | SMBs | `GET apply.workable.com/api/v1/widget/accounts/<handle>` (widget) | VERIFY; the widgets seen returned 0 jobs |
+| Recruitee | SMBs, Europe | `GET <handle>.recruitee.com/api/offers/` | VERIFY |
+| Personio | German-speaking and French SMBs | XML feed `<handle>.jobs.personio.de/xml` | VERIFY |
+| BambooHR | SMBs | `GET <handle>.bamboohr.com/careers/list` | VERIFY |
+| Breezy HR | SMBs | `GET <handle>.breezy.hr/json` | VERIFY |
+| Pinpoint | mid-size UK/EU | `GET <handle>.pinpointhq.com/postings.json` | VERIFY |
+| JazzHR, Jobvite, Homerun | SMBs | public job pages or feeds, no stable JSON known | VERIFY, low priority |
+| Workday | large groups (TotalEnergies, L'Oréal, Decathlon...) | tenant sites `<tenant>.wd<N>.myworkdayjobs.com`; an undocumented JSON endpoint behind the site's own search | VERIFY, fragile |
+| SAP SuccessFactors, Oracle Taleo, iCIMS, Cornerstone | large groups | no clean public API, often a login-free HTML search | low priority; LinkedIn already surfaces most of these |
+
+Companies of the routine's watch list that publish no public board (bsport, ornikar, payfit, manomano, criteo, leboncoin): check whether they sit on Teamtailor, Personio, Recruitee or Workable before building anything for them.
+
+Per adapter, in this order: probe the endpoint, fix the response shape in a zod schema (a changed shape becomes `adapter_broken`, never an empty list), write synthetic fixtures, then tests, docs, live smoke. Conventions every ATS tool follows (same as LinkedIn, `07-adapter-linkedin.md`): a handle (or a short list) in, `disallowed_terms` plus `disallowed_scope` per call, a date range, `max_results`, normalized postings with `source`, `new`, `first_seen`, `last_seen`, and the job store for "have I seen this".
+
+Draft code for Greenhouse, Lever and Ashby (provider parsers, HTML-to-text, the watch list) was written on 2026-10-02 and set aside when the decision above was taken; it is a starting point, not a design.
 
 ## Adapter checklist (for any new platform)
 1. Catalog entry (schemas, limits, hosts). 2. Adapter class (+ session check if logged-in). 3. Parser + fixtures. 4. Rate policy and budget. 5. Contract tests. 6. Docs: add a section here with URL patterns, DOM facts, pitfalls.

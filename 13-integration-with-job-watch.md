@@ -15,9 +15,9 @@ Only **how sources are read**. Profile, criteria, triage, mail template/rules, m
 | LinkedIn France remote (post-filter) | `linkedin_search(geo="france", remote_only=true, posted_within="last_24_hours", max_results=50)` then `linkedin_job` for plausible ones |
 | Wednesday sweep (5 pages, no time filter, all offers) | `linkedin_search(posted_within="any", max_results=125)` (+ `linkedin_job` for unseen plausible cards); promoted flag available in cards |
 | WTTJ matches | `wttj_matches` (Phase 3) |
-| WTTJ company pages | `ats_jobs` for companies with a public ATS (WTTJ `robots.txt` disallows the `jobs?query=` URLs) |
+| WTTJ company pages | the company's own ATS tool (`teamtailor_jobs`, later `greenhouse_jobs`, `lever_jobs`, `ashby_jobs`) for companies with a public ATS (WTTJ `robots.txt` disallows the `jobs?query=` URLs) |
 | APEC searches | `apec_search`, then `apec_job` for plausible offers (Phase 3) |
-| Career pages | `ats_jobs` (Phase 3) |
+| Career pages | the ATS tool of the company's provider (Phase 3) |
 | Indeed | unchanged (separate Claude connector) |
 | Dedup vs memory | the router remembers every job whose page it read (`JW_JOB_RETENTION_DAYS`, default 30) and never reads that page again, judging it from the database with each call's terms (`new` and `first_seen` tell the routine what is fresh; `stored_jobs: "skip"` hides stored jobs); `skip_ids` (e.g. built from `claude/offres-vues.md`) stays available for ids the router never opened |
 | Triage, mail, memory update, notification | unchanged |

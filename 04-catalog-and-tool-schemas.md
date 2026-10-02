@@ -59,8 +59,8 @@ Behaviour: see `07-adapter-linkedin.md`. Stored jobs are answered without a visi
 Input: the search args + `{ "skip_ids": [...] (maxItems 500), "stored_jobs": "evaluate" | "skip", "max_jobs": 25 (0-25, job pages to visit), "max_returned": 25 (1-50), "description_max_chars": 3000, "disallowed_terms": [...], "disallowed_scope": "title"|"title_then_description" }`. No built-in terms: the caller sends them.
 Output: `{ jobs: [as above, `source` "fetched" or "stored"], known_ids, not_returned_ids, excluded, failed, remaining_ids, page, pages_loaded, scanned, has_more }`. `remaining_ids` non-empty = call again with the same arguments to continue.
 
-### `apec_search` (HTTP), `apec_job` (browser), `wttj_matches`, `free_work_search`, `ats_jobs` (Phase 3)
-`wttj_company_jobs` was dropped in v1 (WTTJ `robots.txt`, see `08`): company jobs come from `ats_jobs`.
+### `apec_search` (HTTP), `apec_job` (browser), `wttj_matches`, `teamtailor_jobs`, then `greenhouse_jobs`, `lever_jobs`, `ashby_jobs`... (Phase 3)
+One dedicated adapter and tool per ATS (see `08`); there is no combined `ats_jobs`. `wttj_company_jobs` was dropped in v1 (WTTJ `robots.txt`): company jobs come from the company's own ATS tool.
 See `08-adapters-other-sources.md` for inputs/outputs. All return the same normalized card shape: `{ id, source, title, company, location, work_mode, salary_text, posted_text, url, promoted? }`.
 
 ### `seen_filter`, `seen_mark` (Phase 4, optional state)
