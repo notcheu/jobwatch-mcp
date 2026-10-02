@@ -326,3 +326,73 @@ describe('adapters enable / disable', () => {
     expect(await cli(['adapters', 'enable', 'apec'], { env: { JW_DATA_DIR: dataDir } })).toBe(EXIT.ok);
   });
 });
+
+describe('dashboard', () => {
+  it('asks the running router to open it and says where, with the sign-in and the closing time', async () => {
+    const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
+    const seen: unknown[] = [];
+    const control = await startControlServer(controlSocketPath(dataDir), {
+      'dashboard.start': async (request) => (
+        seen.push(request),
+        {
+          running: true,
+          url: 'https://jobs.example.com/dashboard/',
+          signIn: 'google',
+          sessions: 0,
+          stopsAt: '2026-10-09T12:30:00.000Z',
+          requests: 0,
+        }
+      ),
+    });
+    try {
+      expect(await cli(['dashboard', 'start', '--ttl', '15'])).toBe(0);
+    } finally {
+      await control.close();
+    }
+    expect(seen).toEqual([{ command: 'dashboard.start', ttlMinutes: 15 }]);
+    expect(out).toContain('Dashboard is open: https://jobs.example.com/dashboard/');
+    expect(out).toContain('Sign-in: Google');
+    expect(out).toContain('2026-10-09T12:30:00.000Z');
+  });
+
+  it('closes it and reports the status', async () => {
+    const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
+    const control = await startControlServer(controlSocketPath(dataDir), {
+      'dashboard.stop': async () => ({ running: false, url: 'x', signIn: 'google', sessions: 0, stopsAt: null, requests: 3 }),
+      'dashboard.status': async () => ({ running: false, url: 'x', signIn: 'none', sessions: 0, stopsAt: null, requests: 0 }),
+    });
+    try {
+      expect(await cli(['dashboard', 'stop'])).toBe(0);
+      expect(out).toContain('Dashboard is closed.');
+      expect(await cli(['dashboard', 'status'])).toBe(0);
+    } finally {
+      await control.close();
+    }
+  });
+
+  it("says so when no router is running, and shows the router's own refusal", async () => {
+    expect(await cli(['dashboard', 'status'])).toBe(2);
+    expect(err).toContain('No router is running');
+    const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
+    const control = await startControlServer(controlSocketPath(dataDir), {
+      'dashboard.start': async () => {
+        throw new Error('Signing in needs a Google client');
+      },
+    });
+    try {
+      err = '';
+      expect(await cli(['dashboard', 'start'])).toBe(2);
+    } finally {
+      await control.close();
+    }
+    expect(err).toContain('Signing in needs a Google client');
+  });
+
+  it('rejects a missing or unknown action and a bad --ttl', async () => {
+    expect(await cli(['dashboard'])).toBe(1);
+    expect(await cli(['dashboard', 'restart'])).toBe(1);
+    expect(err).toContain('Usage:');
+    for (const ttl of ['0', '-5', 'abc', '5000']) expect(await cli(['dashboard', 'start', '--ttl', ttl]), ttl).toBe(1);
+    expect(await cli(['dashboard', 'stop', '--ttl', '5'])).toBe(1);
+  });
+});

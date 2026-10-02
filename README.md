@@ -18,10 +18,11 @@ The numbered design documents are in [`docs/plans/`](docs/plans/) (start with `0
 5. [Log in to the sites that need it](#log-in-to-the-sites-that-need-it)
 6. [Configure the OAuth provider](#configure-the-oauth-provider)
 7. [Connect Claude](#connect-claude)
-8. [Commands](#commands)
-9. [Tools and example queries](#tools-and-example-queries)
-10. [Configuration reference](#configuration-reference)
-11. [Development](#development)
+8. [Operator dashboard](#operator-dashboard)
+9. [Commands](#commands)
+10. [Tools and example queries](#tools-and-example-queries)
+11. [Configuration reference](#configuration-reference)
+12. [Development](#development)
 
 ## How it fits together
 
@@ -167,6 +168,18 @@ Rotating `TOKEN_SIGNING_SECRET` invalidates every issued token: remove and re-ad
 
 After pulling a new router image, reconnect the connector so Claude reloads the tool list. Check the server from Claude by calling `memory_report` (runtime state, rate-limit usage, recent calls) or `session_status`.
 
+## Operator dashboard
+
+A web interface for the operator: the history of calls (with their parameters), the stored jobs, the searches, the state of each tool and its rate usage, and the estimated tokens returned to Claude. It is **closed by default**: nothing listens until you start it on the host, and it closes by itself after 30 minutes without use.
+
+```bash
+jobwatch dashboard start        # prints the address, e.g. https://<your domain>/dashboard
+jobwatch dashboard status
+jobwatch dashboard stop
+```
+
+Signing in uses Google, with the same OAuth client as the connector by default: add `https://<your domain>/dashboard/auth/callback` to that client's authorized redirect URIs in Google Cloud Console. The Google app decides who can sign in (keep it in Testing status with only your account as a test user); the dashboard has no allowlist of its own. Changes made from the dashboard need a sign-in within the last 10 minutes. When the router runs for local development (`JW_AUTH=none`, see `deploy/compose.dev.yml`) there is no sign-in and it is at `http://127.0.0.1:18933/dashboard/`. Behind Nginx, `deploy/nginx/mcp.example.com.conf` already maps `/dashboard`. The design is in [`docs/plans/17-dashboard.md`](docs/plans/17-dashboard.md).
+
 ## Commands
 
 ### `jobwatch` (inside the router container, or `npm run jobwatch --` from the repo)
@@ -178,6 +191,9 @@ After pulling a new router image, reconnect the connector so Claude reloads the 
 | `adapters disable <id...>` | Disable adapters. |
 | `login start <platform> [--port 6080]` | Start a visible browser on the platform's profile to sign in by hand (noVNC on loopback). |
 | `login stop <platform>` | Stop it; the profile keeps the session. |
+| `dashboard start [--ttl <minutes>]` | Open the operator dashboard on the running router (closed by default; it closes after 30 minutes without use). |
+| `dashboard stop` | Close it and end every session. |
+| `dashboard status` | Is it open, where, and when it closes. |
 | `doctor` | Check configuration, data directory, Docker, images, network and profiles. |
 | `--help`, `--version` | |
 
@@ -415,6 +431,9 @@ All variables are optional unless noted; unknown `JW_*` names are reported at st
 | `JW_IDLE_TTL_S` | `120` | Seconds a browser stays up after its last call. |
 | `JW_MEM_HIGH_MB`, `JW_MEM_MAX_MB` | `1200`, `1500` | Soft and hard memory marks of the browser container. |
 | `JW_BROWSER_MAX_TABS` | `3` | Most tabs the browser may have open at once. `1` = a single tab; more than 1 lets adapters open extra tabs. No upper limit, but each tab costs memory and the container cap does not change. |
+| `JW_DASHBOARD_IDLE_S` | `1800` | Seconds without a request before the dashboard closes itself. |
+| `JW_DASHBOARD_OIDC_CLIENT_ID`, `JW_DASHBOARD_OIDC_CLIENT_SECRET` | the connector's client | A Google OAuth client of its own for the dashboard sign-in. |
+| `JW_DASHBOARD_CALL_BUFFER` | `2000` | Calls kept in memory for the dashboard (their parameters too, memory only). |
 | `JW_LOG_LEVEL` | `info` | `trace` to `fatal`. |
 | `JW_METRICS_ENABLED`, `JW_METRICS_PORT` | `false`, `9464` | Prometheus `/metrics` on its own port. |
 
