@@ -14,7 +14,7 @@ export interface HttpClientOptions {
   allowedHosts: readonly string[];
   fetch?: typeof fetch;
   userAgent?: string;
-  /** Hard cap on a response body. */
+  /** Hard cap on a response body (default 8 MB: the biggest public job boards, such as Pennylane's on Ashby, are 4 MB of JSON). */
   maxBodyBytes?: number;
   defaultTimeoutMs?: number;
   maxRedirects?: number;
@@ -49,7 +49,7 @@ const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTim
  */
 export function createHttpClient(options: HttpClientOptions): HttpClient {
   const doFetch = options.fetch ?? fetch;
-  const maxBody = options.maxBodyBytes ?? 2_000_000;
+  const maxBody = options.maxBodyBytes ?? 8_000_000;
   const defaultTimeout = options.defaultTimeoutMs ?? 20_000;
   const maxRedirects = options.maxRedirects ?? 3;
   const hostGap = options.minHostIntervalMs ?? 500;
