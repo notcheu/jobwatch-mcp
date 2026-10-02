@@ -123,6 +123,12 @@ export interface BaseContext {
   log: Logger;
   /** Human-like delay from the platform's pacing policy. */
   pace(kind: PaceKind): Promise<void>;
+  /**
+   * Tell the engine the call just touched the site in a way it cannot see by itself, for `units` budget units (default 1): a request
+   * made from inside the page, a "next page" button pressed. HTTP requests (`ctx.http`) and page loads (`session.goto`) are counted
+   * automatically; do not report those. The count is what a failed call is charged, so report BEFORE the request can fail.
+   */
+  spend(units?: number): void;
 }
 
 /** Context of a `kind: "http"` adapter: no browser, no container. */

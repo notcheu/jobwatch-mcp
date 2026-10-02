@@ -143,7 +143,7 @@ describe('apec_search', () => {
     });
     expect(out(result)).toMatchObject({ total: 4, pages_loaded: 1 });
     expect(calls.map((x) => x.kind)).toEqual(['search']);
-    expect(result.cost).toBe(2); // the page + one search page
+    expect(c.spent()).toBe(2); // the page + one search page
   });
 
   it('sends the filters Apec understands, and nothing the caller did not ask for', async () => {
@@ -263,17 +263,18 @@ describe('apec_job', () => {
     expect(text).toContain('Entreprise');
     expect(text).not.toContain('<');
     expect(c.jobs.jobs.get(O1)).toMatchObject({ source: 'apec', board: null });
-    expect(result.cost).toBe(2); // the page + one offer
+    expect(c.spent()).toBe(2); // the page + one offer
   });
 
   it('answers a stored offer from the database without opening Apec at all', async () => {
     const c = context();
     await runJob(c.ctx);
     c.session.visited.length = 0;
+    const spentBefore = c.spent();
     const again = await runJob(c.ctx);
     expect(out(again).jobs[0]).toMatchObject({ read_from: 'stored', new: false });
     expect(c.session.visited).toEqual([]);
-    expect(again.cost).toBe(0);
+    expect(c.spent() - spentBefore).toBe(0); // a stored offer costs nothing
   });
 
   it('reports an offer that is gone or empty, and does not store it', async () => {
@@ -321,7 +322,7 @@ describe('apec_search_and_read', () => {
     expect([...c.jobs.jobs.keys()].sort()).toEqual([O1, O3]);
     expect(out(result).jobs[0]).toMatchObject({ source: 'apec', board: null, read_from: 'fetched', salary_text: '70 - 85 k€ brut annuel' });
     expect(out(result).jobs[0]?.posted_at).not.toBeNull();
-    expect(result.cost).toBe(1 + 1 + 2); // the page, one search page, two offers
+    expect(c.spent()).toBe(1 + 1 + 2); // the page, one search page, two offers
   });
 
   it('never reads a stored offer again, and judges it with the terms of this call', async () => {

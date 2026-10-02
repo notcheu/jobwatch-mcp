@@ -177,7 +177,7 @@ describe('wttj_matches', () => {
     expect(out(result).cards[0]?.posted_at).not.toBeNull();
     expect(out(result)).toMatchObject({ total_matches: 32, pages_loaded: 1 });
     expect(c.session.visited).toEqual([MATCHES_URL]);
-    expect(result.cost).toBe(1);
+    expect(c.spent()).toBe(1);
   });
 
   it('walks the pages with the Next Page button only, and stops at the last page or at max_results', async () => {
@@ -282,17 +282,18 @@ describe('wttj_job', () => {
     expect(text).toContain("- 5 ans d'expérience");
     expect(text).not.toContain('<');
     expect(c.jobs.jobs.get(siteId(S1))).toMatchObject({ source: 'wttj', board: 'acme', location: 'Paris' });
-    expect(result.cost).toBe(1);
+    expect(c.spent()).toBe(1);
   });
 
   it('answers a stored job from the database without opening the site', async () => {
     const c = context();
     await runJob(c.ctx);
     c.session.visited.length = 0;
+    const spentBefore = c.spent();
     const again = await runJob(c.ctx);
     expect(out(again).jobs[0]).toMatchObject({ read_from: 'stored', new: false, board: 'acme' });
     expect(c.session.visited).toEqual([]);
-    expect(again.cost).toBe(0);
+    expect(c.spent() - spentBefore).toBe(0); // a stored job costs nothing
   });
 
   it('falls back to the visible description when the page has no JobPosting, and reports a gone or empty job', async () => {
@@ -347,7 +348,7 @@ describe('wttj_matches_and_read', () => {
     expect(out(result).jobs[0]?.posted_at).not.toBeNull();
     expect(out(result).jobs[0]?.remote_hints).toContain('télétravail fréquent');
     expect(c.jobs.jobs.has(siteId(S2))).toBe(false);
-    expect(result.cost).toBe(1 + 3); // one matches page, three jobs
+    expect(c.spent()).toBe(1 + 3); // one matches page, three jobs
   });
 
   it('never reads a stored job again and judges it with the terms of this call', async () => {

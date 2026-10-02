@@ -119,6 +119,8 @@ describe('ashby_jobs', () => {
   it('reads a board, drops unlisted postings, stores the rest with source and board, and reports it', async () => {
     const c = context();
     const result = await run(c.ctx);
+    expect(c.spent()).toBe(1); // one request for one board
+    expect(c.spent()).toBe(1); // one request for one board
     expect(ids(result)).toEqual([J1, J4, J2, J3]);
     expect(data(result).jobs[0]).toMatchObject({ source: 'ashby', board: 'acme', company: null, locations: ['Paris'] });
     expect(data(result).jobs[0]?.description).toBe('');
@@ -127,7 +129,6 @@ describe('ashby_jobs', () => {
     expect(data(result).boards).toEqual([{ board: 'acme', feed_url: ACME, status: 'ok', jobs_total: 4, relevant: 4 }]);
     expect(c.jobs.jobs.has('a0000005-0000-4000-8000-000000000005')).toBe(false);
     expect([...c.jobs.jobs.values()].every((j) => j.source === 'ashby' && j.board === 'acme')).toBe(true);
-    expect(result.cost).toBe(1);
   });
 
   it('keeps every office, strings or objects, and says Remote when the remote flag is set', async () => {

@@ -148,9 +148,10 @@ describe('linkedin_job', () => {
     const c = context({ '4000000001': 'Original text' });
     await run(c.ctx, {});
     c.session.visited.length = 0;
+    const spentBefore = c.spent();
     const again = await run(c.ctx, {});
     expect(again.data.jobs[0]).toMatchObject({ read_from: 'stored', new: false, description: 'Original text' });
-    expect(again.cost).toBe(0);
+    expect(c.spent() - spentBefore).toBe(0);
     expect(c.session.visited).toEqual([]);
     const refreshed = await run(c.ctx, { refresh: true });
     expect(visitedJobs(c.session.visited)).toEqual(['4000000001']);
@@ -220,6 +221,7 @@ describe('linkedin_search_and_read', () => {
     const c = context();
     await tools.searchAndRead.handler(read({ disallowed_terms: ['frontend', 'intern'] }), c.ctx);
     c.session.visited.length = 0;
+    const spentBefore = c.spent();
     // "backend, ignore staff": 3 and 4 come from the database (3 is excluded by its title now), 1 and 2 were never read
     const backend = await tools.searchAndRead.handler(read({ keywords: 'backend', disallowed_terms: ['staff'] }), c.ctx);
     expect(visitedJobs(c.session.visited)).toEqual(['4000000001', '4000000002']);
@@ -229,7 +231,7 @@ describe('linkedin_search_and_read', () => {
       ['4000000002', 'fetched', true],
       ['4000000004', 'stored', false],
     ]);
-    expect(backend.cost).toBe(1 + 2);
+    expect(c.spent() - spentBefore).toBe(1 + 2); // one search page, two jobs read; the stored ones are free
   });
 
   it('a job whose description matched the terms is stored, so another list reads it from the database', async () => {
@@ -389,7 +391,7 @@ describe('max_results and several pages', () => {
     const result = await tools.search.handler(search({ max_results: 50 }), c.ctx);
     expect(result.data.cards).toHaveLength(50);
     expect(result.data).toMatchObject({ page: 1, pages_loaded: 2, truncated: false, has_more: true });
-    expect(result.cost).toBe(2);
+    expect(c.spent()).toBe(2);
     expect(c.loads()).toBe(2);
   });
 
@@ -449,7 +451,7 @@ describe('max_results and several pages', () => {
     expect(result.data.jobs.filter((job) => job.read_from === 'fetched')).toHaveLength(48);
     expect(result.data.jobs.at(-1)?.read_from).toBe('stored');
     expect(result.data.remaining_ids).toEqual([]);
-    expect(result.cost).toBe(2 + 48);
+    expect(c.spent()).toBe(2 + 48);
     expect(c.jobs.jobs.size).toBe(49);
   });
 });
@@ -526,20 +528,24 @@ describe('result size', () => {
     expect(c.jobs.jobs.size).toBe(25);
     expect(JSON.stringify(result.data).length * 2).toBeLessThan(262_144);
     // the ones that did not fit are free to read afterwards, from the database
+    const spentBefore = c.spent();
     const rest = await tools.job.handler(
       tools.job.input.parse({ ids: result.data.not_returned_ids.slice(0, 5), description_max_chars: 500 }),
       c.ctx,
     );
     expect(rest.data.jobs).toHaveLength(5);
-    expect(rest.cost).toBe(0);
+    expect(c.spent() - spentBefore).toBe(0);
   });
 });
 
 describe('cost reporting', () => {
-  it('linkedin_job charges the pages it visited: 0 for a stored job, 1 per opened one', async () => {
+  it('linkedin_job costs the pages it visited: 0 for a stored job, 1 per opened one', async () => {
     const c = context();
-    expect((await tools.job.handler(tools.job.input.parse({ ids: ['4000000001', '4000000002'] }), c.ctx)).cost).toBe(2);
-    expect((await tools.job.handler(tools.job.input.parse({ ids: ['4000000001', '4000000002'] }), c.ctx)).cost).toBe(0);
+    const ids = ['4000000001', '4000000002'];
+    await tools.job.handler(tools.job.input.parse({ ids }), c.ctx);
+    expect(c.spent()).toBe(2);
+    await tools.job.handler(tools.job.input.parse({ ids }), c.ctx);
+    expect(c.spent()).toBe(2); // the second call read both from the database
   });
 
   it('the adapter declares the approved budget and every tool fits in it', () => {

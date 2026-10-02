@@ -28,6 +28,7 @@ interface Window {
 /** What `take` charged, kept to settle the real cost afterwards. */
 export interface UsageTicket {
   id: number;
+  platform: string;
   cost: number;
 }
 
@@ -46,10 +47,19 @@ export class RateLimiter {
     ];
   }
 
-  /** Give back what a finished call did not use. `actual` is clamped to 0..charged; a no-op when it is not lower. */
+  /**
+   * Bring the charge of a finished call to what it really spent. Less than reserved: the difference is given back (0 removes the
+   * event). More than reserved: the excess is recorded as a further event, never refused, because the requests were already made;
+   * the next call then finds less room. Not a number, or negative: ignored.
+   */
   settle(ticket: UsageTicket, actual: number): void {
-    if (!Number.isFinite(actual)) return;
-    this.store.settleUsage(ticket.id, Math.max(0, Math.min(ticket.cost, Math.floor(actual))));
+    if (!Number.isFinite(actual) || actual < 0) return;
+    const units = Math.floor(actual);
+    if (units > ticket.cost) {
+      this.store.addUsage(ticket.platform, this.clock(), units - ticket.cost);
+      return;
+    }
+    this.store.settleUsage(ticket.id, units);
   }
 
   /** Take `cost` points or throw `rate_limited` with the number of seconds until the call would fit. */
@@ -99,7 +109,7 @@ export class RateLimiter {
           },
         );
       }
-      return { id: this.store.addUsage(platform, now, cost), cost };
+      return { id: this.store.addUsage(platform, now, cost), platform, cost };
     });
   }
 

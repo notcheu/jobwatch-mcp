@@ -14,6 +14,11 @@ import { createAdapterLogger, type EngineLogger } from './logging';
 import type { RuntimeManager } from './runtime/manager';
 import { Store } from './store/store';
 
+/** The units one call has spent. Created per call, read by the engine when the call ends, however it ends. */
+interface Meter {
+  units: number;
+}
+
 export interface ContextProviderDeps {
   /** Undefined when no browser adapter is enabled. */
   runtime: RuntimeManager | undefined;
@@ -60,6 +65,18 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
   const pacers = new Map<string, ReturnType<typeof createPacer>>();
   const jobStore = deps.store ?? Store.open(':memory:');
 
+  /** Count every request that goes through a client: attempts, not successes (the request may have reached the site). */
+  const metered = (client: HttpClient, meter: Meter): HttpClient => ({
+    get: (url, request) => {
+      meter.units += 1;
+      return client.get(url, request);
+    },
+    postJson: (url, body, request) => {
+      meter.units += 1;
+      return client.postJson(url, body, request);
+    },
+  });
+
   const httpFor = (adapter: AdapterModule): HttpClient => {
     let client = httpClients.get(adapter.id);
     if (client === undefined) {
@@ -86,13 +103,19 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
 
   return {
     async acquire(adapter, _requestId) {
+      const meter: Meter = { units: 0 };
+      const spent = (): number => meter.units;
       const base: BaseContext = {
-        http: httpFor(adapter),
+        http: metered(httpFor(adapter), meter),
+        spend: (units = 1) => {
+          if (!Number.isInteger(units) || units < 1) throw new RangeError('spend takes a positive whole number of units');
+          meter.units += units;
+        },
         jobs: createJobStore(jobStore, adapter.platform, deps.clock),
         log: createAdapterLogger(deps.logger, adapter.id),
         pace: pacerFor(adapter),
       };
-      if (adapter.kind === 'http') return { ctx: base, release: async () => undefined };
+      if (adapter.kind === 'http') return { ctx: base, release: async () => undefined, spent };
 
       if (deps.runtime === undefined) throw new JobwatchError('internal', 'No browser runtime is available.');
       const budgets = adapter.tools.map((tool) => tool.limits.memory).filter((memory) => memory !== undefined);
@@ -111,9 +134,19 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
           details: { platform: adapter.platform },
         });
       }
-      const ctx: BrowserAdapterContext = { ...base, session: connection.session };
+      // every page load is a unit: the session the adapter sees counts them
+      const session = connection.session;
+      const goto = session.goto.bind(session);
+      const counted = Object.assign(Object.create(Object.getPrototypeOf(session) as object) as typeof session, session, {
+        goto: (url: string, options: Parameters<typeof session.goto>[1]) => {
+          meter.units += 1;
+          return goto(url, options);
+        },
+      });
+      const ctx: BrowserAdapterContext = { ...base, session: counted };
       return {
         ctx,
+        spent,
         signal: lease.signal,
         release: async () => {
           // Park first so the page's memory is freed even if the next call is a long way off; every step is best-effort.

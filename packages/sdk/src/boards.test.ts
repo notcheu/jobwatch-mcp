@@ -205,7 +205,7 @@ describe('runBoardTool', () => {
       boards: ['acme', ' acme ', 'https://demo.example.com/x/acme'],
     });
     expect(h.seen).toEqual(['https://demo.example.com/acme.json']);
-    expect(result.cost).toBe(1);
+    expect(h.seen).toHaveLength(1); // one request, one unit: the engine counts requests
     expect(result.data.boards).toHaveLength(1);
     expect(result.data.jobs).toHaveLength(1);
   });
@@ -224,7 +224,7 @@ describe('runBoardTool', () => {
       ['ghost', 'not_found'],
       ['odd', 'not_this_ats'],
     ]);
-    expect(result.cost).toBe(3);
+    expect(h.seen).toHaveLength(3);
     expect(result.warnings.join(' ')).toMatch(/ghost: not_found/);
   });
 });

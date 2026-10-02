@@ -8,11 +8,20 @@ export interface ToolAnnotations {
   idempotentHint: boolean;
 }
 
-export interface ToolLimits {
+export interface ToolLimits<I = never> {
   /** Per-call timeout enforced by the engine. */
   timeoutS: number;
-  /** Rate-limit cost of one call (tokens taken from the platform's bucket). */
+  /**
+   * The MOST one call can cost (units taken from the platform's budget), 1 to 100. Used to check the tool can ever run, and as
+   * the reservation when `estimate` is not given.
+   */
   cost: number;
+  /**
+   * What THIS call is likely to need, from its validated arguments (for example one search page plus the jobs it will read, not the
+   * worst case). The engine reserves it, clamped to 1..`cost`, so a small request is not refused for lack of room that a big one
+   * would have needed. What the call really spends is measured, not estimated: see `AdapterResult.cost` and `ctx.spend`.
+   */
+  estimate?: (args: I) => number;
   /** Hard cap on the serialized result. */
   outputMaxBytes: number;
   /** Optional per-tool memory budget for the platform's browser runtime. */
@@ -27,9 +36,10 @@ export interface AdapterResult<O extends object = Record<string, unknown>> {
   /** Non-fatal notes, e.g. "remote filter not applied by LinkedIn; post-filtered". */
   warnings: string[];
   /**
-   * Budget units really spent (page views), a whole number from 0 up to the tool's `limits.cost`. The engine takes the full
-   * `limits.cost` BEFORE the call (so concurrent calls cannot overshoot) and refunds the difference afterwards. Omit it to keep
-   * the full charge. A call that throws is always charged in full: the request reached the platform.
+   * Budget units really spent (page views), a whole number. The engine reserves the call's estimate BEFORE it runs (so concurrent
+   * calls cannot overshoot) and settles to what was spent afterwards: it refunds the difference, or records the excess. Omit it and
+   * the engine uses what it MEASURED: every HTTP request and every page load (`goto`) the call made, plus what the adapter reported
+   * with `ctx.spend`. A call that throws is charged what was measured, not the whole reservation.
    */
   cost?: number;
 }
@@ -44,7 +54,7 @@ export interface ToolDefinition<I, O extends object, C extends BaseContext> {
   input: z.ZodType<I>;
   output: z.ZodType<O>;
   annotations: ToolAnnotations;
-  limits: ToolLimits;
+  limits: ToolLimits<I>;
   handler: (args: I, ctx: C) => Promise<AdapterResult<O>>;
 }
 

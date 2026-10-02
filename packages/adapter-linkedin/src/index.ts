@@ -6,7 +6,7 @@ import { classicLayout } from './layouts/classic';
 import type { SearchLayout } from './layouts/layout';
 import { POSTED_WITHIN, classifyPage, termMatcher } from './parse';
 import { readByIds, readNew, type AcceptedJob } from './read';
-import { MAX_PAGE, searchCards, type SearchArgs } from './search';
+import { MAX_PAGE, pagesFor, searchCards, type SearchArgs } from './search';
 
 const HOSTS = ['www.linkedin.com', 'media.licdn.com'];
 
@@ -215,14 +215,13 @@ export function createLinkedinTools(layout: SearchLayout) {
       truncated: z.boolean(),
     }),
     annotations,
-    limits: { timeoutS: 180, cost: MAX_PAGE, outputMaxBytes: 120_000 },
+    limits: { timeoutS: 180, cost: MAX_PAGE, estimate: (args) => pagesFor(args), outputMaxBytes: 120_000 },
     handler: async (args, ctx) => {
       const { warnings, cards, ...rest } = await searchCards(ctx, layout, args);
       const stored = await ctx.jobs.known(cards.map((card) => card.id));
       return {
         data: { ...rest, cards: cards.map((card) => ({ ...card, known: stored.has(card.id) })) },
         warnings,
-        cost: rest.pages_loaded,
       };
     },
   });
@@ -246,7 +245,7 @@ export function createLinkedinTools(layout: SearchLayout) {
       failed: z.array(z.object({ id: z.string(), status: z.string() })),
     }),
     annotations,
-    limits: { timeoutS: 300, cost: 25, outputMaxBytes: 262_144 },
+    limits: { timeoutS: 300, cost: 25, estimate: (args) => new Set(args.ids).size, outputMaxBytes: 262_144 },
     handler: async (args, ctx) => {
       const matchTerm = termMatcher(args.disallowed_terms);
       const outcome = await readByIds(ctx, args.ids, {
@@ -261,7 +260,6 @@ export function createLinkedinTools(layout: SearchLayout) {
       return {
         data: { jobs: fit, not_returned_ids: rest, excluded: outcome.excluded, failed: outcome.failed },
         warnings,
-        cost: outcome.visits,
       };
     },
   });
@@ -300,7 +298,13 @@ export function createLinkedinTools(layout: SearchLayout) {
       has_more: z.boolean(),
     }),
     annotations,
-    limits: { timeoutS: 300, cost: MAX_PAGE + 50, outputMaxBytes: 262_144 },
+    limits: {
+      timeoutS: 300,
+      cost: MAX_PAGE + 50,
+      // the pages it will load plus the jobs it may read: stored and excluded ones are refunded when the call ends
+      estimate: (args) => pagesFor(args) + Math.min(args.max_jobs, args.max_results),
+      outputMaxBytes: 262_144,
+    },
     handler: async (args, ctx) => {
       const deadline = Date.now() + OPEN_BUDGET_MS;
       const found = await searchCards(ctx, layout, args as SearchArgs);
@@ -335,7 +339,6 @@ export function createLinkedinTools(layout: SearchLayout) {
           has_more: found.has_more,
         },
         warnings,
-        cost: found.pages_loaded + outcome.visits,
       };
     },
   });

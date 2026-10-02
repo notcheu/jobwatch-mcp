@@ -47,7 +47,13 @@ const teamtailorJobs = defineHttpTool({
     .strict(),
   output: boardToolOutput('teamtailor'),
   annotations: { readOnlyHint: true, openWorldHint: true, idempotentHint: true },
-  limits: { timeoutS: 120, cost: MAX_BOARDS, outputMaxBytes: 262_144 },
+  limits: {
+    timeoutS: 120,
+    cost: MAX_BOARDS,
+    // one request per distinct company board; a board that needs the page read to be found costs one or two more
+    estimate: (args) => new Set(args.boards.map((board) => board.trim())).size,
+    outputMaxBytes: 262_144,
+  },
   handler: (args, ctx) => runBoardTool(ctx, 'teamtailor', teamtailor, args),
 });
 

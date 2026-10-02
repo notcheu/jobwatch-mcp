@@ -352,3 +352,105 @@ describe('createJobStore', () => {
     store.close();
   });
 });
+
+describe('the call meter', () => {
+  const logger = createLogger({ level: 'silent' });
+  const fakeHttp = (): HttpClient =>
+    ({
+      get: async () => ({ status: 200, ok: true, headers: {}, text: '', json: () => ({}) as never }),
+      postJson: async () => ({ status: 200, ok: true, headers: {}, text: '', json: () => ({}) as never }),
+    }) as HttpClient;
+
+  it('counts every HTTP request an adapter makes, successful or not, and what it reports with spend', async () => {
+    const provider = createContextProvider({ runtime: undefined, connect: vi.fn(), logger, createHttp: fakeHttp });
+    const lease = await provider.acquire(httpAdapter, 'r1');
+    expect(lease.spent?.()).toBe(0);
+    await lease.ctx.http.get('https://api.example.com/a');
+    await lease.ctx.http.postJson('https://api.example.com/b', {});
+    expect(lease.spent?.()).toBe(2);
+    lease.ctx.spend();
+    lease.ctx.spend(3);
+    expect(lease.spent?.()).toBe(6);
+    await lease.release();
+  });
+
+  it('counts a request that throws: it may have reached the site', async () => {
+    const failing = (): HttpClient =>
+      ({ get: async () => Promise.reject(new Error('network')), postJson: async () => Promise.reject(new Error('network')) }) as HttpClient;
+    const provider = createContextProvider({ runtime: undefined, connect: vi.fn(), logger, createHttp: failing });
+    const lease = await provider.acquire(httpAdapter, 'r1');
+    await expect(lease.ctx.http.get('https://api.example.com/a')).rejects.toThrow('network');
+    expect(lease.spent?.()).toBe(1);
+    await lease.release();
+  });
+
+  it('refuses a spend that is not a positive whole number', async () => {
+    const provider = createContextProvider({ runtime: undefined, connect: vi.fn(), logger, createHttp: fakeHttp });
+    const lease = await provider.acquire(httpAdapter, 'r1');
+    for (const bad of [0, -1, 1.5, Number.NaN]) expect(() => lease.ctx.spend(bad), String(bad)).toThrow(RangeError);
+    expect(lease.spent?.()).toBe(0);
+    await lease.release();
+  });
+
+  it('keeps one meter per call', async () => {
+    const provider = createContextProvider({ runtime: undefined, connect: vi.fn(), logger, createHttp: fakeHttp });
+    const a = await provider.acquire(httpAdapter, 'a');
+    const b = await provider.acquire(httpAdapter, 'b');
+    await a.ctx.http.get('https://api.example.com/x');
+    expect([a.spent?.(), b.spent?.()]).toEqual([1, 0]);
+  });
+});
+
+describe('the call meter for a browser adapter', () => {
+  it('counts every page load, whether or not it succeeds, and the units the adapter reports', async () => {
+    let fail = false;
+    const session: BrowserSession = {
+      ...idleSession,
+      goto: async () => {
+        if (fail) throw new Error('navigation failed');
+      },
+    };
+    const logger = createLogger({ level: 'silent' });
+    const runtime = new RuntimeManager(
+      backend,
+      {
+        image: 'img',
+        network: 'net',
+        profileVolumePrefix: 'p-',
+        idleTtlS: 120,
+        maxLifetimeS: 1800,
+        queueTimeoutS: 60,
+        memMaxMb: 1500,
+        memHighMb: 1200,
+      },
+      logger,
+    );
+    const provider = createContextProvider({
+      runtime,
+      connect: async () => connection(session),
+      logger,
+      createHttp: () => ({}) as HttpClient,
+      pacerOptions: { sleep: async () => undefined },
+    });
+    const browser = defineAdapter({
+      id: 'site',
+      displayName: 'Site',
+      description: 'A browser adapter.',
+      sdkApi: SDK_API_VERSION,
+      platform: 'site',
+      kind: 'browser',
+      allowedHosts: ['www.example.com'],
+      tools: [],
+    });
+    const lease = await provider.acquire(browser, 'r1');
+    const browserCtx = lease.ctx as unknown as { session: BrowserSession; spend: (n?: number) => void };
+    await browserCtx.session.goto('https://www.example.com/a', { timeoutMs: 1000 });
+    fail = true;
+    await expect(browserCtx.session.goto('https://www.example.com/b', { timeoutMs: 1000 })).rejects.toThrow('navigation failed');
+    browserCtx.spend(2);
+    expect(lease.spent?.()).toBe(4);
+    await browserCtx.session.evaluate('() => 1');
+    expect(lease.spent?.()).toBe(4); // evaluating a script is not a page load
+    await lease.release();
+  });
+});
