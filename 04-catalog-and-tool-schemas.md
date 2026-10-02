@@ -75,7 +75,10 @@ Output: `{ jobs: [{ id, source: "teamtailor", board, company, title, locations, 
 ### `apec_search`, `apec_job`, `apec_search_and_read` (Phase 3, built; browser)
 Arguments and output follow `linkedin_search`, `linkedin_job` and `linkedin_search_and_read` (`07`), with Apec's search arguments: `keywords`, `departments` (default `["75"]`), `cdi_only`, `min_salary_k`, `posted_within`, `max_results` (20 per page). Jobs carry `source: "apec"`, `board: null`, `read_from`, `new`, `first_seen`, `last_seen`, `posted_at`, `salary_text`. Details in `08`.
 
-### `wttj_matches`, then `greenhouse_jobs`, `lever_jobs`, `ashby_jobs`... (Phase 3)
+### `wttj_matches`, `wttj_job`, `wttj_matches_and_read` (Phase 3, built; browser, signed in)
+Arguments and output follow the Apec tools (`08`): `max_results` (10 per page), `posted_within`, `disallowed_terms` / `disallowed_scope`, `stored_jobs`, `max_jobs`, `max_returned`, `skip_ids`; `wttj_job` takes `urls` (WTTJ job URLs, never ids). Jobs carry `source: "wttj"`, `board` = the company slug, `read_from`, `new`, `first_seen`, `last_seen`, `posted_at`, `salary_text`. Details in `08`.
+
+### then `greenhouse_jobs`, `lever_jobs`, `ashby_jobs`... (Phase 3)
 One dedicated adapter and tool per ATS (see `08`); there is no combined `ats_jobs`. `wttj_company_jobs` was dropped in v1 (WTTJ `robots.txt`): company jobs come from the company's own ATS tool.
 See `08-adapters-other-sources.md` for inputs/outputs. All return the same normalized card shape: `{ id, source, title, company, location, work_mode, salary_text, posted_text, url, promoted? }`.
 

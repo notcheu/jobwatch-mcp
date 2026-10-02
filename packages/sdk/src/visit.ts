@@ -10,6 +10,8 @@ import { extractHints, type Hints } from './jobtext';
 /** What a search result gives for free: enough to judge the title without reading the job. */
 export interface JobCard {
   id: string;
+  /** The company board this job belongs to, when the platform has them (WTTJ); overrides the plan's board. */
+  board?: string | null;
   title: string;
   company: string | null;
   location: string | null;
@@ -18,6 +20,10 @@ export interface JobCard {
 /** One job read by the platform. `status` is `ok` or why the text is not usable (`not_loaded`, `closed`...). */
 export interface VisitedPage {
   status: string;
+  /** Same as `JobCard.board`, for a job read without a card. */
+  board?: string | null;
+  /** The place of the job, for a job read without a card. */
+  location?: string | null;
   title: string | null;
   company: string | null;
   url: string;
@@ -45,6 +51,8 @@ export interface Terms {
 /** A job that passed the terms, from the page just read (`fetched`) or from the database (`stored`). Full description. */
 export interface AcceptedJob extends Hints {
   id: string;
+  /** Where within the platform the job was found (the company board), or null. */
+  board: string | null;
   title: string | null;
   company: string | null;
   location: string | null;
@@ -66,6 +74,7 @@ export interface Failed {
 
 const fromStored = (row: StoredJob): AcceptedJob => ({
   id: row.id,
+  board: row.board,
   title: row.title,
   company: row.company,
   location: row.location,
@@ -104,12 +113,13 @@ async function visit(
   const title = card?.title ?? page.title ?? '';
   const termInTitle = card === null ? terms.matchTitle(title) : null; // a card title was judged before the visit
   if (termInTitle !== null) return { excluded: { id, title, reason: 'title', term: termInTitle } };
+  const jobBoard = card?.board ?? page.board ?? board;
   const row = {
     id,
-    board,
+    board: jobBoard,
     title: card?.title ?? page.title,
     company: card?.company ?? page.company,
-    location: card?.location ?? null,
+    location: card?.location ?? page.location ?? null,
     url: page.url,
     description: page.description,
   };
@@ -120,6 +130,7 @@ async function visit(
   return {
     accepted: {
       ...row,
+      board: jobBoard,
       readFrom: 'fetched',
       isNew: !known,
       firstSeen: now,

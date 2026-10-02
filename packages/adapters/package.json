@@ -14,6 +14,7 @@
     "@jobwatch/adapter-lever": "*",
     "@jobwatch/adapter-linkedin": "*",
     "@jobwatch/adapter-teamtailor": "*",
+    "@jobwatch/adapter-wttj": "*",
     "@jobwatch/sdk": "*"
   },
   "scripts": {
