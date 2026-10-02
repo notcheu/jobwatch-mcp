@@ -1,0 +1,23 @@
+{
+  "name": "@jobwatch/dashboard-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The response types of the dashboard API, shared by the router (which builds them) and the dashboard (which reads them). Nothing else: no database row types.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "nx": {
+    "tags": [
+      "type:api"
+    ]
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  }
+}

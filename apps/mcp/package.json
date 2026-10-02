@@ -7,9 +7,11 @@
   "dependencies": {
     "@jobwatch/adapters": "*",
     "@jobwatch/core": "*",
+    "@jobwatch/dashboard-api": "*",
     "@jobwatch/sdk": "*",
     "@modelcontextprotocol/sdk": "1.31.0",
-    "express": "5.2.1"
+    "express": "5.2.1",
+    "jose": "6.2.12"
   },
   "devDependencies": {
     "@types/express": "5.0.6"

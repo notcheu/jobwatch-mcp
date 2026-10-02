@@ -224,3 +224,18 @@ describe('dashboard keys', () => {
     expect(problemsOf({ ...base, JW_TOKEN_CHARS_PER_TOKEN: '0' })).toHaveLength(1);
   });
 });
+
+describe('dashboard sign-in config', () => {
+  it('has no Google client unless both id and secret are given, and never prints the secret', () => {
+    expect(loadConfig(base).config.dashboard.oidc).toBeUndefined();
+    expect(loadConfig({ ...base, JW_DASHBOARD_OIDC_CLIENT_ID: 'id-only' }).config.dashboard.oidc).toBeUndefined();
+    const { config } = loadConfig({ ...base, JW_DASHBOARD_OIDC_CLIENT_ID: 'the-id', JW_DASHBOARD_OIDC_CLIENT_SECRET: 'the-secret-value' });
+    expect(config.dashboard.oidc).toEqual({ issuer: 'https://accounts.google.com', clientId: 'the-id', clientSecret: 'the-secret-value' });
+    expect(JSON.stringify(describeConfig(config))).not.toContain('the-secret-value');
+  });
+
+  it('has the timers of the plan by default: 30 minutes idle, 8 hours session, 10 minutes for writes', () => {
+    const { dashboard } = loadConfig(base).config;
+    expect([dashboard.port, dashboard.idleS, dashboard.sessionMaxS, dashboard.writeWindowS]).toEqual([8090, 1800, 28_800, 600]);
+  });
+});

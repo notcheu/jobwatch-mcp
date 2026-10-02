@@ -445,6 +445,30 @@ describe('search history', () => {
     expect(listed.rows.map((r) => r.id)).toEqual(['a1']);
   });
 
+  it('lists jobs for a table: search text, sort (names without regard to case), paging, and keywords', () => {
+    store.putJob('linkedin', { ...job('a3'), title: 'backend engineer', company: 'Zed 100%' }, T0 + 2 * DAY);
+    const list = (extra: object) =>
+      store.listJobs({
+        field: 'first_seen',
+        since: 0,
+        until: T0 + 10 * DAY,
+        sources: [],
+        boards: [],
+        limit: 10,
+        withDescription: false,
+        ...extra,
+      });
+    expect(list({ sort: 'title', dir: 'asc' }).rows.map((r) => r.id)).toEqual(['a3', 'a1', 'a2']);
+    expect(list({ sort: 'title', dir: 'desc' }).rows.map((r) => r.id)).toEqual(['a2', 'a1', 'a3']);
+    expect(list({ q: 'zed' }).rows.map((r) => r.id)).toEqual(['a3']);
+    expect(list({ q: '100%' }).rows.map((r) => r.id)).toEqual(['a3']); // % is text, not a wildcard
+    expect(list({ q: '%' }).rows.map((r) => r.id)).toEqual(['a3']);
+    expect(list({ q: 'job a' }).total).toBe(2);
+    expect(list({ limit: 1, offset: 1 }).rows.map((r) => r.id)).toEqual(['a2']);
+    expect(list({ limit: 1, offset: 1 }).total).toBe(3);
+    expect(list({ sort: 'description_chars', dir: 'asc' }).rows).toHaveLength(3);
+  });
+
   it('is evicted with the jobs after the retention', () => {
     const short = Store.open(':memory:', { jobRetentionDays: 1 });
     short.recordSearch('linkedin', { query: 'old', found: ['a1'], returned: ['a1'] }, T0);

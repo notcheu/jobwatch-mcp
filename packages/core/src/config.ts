@@ -39,6 +39,13 @@ const envSchema = z.object({
     .regex(/^[A-Za-z0-9,;=.-]{2,512}$/)
     .optional(),
   JW_BROWSER_MAX_TABS: z.coerce.number().int().min(1).default(3),
+  JW_DASHBOARD_PORT: integer(1024, 65535, 8090),
+  JW_DASHBOARD_IDLE_S: integer(60, 86_400, 1800),
+  JW_DASHBOARD_SESSION_MAX_S: integer(300, 604_800, 28_800),
+  JW_DASHBOARD_WRITE_WINDOW_S: integer(0, 86_400, 600),
+  JW_DASHBOARD_OIDC_ISSUER: z.url().default('https://accounts.google.com'),
+  JW_DASHBOARD_OIDC_CLIENT_ID: z.string().min(1).max(300).optional(),
+  JW_DASHBOARD_OIDC_CLIENT_SECRET: z.string().min(1).max(300).optional(),
   JW_DASHBOARD_CALL_BUFFER: integer(100, 20_000, 2000),
   JW_TOKEN_CHARS_PER_TOKEN: z.coerce.number().min(1).max(10).default(3.5),
   JW_FINGERPRINT: z.enum(['enforce', 'warn', 'off']).default('enforce'),
@@ -81,6 +88,18 @@ export interface Config {
   browserAcceptLangs: readonly string[] | undefined;
   /** Most tabs the browser may have open at once (`JW_BROWSER_MAX_TABS`, default 3, no upper limit). 1 = single tab: `openTab` refuses. */
   maxTabs: number;
+  /** The operator dashboard (docs/plans/17-dashboard.md). Off until `jobwatch dashboard start`. */
+  dashboard: {
+    port: number;
+    /** The dashboard stops itself after this many seconds without a request. */
+    idleS: number;
+    /** A session never lasts longer than this. */
+    sessionMaxS: number;
+    /** A write is accepted without signing in again for this long after a sign-in (0 = every write signs in again). */
+    writeWindowS: number;
+    /** Undefined when no Google client is configured; the dashboard then refuses to start unless the router runs without auth. */
+    oidc: { issuer: string; clientId: string; clientSecret: string } | undefined;
+  };
   /** Calls kept in memory for the dashboard (`JW_DASHBOARD_CALL_BUFFER`). */
   callBuffer: number;
   /** Characters per token for the estimate of what a result costs Claude (`JW_TOKEN_CHARS_PER_TOKEN`). */
@@ -185,6 +204,20 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
         .map((l) => l.trim())
         .filter(Boolean),
       maxTabs: parsed.JW_BROWSER_MAX_TABS,
+      dashboard: {
+        port: parsed.JW_DASHBOARD_PORT,
+        idleS: parsed.JW_DASHBOARD_IDLE_S,
+        sessionMaxS: parsed.JW_DASHBOARD_SESSION_MAX_S,
+        writeWindowS: parsed.JW_DASHBOARD_WRITE_WINDOW_S,
+        oidc:
+          parsed.JW_DASHBOARD_OIDC_CLIENT_ID !== undefined && parsed.JW_DASHBOARD_OIDC_CLIENT_SECRET !== undefined
+            ? {
+                issuer: parsed.JW_DASHBOARD_OIDC_ISSUER,
+                clientId: parsed.JW_DASHBOARD_OIDC_CLIENT_ID,
+                clientSecret: parsed.JW_DASHBOARD_OIDC_CLIENT_SECRET,
+              }
+            : undefined,
+      },
       callBuffer: parsed.JW_DASHBOARD_CALL_BUFFER,
       charsPerToken: parsed.JW_TOKEN_CHARS_PER_TOKEN,
       fingerprint: parsed.JW_FINGERPRINT,
@@ -230,5 +263,12 @@ export function loadStorageSettings(env: Readonly<Record<string, string | undefi
 
 /** A copy of the configuration that is safe to log or print (secrets replaced). */
 export function describeConfig(config: Config): Record<string, unknown> {
-  return { ...config, frontSharedSecret: config.frontSharedSecret === undefined ? undefined : '[redacted]' };
+  return {
+    ...config,
+    frontSharedSecret: config.frontSharedSecret === undefined ? undefined : '[redacted]',
+    dashboard: {
+      ...config.dashboard,
+      oidc: config.dashboard.oidc === undefined ? undefined : { ...config.dashboard.oidc, clientSecret: '[redacted]' },
+    },
+  };
 }

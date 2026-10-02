@@ -369,6 +369,11 @@ export class Store {
       where.push(`platform IN (${filter.sources.map(() => '?').join(', ')})`);
       params.push(...filter.sources);
     }
+    if (filter.q !== undefined && filter.q.trim() !== '') {
+      const like = `%${filter.q.trim().replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+      where.push("(title LIKE ? ESCAPE '\\' OR company LIKE ? ESCAPE '\\' OR location LIKE ? ESCAPE '\\')");
+      params.push(like, like, like);
+    }
     if (filter.search !== undefined) {
       where.push(
         'EXISTS (SELECT 1 FROM search_hits h JOIN search_runs r ON r.id = h.run_id WHERE h.job_id = jobs.id AND r.platform = jobs.platform AND r.query = ?)',
@@ -380,6 +385,8 @@ export class Store {
       params.push(...filter.boards);
     }
     const condition = where.join(' AND ');
+    const sortColumn = filter.sort === undefined ? column : JOB_SORT_COLUMNS[filter.sort];
+    const order = `${sortColumn}${sortColumn === 'title' || sortColumn === 'company' ? ' COLLATE NOCASE' : ''} ${filter.dir === 'asc' ? 'ASC' : 'DESC'}`;
     const total = Number(
       (this.db.prepare(`SELECT count(*) AS n FROM jobs WHERE ${condition}`).get(...params) as Rows | undefined)?.['n'] ?? 0,
     );
@@ -387,8 +394,8 @@ export class Store {
       filter.withDescription ? ', description' : ", '' AS description"
     }`;
     const rows = this.db
-      .prepare(`SELECT ${columns} FROM jobs WHERE ${condition} ORDER BY ${column} DESC, platform, id LIMIT ?`)
-      .all(...params, filter.limit) as Rows[];
+      .prepare(`SELECT ${columns} FROM jobs WHERE ${condition} ORDER BY ${order}, platform, id LIMIT ? OFFSET ?`)
+      .all(...params, filter.limit, filter.offset ?? 0) as Rows[];
     return {
       rows: rows.map((row) => ({ ...toJob(row), platform: String(row['platform']), descriptionChars: Number(row['description_chars']) })),
       total,
@@ -520,6 +527,16 @@ export interface NewJobRow {
 /** Which timestamp of a job a date range applies to. */
 export const JOB_DATE_COLUMNS = { first_seen: 'first_seen', fetched_at: 'fetched_at', last_seen: 'last_seen' } as const;
 
+/** Columns a job list can be sorted by (the names the dashboard sends). */
+export const JOB_SORT_COLUMNS = {
+  first_seen: 'first_seen',
+  last_seen: 'last_seen',
+  fetched_at: 'fetched_at',
+  title: 'title',
+  company: 'company',
+  description_chars: 'description_chars',
+} as const;
+
 export interface JobListFilter {
   field: keyof typeof JOB_DATE_COLUMNS;
   /** Milliseconds, inclusive. */
@@ -529,6 +546,13 @@ export interface JobListFilter {
   /** Empty = every source / board. */
   sources: readonly string[];
   boards: readonly string[];
+  /** Only jobs whose title, company or location contains this text (case-insensitive). */
+  q?: string;
+  /** Sort column (default: the date column of `field`) and direction (default newest first). */
+  sort?: keyof typeof JOB_SORT_COLUMNS;
+  dir?: 'asc' | 'desc';
+  /** Rows to skip, for paging. */
+  offset?: number;
   /** Only jobs a search with exactly these keywords (case-insensitive) listed. */
   search?: string;
   /** Most rows returned; `total` still counts them all. */

@@ -1,0 +1,226 @@
+import { z } from 'zod';
+
+/**
+ * The response types of the dashboard API (docs/plans/17-dashboard.md, sections 3 and 5). They are the only shapes that leave the
+ * router for the dashboard: a database row is never serialised as it is. Every object is `.strict()` so that a field added by
+ * mistake fails the contract test instead of leaking.
+ */
+
+const iso = z.string().describe('ISO 8601 date-time, UTC');
+
+export const API_PREFIX = '/dashboard/api/v1';
+
+// ------------------------------------------------------------------------------------------------------ session
+
+export const meSchema = z
+  .object({
+    /** `local`: the router runs for local development and the dashboard asks for no sign-in. */
+    mode: z.enum(['google', 'local']),
+    email: z.string().nullable(),
+    /** When the last sign-in happened; writes need a recent one. */
+    signedInAt: iso.nullable(),
+    /** The session ends at this time at the latest. */
+    expiresAt: iso.nullable(),
+    /** The dashboard stops itself at this time unless it is used. */
+    idleStopAt: iso.nullable(),
+    /** A write is accepted without signing in again until this time. */
+    writableUntil: iso.nullable(),
+    version: z.string(),
+  })
+  .strict();
+export type Me = z.infer<typeof meSchema>;
+
+// ------------------------------------------------------------------------------------------------------ calls
+
+export const callRowSchema = z
+  .object({
+    id: z.number(),
+    requestId: z.string(),
+    tool: z.string(),
+    platform: z.string(),
+    state: z.enum(['running', 'done']),
+    code: z.string().nullable(),
+    startedAt: iso,
+    durationMs: z.number().nullable(),
+    unitsReserved: z.number(),
+    unitsSpent: z.number(),
+    responseBytes: z.number(),
+    estimatedTokens: z.number(),
+    warnings: z.number(),
+    keywords: z.string().nullable(),
+  })
+  .strict();
+export type CallRow = z.infer<typeof callRowSchema>;
+
+export const callsPageSchema = z.object({ calls: z.array(callRowSchema), total: z.number(), next: z.number().nullable() }).strict();
+export type CallsPage = z.infer<typeof callsPageSchema>;
+
+/** One call in full. Only this response carries the parameters. */
+export const callDetailSchema = callRowSchema
+  .extend({
+    adapter: z.string(),
+    argsHash: z.string().nullable(),
+    params: z.record(z.string(), z.unknown()).nullable(),
+    paramsTruncated: z.boolean(),
+    paramsDropped: z.boolean(),
+    jobText: z.object({ available: z.number(), returned: z.number() }).strict().nullable(),
+  })
+  .strict();
+export type CallDetail = z.infer<typeof callDetailSchema>;
+
+// ------------------------------------------------------------------------------------------------------ jobs
+
+export const jobRowSchema = z
+  .object({
+    source: z.string(),
+    id: z.string(),
+    board: z.string().nullable(),
+    title: z.string().nullable(),
+    company: z.string().nullable(),
+    location: z.string().nullable(),
+    url: z.string(),
+    firstSeen: iso,
+    fetchedAt: iso,
+    lastSeen: iso,
+    descriptionChars: z.number(),
+    foundBy: z.array(z.string()),
+  })
+  .strict();
+export type JobRow = z.infer<typeof jobRowSchema>;
+
+export const jobsPageSchema = z.object({ jobs: z.array(jobRowSchema), total: z.number(), page: z.number(), pageSize: z.number() }).strict();
+export type JobsPage = z.infer<typeof jobsPageSchema>;
+
+export const jobDetailSchema = jobRowSchema
+  .extend({
+    description: z.string(),
+    summary: z.string(),
+    summaryKind: z.enum(['sections', 'excerpt']).nullable(),
+    outline: z.array(z.object({ part: z.string(), chars: z.number() }).strict()),
+    hints: z
+      .object({
+        stack: z.array(z.string()),
+        years: z.array(z.number()),
+        remote: z.array(z.string()),
+        salary: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+export type JobDetail = z.infer<typeof jobDetailSchema>;
+
+// ------------------------------------------------------------------------------------------------------ searches
+
+export const searchRowSchema = z
+  .object({
+    source: z.string(),
+    query: z.string(),
+    runs: z.number(),
+    lastRun: iso,
+    jobsFound: z.number(),
+    jobsReturned: z.number(),
+    jobsNew: z.number(),
+  })
+  .strict();
+export type SearchRow = z.infer<typeof searchRowSchema>;
+export const searchesSchema = z.object({ searches: z.array(searchRowSchema) }).strict();
+export type Searches = z.infer<typeof searchesSchema>;
+
+// ------------------------------------------------------------------------------------------------------ tools and status
+
+const usageSchema = z.object({ used: z.number(), limit: z.number() }).strict();
+
+export const toolStateSchema = z
+  .object({
+    id: z.string(),
+    displayName: z.string(),
+    platform: z.string(),
+    kind: z.enum(['browser', 'http']),
+    enabled: z.boolean(),
+    /** Present when JW_ADAPTERS pins the list: the switch is disabled and says why. */
+    pinned: z.boolean(),
+    hosts: z.array(z.string()),
+    tools: z.array(z.object({ name: z.string(), title: z.string(), costMax: z.number(), params: z.array(z.string()) }).strict()),
+    rateHour: usageSchema.nullable(),
+    rateDay: usageSchema.nullable(),
+    boards: z.array(z.object({ board: z.string(), rateHour: usageSchema, rateDay: usageSchema }).strict()),
+    breaker: z.object({ reason: z.string(), until: iso.nullable() }).strict().nullable(),
+  })
+  .strict();
+export type ToolState = z.infer<typeof toolStateSchema>;
+
+export const toolsSchema = z
+  .object({
+    adapters: z.array(toolStateSchema),
+    runtime: z
+      .object({
+        enabled: z.boolean(),
+        state: z.string(),
+        platform: z.string().nullable(),
+        peakMb: z.number().nullable(),
+        waiting: z.number(),
+      })
+      .strict(),
+  })
+  .strict();
+export type Tools = z.infer<typeof toolsSchema>;
+
+// ------------------------------------------------------------------------------------------------------ overview and usage
+
+export const overviewSchema = z
+  .object({
+    version: z.string(),
+    uptimeS: z.number(),
+    health: z.object({ completed: z.number(), failed: z.number(), rateLimited: z.number(), active: z.number() }).strict(),
+    tokensReturned: z.number(),
+    callsInMemory: z.number(),
+    callBufferSize: z.number(),
+    storedJobs: z.number(),
+    runtimeState: z.string(),
+    enabledAdapters: z.number(),
+  })
+  .strict();
+export type Overview = z.infer<typeof overviewSchema>;
+
+export const usageSchemaResponse = z
+  .object({
+    scope: z.literal('session'),
+    since: iso.nullable(),
+    totals: z
+      .object({
+        calls: z.number(),
+        errors: z.number(),
+        responseBytes: z.number(),
+        estimatedTokens: z.number(),
+        unitsSpent: z.number(),
+        textAvailableChars: z.number(),
+        textReturnedChars: z.number(),
+        durationP50Ms: z.number().nullable(),
+        durationP95Ms: z.number().nullable(),
+        durationMaxMs: z.number().nullable(),
+      })
+      .strict(),
+    byTool: z.array(
+      z
+        .object({
+          tool: z.string(),
+          platform: z.string(),
+          calls: z.number(),
+          errors: z.number(),
+          estimatedTokens: z.number(),
+          avgTokens: z.number(),
+          avgDurationMs: z.number().nullable(),
+          maxDurationMs: z.number().nullable(),
+          avgUnitsSpent: z.number(),
+        })
+        .strict(),
+    ),
+    series: z.array(z.object({ bucket: iso, calls: z.number(), errors: z.number(), estimatedTokens: z.number() }).strict()),
+  })
+  .strict();
+export type Usage = z.infer<typeof usageSchemaResponse>;
+
+// ------------------------------------------------------------------------------------------------------ errors
+
+export const apiErrorSchema = z.object({ error: z.string(), message: z.string() }).strict();
+export type ApiError = z.infer<typeof apiErrorSchema>;
