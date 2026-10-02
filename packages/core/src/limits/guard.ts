@@ -22,6 +22,7 @@ export function createGuard(limiter: RateLimiter, breaker: CircuitBreaker): Call
         ...keys.map((key) => ({ platform: `${adapter.platform}#${key}`, cost: 1 })),
       ]);
       return {
+        reserved: reservation(tool, args),
         // A call can never really cost more than the tool's declared maximum: a larger report is an adapter bug, and must not be
         // able to lock the platform out.
         settle: (cost) => {

@@ -39,6 +39,8 @@ const envSchema = z.object({
     .regex(/^[A-Za-z0-9,;=.-]{2,512}$/)
     .optional(),
   JW_BROWSER_MAX_TABS: z.coerce.number().int().min(1).default(3),
+  JW_DASHBOARD_CALL_BUFFER: integer(100, 20_000, 2000),
+  JW_TOKEN_CHARS_PER_TOKEN: z.coerce.number().min(1).max(10).default(3.5),
   JW_FINGERPRINT: z.enum(['enforce', 'warn', 'off']).default('enforce'),
   JW_PROFILE_VOLUME_PREFIX: z
     .string()
@@ -79,6 +81,10 @@ export interface Config {
   browserAcceptLangs: readonly string[] | undefined;
   /** Most tabs the browser may have open at once (`JW_BROWSER_MAX_TABS`, default 3, no upper limit). 1 = single tab: `openTab` refuses. */
   maxTabs: number;
+  /** Calls kept in memory for the dashboard (`JW_DASHBOARD_CALL_BUFFER`). */
+  callBuffer: number;
+  /** Characters per token for the estimate of what a result costs Claude (`JW_TOKEN_CHARS_PER_TOKEN`). */
+  charsPerToken: number;
   /** `enforce`: refuse to use a browser that fails its startup fingerprint check. */
   fingerprint: 'enforce' | 'warn' | 'off';
   profileVolumePrefix: string;
@@ -179,6 +185,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
         .map((l) => l.trim())
         .filter(Boolean),
       maxTabs: parsed.JW_BROWSER_MAX_TABS,
+      callBuffer: parsed.JW_DASHBOARD_CALL_BUFFER,
+      charsPerToken: parsed.JW_TOKEN_CHARS_PER_TOKEN,
       fingerprint: parsed.JW_FINGERPRINT,
       profileVolumePrefix: parsed.JW_PROFILE_VOLUME_PREFIX,
       dataDir: parsed.JW_DATA_DIR,

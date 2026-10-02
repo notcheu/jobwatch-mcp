@@ -183,6 +183,20 @@ describe('tools/call over HTTP', () => {
     await client.close();
   });
 
+  it('keeps every call in memory for the dashboard, with its parameters, and in no log line or database row', async () => {
+    server = await startTestServer({ JW_DASHBOARD_CALL_BUFFER: '100' });
+    const client = await connectClient(server.url);
+    await client.listTools();
+    await client.callTool({ name: 'probe_echo', arguments: { word: 'dash-keyword' } });
+    const [call] = server.running.callLog.list({ limit: 5 }).calls;
+    expect(call).toMatchObject({ tool: 'probe_echo', state: 'done', code: 'ok', params: { word: 'dash-keyword' } });
+    expect(call?.estimatedTokens).toBeGreaterThan(0);
+    expect(call?.responseBytes).toBeGreaterThan(0);
+    expect(JSON.stringify(server.running.store.recentCalls(10))).not.toContain('dash-keyword');
+    expect(server.logs()).not.toContain('dash-keyword');
+    await client.close();
+  });
+
   it('reports invalid arguments as a tool error without echoing the values', async () => {
     server = await startTestServer();
     const client = await connectClient(server.url);

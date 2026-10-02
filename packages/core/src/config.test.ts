@@ -210,3 +210,17 @@ describe('multi-tab', () => {
     for (const value of ['0', '-2', '2.5', 'many']) expect(problemsOf({ ...base, JW_BROWSER_MAX_TABS: value }), value).toHaveLength(1);
   });
 });
+
+describe('dashboard keys', () => {
+  it('keeps 2000 calls and estimates 3.5 characters per token by default', () => {
+    const { config } = loadConfig(base);
+    expect([config.callBuffer, config.charsPerToken]).toEqual([2000, 3.5]);
+  });
+
+  it('takes the buffer size (100 to 20000) and a ratio (1 to 10)', () => {
+    const { config } = loadConfig({ ...base, JW_DASHBOARD_CALL_BUFFER: '500', JW_TOKEN_CHARS_PER_TOKEN: '4' });
+    expect([config.callBuffer, config.charsPerToken]).toEqual([500, 4]);
+    expect(problemsOf({ ...base, JW_DASHBOARD_CALL_BUFFER: '5' })).toHaveLength(1);
+    expect(problemsOf({ ...base, JW_TOKEN_CHARS_PER_TOKEN: '0' })).toHaveLength(1);
+  });
+});
