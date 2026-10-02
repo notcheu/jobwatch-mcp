@@ -11,7 +11,17 @@ export { z } from 'zod';
 export { ERROR_CODES, JobwatchError, SessionInvalid, Checkpoint, AdapterBroken, UpstreamError, HostNotAllowedError } from './errors';
 export type { ErrorCode, ErrorBody, ErrorOptions } from './errors';
 
-export { isBareHostname, isUrlAllowed, assertUrlAllowed, redactUrl } from './hosts';
+export {
+  isBareHostname,
+  isWildcardHost,
+  isHostEntry,
+  isPublicHostname,
+  matchHost,
+  classifyUrl,
+  isUrlAllowed,
+  assertUrlAllowed,
+  redactUrl,
+} from './hosts';
 
 export type {
   PaceKind,

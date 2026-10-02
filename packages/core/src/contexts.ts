@@ -20,7 +20,7 @@ export interface ContextProviderDeps {
   connect: ConnectBrowser;
   logger: EngineLogger;
   /** Overridable for tests. */
-  createHttp?: (allowedHosts: readonly string[]) => HttpClient;
+  createHttp?: (options: { allowedHosts: readonly string[]; openHttps: boolean; onOpenHost: (hostname: string) => void }) => HttpClient;
   pacerOptions?: PacerOptions;
   /** Where adapters remember the jobs they opened. Omitted only in tests: a private in-memory store is used. */
   store?: Store;
@@ -63,7 +63,14 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
   const httpFor = (adapter: AdapterModule): HttpClient => {
     let client = httpClients.get(adapter.id);
     if (client === undefined) {
-      client = (deps.createHttp ?? ((allowedHosts) => createHttpClient({ allowedHosts })))(adapter.allowedHosts);
+      const openHttps = adapter.kind === 'http' && adapter.openHttps === true;
+      const options = {
+        allowedHosts: adapter.allowedHosts,
+        openHttps,
+        // Audit trail: which hosts outside the listed ones an open adapter reached (host only, never the path or the query).
+        onOpenHost: (hostname: string) => deps.logger.info({ adapter: adapter.id, host: hostname }, 'open_https_request'),
+      };
+      client = (deps.createHttp ?? ((o) => createHttpClient(o)))(options);
       httpClients.set(adapter.id, client);
     }
     return client;

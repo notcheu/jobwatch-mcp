@@ -1,5 +1,5 @@
 import type { AdapterModule } from './adapter';
-import { isBareHostname } from './hosts';
+import { isHostEntry } from './hosts';
 import { findInputSchemaProblems, inputJsonSchema, outputJsonSchema } from './schema';
 import { SDK_API_VERSION } from './version';
 
@@ -51,9 +51,15 @@ export function validateAdapter(adapter: AdapterModule): Violation[] {
 
   if (adapter.allowedHosts.length === 0) add('hosts', 'adapter', 'allowedHosts must list at least one host');
   for (const host of adapter.allowedHosts) {
-    if (!isBareHostname(host))
-      add('hosts', 'adapter', `allowedHosts entry "${host}" must be a bare lowercase hostname (no scheme, port, path, wildcard or IP)`);
+    if (!isHostEntry(host))
+      add(
+        'hosts',
+        'adapter',
+        `allowedHosts entry "${host}" must be a bare lowercase hostname or a one-label wildcard such as *.example.com (no scheme, port, path or IP)`,
+      );
   }
+  if (adapter.kind === 'browser' && (adapter as { openHttps?: unknown }).openHttps !== undefined)
+    add('hosts', 'adapter', 'openHttps is only for kind "http" adapters');
 
   if (adapter.pacing !== undefined) {
     const { minMs, maxMs } = adapter.pacing;

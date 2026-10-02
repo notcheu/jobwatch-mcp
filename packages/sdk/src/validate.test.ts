@@ -40,9 +40,26 @@ describe('validateAdapter: adapter-level rules', () => {
 
   it('rejects an empty host list and non-bare hosts', () => {
     expect(rules({ ...httpAdapter, allowedHosts: [] })).toContain('hosts');
-    for (const host of ['https://api.example.com', 'api.example.com/path', '*.example.com', '127.0.0.1', 'API.example.com']) {
+    for (const host of [
+      'https://api.example.com',
+      'api.example.com/path',
+      '*.com',
+      '*',
+      'a.*.example.com',
+      '127.0.0.1',
+      'API.example.com',
+    ]) {
       expect(rules({ ...httpAdapter, allowedHosts: [host] }), host).toContain('hosts');
     }
+  });
+
+  it('accepts one-label wildcard hosts', () => {
+    expect(rules({ ...httpAdapter, allowedHosts: ['*.teamtailor.com', 'api.example.com'] })).toEqual([]);
+  });
+
+  it('allows openHttps on http adapters only', () => {
+    expect(rules({ ...httpAdapter, openHttps: true })).toEqual([]);
+    expect(rules({ ...browserAdapter, openHttps: true } as never)).toContain('hosts');
   });
 
   it('accepts a valid rate policy and rejects nonsense', () => {

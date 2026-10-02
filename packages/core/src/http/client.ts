@@ -1,17 +1,27 @@
 import {
   AdapterBroken,
+  HostNotAllowedError,
   JobwatchError,
   UpstreamError,
   assertUrlAllowed,
+  classifyUrl,
   type HttpClient,
   type HttpRequestOptions,
   type HttpResponse,
   type z,
 } from '@jobwatch/sdk';
 import { Semaphore } from '../runtime/semaphore';
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { isPublicAddress } from './addresses';
 
 export interface HttpClientOptions {
   allowedHosts: readonly string[];
+  /** Also reach any public https host (an adapter that declares `openHttps`). Such hosts get the address checks below. */
+  openHttps?: boolean;
+  /** Resolve a name to all its addresses. Injected in tests; the default asks the system resolver. */
+  resolve?: (hostname: string) => Promise<string[]>;
+  /** Told the host (never the path or query) of every request to a host that is not in `allowedHosts`, for the audit log. */
+  onOpenHost?: (hostname: string) => void;
   fetch?: typeof fetch;
   userAgent?: string;
   /** Hard cap on a response body (default 8 MB: the biggest public job boards, such as Pennylane's on Ashby, are 4 MB of JSON). */
@@ -57,6 +67,7 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
   const now = options.now ?? Date.now;
   const userAgent = options.userAgent ?? 'jobwatch-mcp (personal read-only job search)';
   const slots = new Semaphore(options.concurrency ?? 4);
+  const resolve = options.resolve ?? (async (hostname: string) => (await dnsLookup(hostname, { all: true })).map((entry) => entry.address));
   const nextSlotAt = new Map<string, number>();
 
   /** Reserve the next time slot for a host, synchronously, so concurrent requests queue behind each other. */
@@ -105,6 +116,24 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
     return Buffer.concat(chunks).toString('utf8');
   }
 
+  /**
+   * A host reached only because the adapter is open: every address its name resolves to must be public. Checked on the first
+   * request and on every redirect hop. The answer is not reused for the connection itself (the resolver may answer differently a
+   * moment later), which is acceptable here because the request is https with certificate validation on port 443: a service on
+   * the home network cannot present a valid certificate for a name the caller chose.
+   */
+  async function assertPublicHost(hostname: string): Promise<void> {
+    let addresses: string[];
+    try {
+      addresses = await resolve(hostname);
+    } catch (cause) {
+      throw new UpstreamError(`Could not resolve ${hostname}.`, { cause });
+    }
+    if (addresses.length === 0 || !addresses.every(isPublicAddress)) {
+      throw new HostNotAllowedError(hostname);
+    }
+  }
+
   async function send(method: 'GET' | 'POST', url: string, body: unknown, request: HttpRequestOptions | undefined): Promise<HttpResponse> {
     const timeoutMs = request?.timeoutMs ?? defaultTimeout;
     const headers = headersFor(request?.headers, method === 'POST');
@@ -114,7 +143,11 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
     const release = await slots.acquire(timeoutMs, 1);
     try {
       for (let hop = 0; ; hop += 1) {
-        const target = assertUrlAllowed(currentUrl, options.allowedHosts);
+        const target = assertUrlAllowed(currentUrl, options.allowedHosts, options.openHttps === true);
+        if (classifyUrl(currentUrl, options.allowedHosts, options.openHttps === true) === 'open') {
+          options.onOpenHost?.(target.hostname);
+          await assertPublicHost(target.hostname);
+        }
         await pace(target.hostname);
         let response: Response;
         try {

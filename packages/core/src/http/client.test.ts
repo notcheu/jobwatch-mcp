@@ -248,3 +248,92 @@ describe('politeness', () => {
     expect(peak).toBe(2);
   });
 });
+
+describe('open https hosts', () => {
+  const listed = ['*.teamtailor.com'];
+  const resolver = (table: Record<string, string[]>) => async (hostname: string) => {
+    const found = table[hostname];
+    if (found === undefined) throw new Error('ENOTFOUND');
+    return found;
+  };
+  const open = (fetchFn: typeof fetch, table: Record<string, string[]>, extra: Partial<Parameters<typeof createHttpClient>[0]> = {}) =>
+    client(fetchFn, { allowedHosts: listed, openHttps: true, resolve: resolver(table), ...extra });
+
+  it('reaches a custom domain that resolves to public addresses, and tells the audit callback the host only', async () => {
+    const s = script(json({ ok: true }));
+    const seen: string[] = [];
+    const response = await open(s.fetch, { 'careers.bsport.io': ['93.184.216.34'] }, { onOpenHost: (h) => seen.push(h) }).get(
+      'https://careers.bsport.io/jobs?secret=1',
+    );
+    expect(response.status).toBe(200);
+    expect(seen).toEqual(['careers.bsport.io']);
+  });
+
+  it('does not resolve or report a host that is listed (exact or wildcard)', async () => {
+    const s = script(json({}));
+    const seen: string[] = [];
+    await open(s.fetch, {}, { onOpenHost: (h) => seen.push(h) }).get('https://bsport.teamtailor.com/jobs.rss');
+    expect(seen).toEqual([]);
+    expect(s.seen).toHaveLength(1);
+  });
+
+  it.each([
+    ['a private address', ['192.168.1.10']],
+    ['loopback', ['127.0.0.1']],
+    ['the cloud metadata address', ['169.254.169.254']],
+    ['IPv6 loopback', ['::1']],
+    ['an IPv4-mapped private address', ['::ffff:10.0.0.5']],
+    ['one public and one private address (DNS tricks)', ['93.184.216.34', '10.0.0.5']],
+    ['no address at all', []],
+  ])('refuses a name that resolves to %s, without sending anything', async (_name, addresses) => {
+    const s = script(json({}));
+    await expect(
+      open(s.fetch, { 'careers.evil.example.org': addresses }).get('https://careers.evil.example.org/jobs'),
+    ).rejects.toBeInstanceOf(HostNotAllowedError);
+    expect(s.seen).toHaveLength(0);
+  });
+
+  it('reports a name that does not resolve as an upstream error, not as an allowed host', async () => {
+    const s = script(json({}));
+    await expect(open(s.fetch, {}).get('https://nope.example.org/jobs')).rejects.toBeInstanceOf(UpstreamError);
+    expect(s.seen).toHaveLength(0);
+  });
+
+  it('checks every redirect hop: a public host that redirects to a private one is refused before the second request', async () => {
+    const s = script(
+      new Response(null, { status: 302, headers: { location: 'https://internal.evil.example.org/admin' } }),
+      json({ leaked: true }),
+    );
+    await expect(
+      open(s.fetch, { 'careers.bsport.io': ['93.184.216.34'], 'internal.evil.example.org': ['192.168.1.1'] }).get(
+        'https://careers.bsport.io/jobs',
+      ),
+    ).rejects.toBeInstanceOf(HostNotAllowedError);
+    expect(s.seen).toHaveLength(1);
+  });
+
+  it('refuses a redirect to a literal IP, to plain http and to another port even when open', async () => {
+    for (const target of [
+      'https://169.254.169.254/latest/meta-data/',
+      'http://careers.bsport.io/jobs',
+      'https://careers.bsport.io:8443/jobs',
+    ]) {
+      const s = script(new Response(null, { status: 301, headers: { location: target } }), json({}));
+      await expect(
+        open(s.fetch, { 'careers.bsport.io': ['93.184.216.34'] }).get('https://careers.bsport.io/jobs'),
+        target,
+      ).rejects.toBeInstanceOf(HostNotAllowedError);
+      expect(s.seen).toHaveLength(1);
+    }
+  });
+
+  it('is closed by default: a custom domain is refused when the adapter is not open', async () => {
+    const s = script(json({}));
+    await expect(
+      client(s.fetch, { allowedHosts: listed, resolve: resolver({ 'careers.bsport.io': ['93.184.216.34'] }) }).get(
+        'https://careers.bsport.io/jobs',
+      ),
+    ).rejects.toBeInstanceOf(HostNotAllowedError);
+    expect(s.seen).toHaveLength(0);
+  });
+});
