@@ -18,6 +18,7 @@
     "typecheck": "nx run-many -t typecheck",
     "test": "nx run-many -t test",
     "test:integration": "bash tests/integration/run.sh",
+    "test:dashboard": "node tests/dashboard/smoke.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "catalog:gen": "JW_UPDATE_CATALOG=1 nx run-many -t test -p 'tag:type:adapter' --skip-nx-cache",

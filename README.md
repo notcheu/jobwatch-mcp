@@ -209,6 +209,7 @@ Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is brok
 | `npm run catalog:gen` | Regenerate every adapter's `catalog/` snapshot after changing a tool definition. |
 | `npm run new:adapter -- <id> [--kind http\|browser]` | Scaffold a new adapter package. |
 | `npm run test:integration` | Drive a real browser container (needs Docker; never in CI). |
+| `npm run test:dashboard` | Smoke-test the built router and dashboard (run `npm run build` first; not in CI). |
 | `npm run jobwatch -- <args>` | Build and run the CLI. |
 
 ## Tools and example queries

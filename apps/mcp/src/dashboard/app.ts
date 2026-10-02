@@ -4,7 +4,19 @@ import { API_PREFIX, apiErrorSchema, meSchema } from '@jobwatch/dashboard-api';
 import type { EngineLogger } from '@jobwatch/core';
 import express, { type NextFunction, type Request, type Response, type Express } from 'express';
 import { ZodError } from 'zod';
-import { checked, getCall, getJob, getOverview, getTools, getUsage, listCalls, listJobs, listSearches, type DashboardData } from './api';
+import {
+  checked,
+  getCall,
+  getJob,
+  getOverview,
+  getSettings,
+  getTools,
+  getUsage,
+  listCalls,
+  listJobs,
+  listSearches,
+  type DashboardData,
+} from './api';
 import type { Oidc } from './oidc';
 import type { Session, SessionStore } from './sessions';
 
@@ -267,6 +279,10 @@ export function createDashboardApp(deps: DashboardDeps): Express {
   api.get(
     '/usage',
     wrap((req) => getUsage(deps, req.query)),
+  );
+  api.get(
+    '/settings',
+    wrap(() => getSettings(deps)),
   );
   deps.writes?.(api);
   api.use((_req, res) => sendError(res, 404, 'not_found', 'No such endpoint.'));

@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { Activity, BarChart3, Briefcase, LogOut, Moon, Search, Settings, Sun, Wrench, Zap } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
+import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
 const SECTIONS = [
@@ -22,15 +22,6 @@ const SECTIONS = [
 export function usePlatform(): string | undefined {
   const [params] = useSearchParams();
   return params.get('tool') ?? undefined;
-}
-
-function useTheme(): [boolean, () => void] {
-  const [dark, setDark] = useState(() => localStorage.getItem('jw-theme') !== 'light');
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-    localStorage.setItem('jw-theme', dark ? 'dark' : 'light');
-  }, [dark]);
-  return [dark, () => setDark((value) => !value)];
 }
 
 export function Shell() {

@@ -6,6 +6,7 @@ import {
   jobsPageSchema,
   overviewSchema,
   searchesSchema,
+  settingsSchema,
   toolsSchema,
   usageSchemaResponse,
   type CallDetail,
@@ -14,6 +15,7 @@ import {
   type JobsPage,
   type Overview,
   type Searches,
+  type Settings,
   type Tools,
   type Usage,
 } from '@jobwatch/dashboard-api';
@@ -46,6 +48,8 @@ export interface DashboardData {
   /** `JW_ADAPTERS` pins the list of adapters. */
   pinned: boolean;
   runtime: () => RuntimeManager | undefined;
+  /** The limits in force, shown read only (no secret in it). */
+  settings: Settings;
   /** The last session check of each browser platform (what `session_status` found); the dashboard never runs a check. */
   sessionStates: () => ReadonlyMap<string, PlatformStatus>;
 }
@@ -308,6 +312,8 @@ export async function getTools(data: DashboardData): Promise<Tools> {
 }
 
 // -------------------------------------------------------------------------------------------------------- overview
+
+export const getSettings = (data: DashboardData): Settings => checked(settingsSchema, data.settings);
 
 export function getOverview(data: DashboardData): Overview {
   const calls = data.callLog.all();

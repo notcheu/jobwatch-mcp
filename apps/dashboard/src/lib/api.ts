@@ -9,6 +9,7 @@ import {
   overviewSchema,
   restartSchema,
   searchesSchema,
+  settingsSchema,
   toolsSchema,
   usageSchemaResponse,
   type AdapterToggle,
@@ -20,6 +21,7 @@ import {
   type Overview,
   type Restart,
   type Searches,
+  type Settings,
   type Tools,
   type Usage,
 } from '@jobwatch/dashboard-api';
@@ -88,6 +90,7 @@ export const api = {
   searches: (params: { since?: string; until?: string; source?: string }): Promise<Searches> =>
     request(searchesSchema, `/searches${query(params)}`),
   tools: (): Promise<Tools> => request(toolsSchema, '/tools'),
+  settings: (): Promise<Settings> => request(settingsSchema, '/settings'),
   usage: (params: {
     scope?: 'session' | 'lifetime' | 'historical';
     from?: string;
