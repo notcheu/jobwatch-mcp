@@ -2,7 +2,7 @@ import { HostNotAllowedError } from '@jobwatch/sdk';
 import { createHttpTestContext, describeAdapterContract, type FakeHttpRoute } from '@jobwatch/sdk/testkit';
 import { describe, expect, it } from 'vitest';
 import adapter from './index';
-import { resolveBoard, slug } from './board';
+import { basePath, feedFromHtml, resolveBoard, slug } from './board';
 
 /** A feed shaped like the real `/jobs.json` of a Teamtailor board (checked against bsport, PayFit, Ornikar and Swile). */
 function posting(
@@ -101,7 +101,7 @@ describe('resolving a board', () => {
     expect(resolveBoard(' pay-fit2 ')?.feedUrl).toBe('https://pay-fit2.teamtailor.com/jobs.json');
   });
 
-  it('takes the host of any careers-site URL and drops the path, query and fragment', () => {
+  it('takes the host of any careers-site URL and drops the query, the fragment and everything from /jobs on', () => {
     expect(resolveBoard('https://careers.bsport.io/')).toMatchObject({
       feedUrl: 'https://careers.bsport.io/jobs.json',
       label: 'careers.bsport.io',
@@ -249,6 +249,7 @@ describe('teamtailor_jobs', () => {
       route('https://acme.teamtailor.com/jobs.json', acme),
       route('https://ghost.teamtailor.com/jobs.json', 'Not found', 404),
       route('https://careers.notatt.io/jobs.json', '<html>hello</html>'),
+      route('https://careers.notatt.io/', 'Not found', 404),
       route('https://careers.broken.io/jobs.json', { items: 'nope' }),
       route('https://down.teamtailor.com/jobs.json', 'oops', 503),
     ]);
@@ -265,7 +266,7 @@ describe('teamtailor_jobs', () => {
       ['Not A Handle', 'invalid'],
     ]);
     expect(result.warnings.join(' ')).toMatch(/ghost: not_found/);
-    expect(result.cost).toBe(5); // the invalid entry never reached the network
+    expect(result.cost).toBe(6); // the invalid entry never reached the network; the site that is not a feed also costs one page read
   });
 
   it('never asks for a host that cannot be public, and says so', async () => {
@@ -316,5 +317,167 @@ describe('the adapter declares what it reaches', () => {
     expect(adapter.allowedHosts).toEqual(['*.teamtailor.com']);
     expect(adapter.kind === 'http' && adapter.openHttps).toBe(true);
     expect(adapter.rate).toEqual({ perHour: 120, perDay: 600 });
+  });
+});
+
+describe('finding a board on any domain and path', () => {
+  it("keeps the path in front of /jobs, for a careers site mounted under the company's own domain", () => {
+    expect(resolveBoard('https://www.acme.com/careers')).toMatchObject({
+      feedUrl: 'https://www.acme.com/careers/jobs.json',
+      label: 'www.acme.com/careers',
+    });
+    expect(resolveBoard('https://www.acme.com/careers/')?.feedUrl).toBe('https://www.acme.com/careers/jobs.json');
+    expect(resolveBoard('https://www.acme.com/en/careers/jobs/123-dev?x=1#y')?.feedUrl).toBe('https://www.acme.com/en/careers/jobs.json');
+    expect(resolveBoard('https://www.acme.com/jobs')?.feedUrl).toBe('https://www.acme.com/jobs.json');
+    expect(resolveBoard('https://careers.bsport.io/jobs.rss')?.feedUrl).toBe('https://careers.bsport.io/jobs.json');
+  });
+
+  it('remembers the page the caller named, to look at it if the guess is wrong', () => {
+    expect(resolveBoard('https://www.acme.com/careers/jobs/123-dev?x=1')?.pageUrl).toBe('https://www.acme.com/careers/jobs/123-dev');
+    expect(resolveBoard('bsport')?.pageUrl).toBeUndefined();
+  });
+
+  it.each([
+    'https://www.acme.com/a%2Fb/jobs',
+    'https://www.acme.com/a/b/c/d/e/f/g/jobs',
+    'https://www.acme.com/a b/jobs',
+    'https://www.acme.com/caf%C3%A9/jobs',
+    'https://www.acme.com/a;x/jobs',
+  ])('refuses an odd path %j', (url) => {
+    expect(resolveBoard(url)).toBeNull();
+  });
+
+  it('never lets a path climb out: the URL parser resolves dot segments before the path is looked at', () => {
+    for (const url of [
+      'https://www.acme.com/a/../etc/jobs',
+      'https://www.acme.com/%2e%2e/jobs',
+      'https://www.acme.com/a/%2E%2E/b/jobs',
+      'https://www.acme.com/..',
+    ]) {
+      const feed = resolveBoard(url)?.feedUrl ?? '';
+      expect(feed).toMatch(/^https:\/\/www\.acme\.com(?:\/[A-Za-z0-9._~-]+)*\/jobs\.json$/);
+      expect(feed).not.toMatch(/\.\.|%/);
+    }
+  });
+
+  it('computes the base path of a careers URL', () => {
+    expect(basePath('/')).toBe('');
+    expect(basePath('/careers')).toBe('/careers');
+    expect(basePath('/careers/jobs/1-x')).toBe('/careers');
+    expect(basePath('/jobs.json')).toBe('');
+    expect(basePath('/a/./b')).toBeNull();
+  });
+});
+
+describe('feedFromHtml', () => {
+  const page = 'https://www.acme.com/careers';
+  const link = (attrs: string) => `<html><head><meta charset="utf-8"><link ${attrs} /></head><body>x</body></html>`;
+
+  it('takes the feed a Teamtailor page advertises, whatever the attribute order', () => {
+    expect(
+      feedFromHtml(link('rel="alternate" type="application/rss+xml" title="Jobs" href="https://www.acme.com/careers/jobs.rss"'), page),
+    ).toBe('https://www.acme.com/careers/jobs.json');
+    expect(feedFromHtml(link('href="https://www.acme.com/jobs.rss" type="application/rss+xml" rel="alternate"'), page)).toBe(
+      'https://www.acme.com/jobs.json',
+    );
+    expect(feedFromHtml(link("rel='alternate' type='application/rss+xml' href='/careers/jobs.rss'"), page)).toBe(
+      'https://www.acme.com/careers/jobs.json',
+    );
+    expect(feedFromHtml(link('rel="alternate" type="application/feed+json" href="https://www.acme.com/careers/jobs.json"'), page)).toBe(
+      'https://www.acme.com/careers/jobs.json',
+    );
+  });
+
+  it('ignores a feed on another host, over http, on a port, with credentials, off the jobs path, or with an odd path', () => {
+    for (const href of [
+      'https://evil.example/jobs.rss',
+      'http://www.acme.com/jobs.rss',
+      'https://www.acme.com:8443/jobs.rss',
+      'https://user@www.acme.com/jobs.rss',
+      'https://www.acme.com/admin/export.rss',
+      'https://169.254.169.254/jobs.rss',
+    ]) {
+      expect(feedFromHtml(link(`rel="alternate" type="application/rss+xml" href="${href}"`), page), href).toBeNull();
+    }
+  });
+
+  it('returns null for a page with no advertised feed, a non-feed alternate, or garbage', () => {
+    expect(feedFromHtml('<html><body>nothing</body></html>', page)).toBeNull();
+    expect(feedFromHtml(link('rel="alternate" hreflang="fr" href="https://www.acme.com/fr"'), page)).toBeNull();
+    expect(feedFromHtml(link('rel="stylesheet" type="application/rss+xml" href="https://www.acme.com/jobs.rss"'), page)).toBeNull();
+    expect(feedFromHtml('<link' + 'x'.repeat(100_000), page)).toBeNull();
+    expect(feedFromHtml('', 'not a url')).toBeNull();
+  });
+});
+
+describe('teamtailor_jobs on a site that is not at the guessed address', () => {
+  const careersHtml = (feed: string) =>
+    `<html><head><link rel="alternate" type="application/rss+xml" title="Jobs" href="${feed}" /></head><body>Careers</body></html>`;
+
+  it('finds a careers site mounted under a path, from any page of it', async () => {
+    const routes = [
+      route('https://www.acme.com/careers/jobs/123-dev/jobs.json', 'Not found', 404),
+      route('https://www.acme.com/careers/jobs/123-dev', careersHtml('https://www.acme.com/team/careers/jobs.rss')),
+      route('https://www.acme.com/team/careers/jobs.json', acme),
+    ];
+    // the caller's URL is the page itself; the guess (/careers/jobs.json) fails, the page advertises the real feed
+    const wrong = [
+      route('https://www.acme.com/careers/jobs.json', 'Not found', 404),
+      route('https://www.acme.com/careers/jobs/123-dev', careersHtml('https://www.acme.com/team/careers/jobs.rss')),
+      route('https://www.acme.com/team/careers/jobs.json', acme),
+    ];
+    void routes;
+    const c = context(wrong);
+    const result = await run(c.ctx, { boards: ['https://www.acme.com/careers/jobs/123-dev'] });
+    expect(ids(result)).toHaveLength(4);
+    expect(data(result).boards[0]).toMatchObject({ status: 'ok', feed_url: 'https://www.acme.com/team/careers/jobs.json' });
+    expect(c.http.requests.map((r) => r.url)).toEqual([
+      'https://www.acme.com/careers/jobs.json',
+      'https://www.acme.com/careers/jobs/123-dev',
+      'https://www.acme.com/team/careers/jobs.json',
+    ]);
+    expect(result.cost).toBe(3);
+  });
+
+  it('uses the guess when it is right, without reading the page', async () => {
+    const c = context([route('https://www.acme.com/careers/jobs.json', acme)]);
+    const result = await run(c.ctx, { boards: ['https://www.acme.com/careers'] });
+    expect(ids(result)).toHaveLength(4);
+    expect(c.http.requests).toHaveLength(1);
+  });
+
+  it('reports a page that advertises no Teamtailor feed as not found, and never follows a feed on another host', async () => {
+    const none = context([
+      route('https://www.acme.com/jobs.json', 'nope', 404),
+      route('https://www.acme.com/', '<html><body>No feed here</body></html>'),
+    ]);
+    const r1 = await run(none.ctx, { boards: ['https://www.acme.com/'] });
+    expect(data(r1).boards[0]).toMatchObject({ status: 'not_found' });
+    const evil = context([
+      route('https://www.acme.com/jobs.json', 'nope', 404),
+      route('https://www.acme.com/', careersHtml('https://evil.example/jobs.rss')),
+      route('https://evil.example/jobs.json', acme),
+    ]);
+    const r2 = await run(evil.ctx, { boards: ['https://www.acme.com/'] });
+    expect(data(r2).boards[0]).toMatchObject({ status: 'not_found' });
+    expect(evil.http.requests.map((r) => new URL(r.url).hostname)).not.toContain('evil.example');
+  });
+
+  it('also looks at the page when the guessed address answers something that is not a feed', async () => {
+    const c = context([
+      route('https://www.acme.com/jobs.json', '<html>a marketing page</html>'),
+      route('https://www.acme.com/', careersHtml('https://www.acme.com/people/jobs.rss')),
+      route('https://www.acme.com/people/jobs.json', acme),
+    ]);
+    const result = await run(c.ctx, { boards: ['https://www.acme.com/'] });
+    expect(ids(result)).toHaveLength(4);
+    expect(data(result).boards[0]?.feed_url).toBe('https://www.acme.com/people/jobs.json');
+  });
+
+  it('does not run discovery for a handle: there is no page to look at', async () => {
+    const c = context([route('https://ghost.teamtailor.com/jobs.json', 'nope', 404)]);
+    const result = await run(c.ctx, { boards: ['ghost'] });
+    expect(data(result).boards[0]).toMatchObject({ status: 'not_found' });
+    expect(c.http.requests).toHaveLength(1);
   });
 });

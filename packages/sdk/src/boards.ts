@@ -230,6 +230,8 @@ export function slugify(name: string): string {
 /** Where a handle or URL points: the address of the board's job list, and a label for reports. */
 export interface BoardAddress {
   feedUrl: string;
+  /** The page the caller pointed at, when the input was a URL: a second chance to find the board if `feedUrl` is not one. */
+  pageUrl?: string;
   /** The handle, or the host of a custom domain. */
   label: string;
 }
@@ -242,9 +244,16 @@ export interface BoardSource {
   resolve(input: string): BoardAddress | null;
   /** Parse the response with `parse(schema)` (a changed shape throws `adapter_broken`) into postings, without the `board`. */
   parse(parse: <T>(schema: z.ZodType<T>) => T, address: BoardAddress): { name: string | null; postings: Omit<BoardPosting, 'board'>[] };
+  /**
+   * Called once when `feedUrl` answered 404 or did not look like this ATS, and the input was a URL. Looks at the page the caller
+   * pointed at and returns where the board really is, or null. Whatever it returns goes through the same HTTP client rules.
+   */
+  discover?: (address: BoardAddress, http: HttpClient) => Promise<BoardAddress | null>;
   /** Said for an input that is not a handle or a URL of this ATS. */
   invalidMessage: string;
 }
+
+const looksLikeJson = (text: string): boolean => /^\s*[[{]/.test(text);
 
 export function boardToolOutput<S extends string>(source: S) {
   return z.object({
@@ -290,21 +299,37 @@ export async function runBoardTool<S extends string>(
     if (requested.has(address.feedUrl)) continue;
     requested.add(address.feedUrl);
     requests += 1;
+    let target: BoardAddress = address;
     try {
-      const response = await ctx.http.get(address.feedUrl, { timeoutMs: 25_000 });
+      let response = await ctx.http.get(address.feedUrl, { timeoutMs: 25_000 });
+      // The address built from the input is not a board: look at the page the caller named, once, to find the real one.
+      if (
+        (response.status === 404 || (response.ok && !looksLikeJson(response.text))) &&
+        address.pageUrl !== undefined &&
+        board.discover !== undefined
+      ) {
+        requests += 1;
+        const found = await board.discover(address, ctx.http);
+        if (found !== null && found.feedUrl !== address.feedUrl && !requested.has(found.feedUrl)) {
+          requested.add(found.feedUrl);
+          requests += 1;
+          response = await ctx.http.get(found.feedUrl, { timeoutMs: 25_000 });
+          target = { ...found, label: address.label };
+        }
+      }
       if (response.status === 404) {
-        fail(address.label, address.feedUrl, 'not_found', `No ${board.ats} job board at this address.`);
+        fail(target.label, target.feedUrl, 'not_found', `No ${board.ats} job board at this address.`);
         continue;
       }
       if (!response.ok) {
-        fail(address.label, address.feedUrl, 'error', `HTTP ${response.status}`);
+        fail(target.label, target.feedUrl, 'error', `HTTP ${response.status}`);
         continue;
       }
-      const parsed = board.parse((schema) => response.json(schema), address);
-      const name = slugify(parsed.name ?? '') || slugify(address.label) || address.label;
+      const parsed = board.parse((schema) => response.json(schema), target);
+      const name = slugify(parsed.name ?? '') || slugify(target.label) || target.label;
       const report: BoardReport = {
         board: name,
-        feed_url: address.feedUrl,
+        feed_url: target.feedUrl,
         status: 'ok',
         jobs_total: parsed.postings.length,
         relevant: null,
@@ -321,10 +346,10 @@ export async function runBoardTool<S extends string>(
         warnings.push(`${name}: ${parsed.postings.length - fresh} job(s) already listed by another board of this call.`);
     } catch (error) {
       if (error instanceof HostNotAllowedError)
-        fail(address.label, address.feedUrl, 'refused', 'This host cannot be read (not a public https site).');
+        fail(target.label, target.feedUrl, 'refused', 'This host cannot be read (not a public https site).');
       else if (error instanceof AdapterBroken)
-        fail(address.label, address.feedUrl, 'not_this_ats', `The address does not answer like a ${board.ats} job board.`);
-      else if (error instanceof JobwatchError) fail(address.label, address.feedUrl, 'error', error.message);
+        fail(target.label, target.feedUrl, 'not_this_ats', `The address does not answer like a ${board.ats} job board.`);
+      else if (error instanceof JobwatchError) fail(target.label, target.feedUrl, 'error', error.message);
       else throw error;
     }
   }
