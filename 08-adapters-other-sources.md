@@ -48,7 +48,7 @@ A combined `ats_jobs` tool was dropped: every ATS has its own URLs, response sha
 | **Teamtailor** | bsport, PayFit, Ornikar, many European companies | `GET https://<handle>.teamtailor.com/jobs.json` (JSON Feed, all open jobs with full descriptions, no login), also `/jobs.rss`; the same paths work on a company's own domain (`careers.bsport.io`) | **adapter built** (`teamtailor_jobs`), verified live 2026-10-02 |
 | **WTTJ** (platform) | French tech | logged-in `jobs-matches` page, browser only (plain HTTP is 403; `robots.txt` disallows query strings) | **first batch**, see above |
 | Greenhouse | Doctolib, Algolia, Mirakl | `GET boards-api.greenhouse.io/v1/boards/<handle>/jobs?content=true` | **adapter built** (`greenhouse_jobs`), verified live 2026-10-02 |
-| Lever | Pigment, Aircall, Swile, Malt, Brevo, BlaBlaCar | `GET api.lever.co/v0/postings/<handle>?mode=json` (handle is case-sensitive) | verified 2026-10-01; next |
+| Lever | Pigment, Aircall, Swile, Malt, Brevo, BlaBlaCar | `GET api.lever.co/v0/postings/<handle>?mode=json` (handle is case-sensitive) | **adapter built** (`lever_jobs`), verified live 2026-10-02 |
 | Ashby | Alan, Pennylane, Nabla, Back Market, Ledger | `GET api.ashbyhq.com/posting-api/job-board/<handle>` (up to 4 MB) | verified 2026-10-01; next |
 | SmartRecruiters | large groups | `GET api.smartrecruiters.com/v1/companies/<handle>/postings` | documented API, matched no watched company; VERIFY |
 | Workable | SMBs | `GET apply.workable.com/api/v1/widget/accounts/<handle>` (widget) | VERIFY; the widgets seen returned 0 jobs |
@@ -81,6 +81,13 @@ Draft code for Greenhouse, Lever and Ashby (provider parsers, HTML-to-text, the 
 - **Input:** `boards` = up to 10 board tokens (`algolia`) or board URLs: `https://boards.greenhouse.io/<token>`, `https://job-boards.greenhouse.io/<token>[/jobs/<id>]`, the embed link (`.../embed/job_board?for=<token>`) or the API URL. Only the token is taken from a URL: the request always goes to `boards-api.greenhouse.io` (the only allowed host), so the adapter is not `openHttps`. URLs with a port or credentials, other hosts and other API versions are `invalid`. The same board named several ways is requested once.
 - **Filters, output, source and board, budget (120 per hour, 600 per day):** exactly as for every company-board tool (`03-router-spec.md`, "Company-board adapters"; `04`). `source: "greenhouse"`, job id = Greenhouse's numeric id, `board` = the company name the API reports (`algolia`, `doctolib`).
 - **Not verified:** boards on Greenhouse's EU hosts, if they differ from `boards-api.greenhouse.io`.
+
+## Lever (`packages/adapter-lever`, tool `lever_jobs`)
+- **Endpoint (verified live 2026-10-02 on Pigment, Aircall, Swile, Modjo):** `GET https://api.lever.co/v0/postings/<site>?mode=json` returns a plain array with every posting: `id` (uuid), `text` (title), `hostedUrl`, `createdAt` (ms), `workplaceType`, `categories.location` and `allLocations`, and the description in parts (`descriptionPlain`, `lists[]` with HTML, `additionalPlain`), which the adapter joins. The site name is case-sensitive (`Modjo`). Postings carry **no company name**: the `board` is the lower-case site name.
+- **Input:** `boards` = up to 10 site names or page URLs (`https://jobs.lever.co/<site>[/<posting id>]`, or the API URL). Only the site is taken from a URL; the request always goes to `api.lever.co`, the only allowed host (not `openHttps`). Ports, credentials, other hosts and other API versions are `invalid`. The same site named several ways is requested once.
+- **Remote:** Lever states remote work in `workplaceType`, not in the location, so a posting marked `remote` gets `Remote` added to its locations, which is what `location_any: ["remote"]` matches.
+- **Filters, output, source and board, budget (120 per hour, 600 per day):** as for every company-board tool (`03-router-spec.md`). `source: "lever"`, job id = the Lever uuid.
+- **Not verified:** Lever's EU instance (`api.eu.lever.co` answered 404 for the one company tried).
 
 ## Adapter checklist (for any new platform)
 1. Catalog entry (schemas, limits, hosts). 2. Adapter class (+ session check if logged-in). 3. Parser + fixtures. 4. Rate policy and budget. 5. Contract tests. 6. Docs: add a section here with URL patterns, DOM facts, pitfalls.
