@@ -65,7 +65,7 @@ export function createGuardedSession(page: PageLike, allowedHosts: readonly stri
 
     async openTab(): Promise<BrowserTab> {
       if (tabs === undefined || tabs.max <= 1)
-        throw new JobwatchError('internal', 'Multi-tab is off (JW_BROWSER_MULTITAB): only one tab is allowed.');
+        throw new JobwatchError('internal', 'Multi-tab is off (JW_BROWSER_MAX_TABS is 1): only one tab is allowed.');
       let opened: PageLike;
       try {
         opened = await tabs.open();

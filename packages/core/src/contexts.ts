@@ -31,7 +31,7 @@ export interface ContextProviderDeps {
   /** Where adapters remember the jobs they opened. Omitted only in tests: a private in-memory store is used. */
   store?: Store;
   clock?: () => number;
-  /** Most tabs the browser may have open at once (`JW_BROWSER_MAX_TABS` when `JW_BROWSER_MULTITAB` is on). Default 1. */
+  /** Most tabs the browser may have open at once (`JW_BROWSER_MAX_TABS`). Default 1 when omitted, as in tests. */
   maxTabs?: number;
 }
 

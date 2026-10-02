@@ -403,7 +403,7 @@ All variables are optional unless noted; unknown `JW_*` names are reported at st
 | `JW_BROWSER_LANG`, `JW_BROWSER_ACCEPT_LANGS` | `fr-FR`, | Browser language and `Accept-Language` list. |
 | `JW_IDLE_TTL_S` | `120` | Seconds a browser stays up after its last call. |
 | `JW_MEM_HIGH_MB`, `JW_MEM_MAX_MB` | `1200`, `1500` | Soft and hard memory marks of the browser container. |
-| `JW_BROWSER_MULTITAB`, `JW_BROWSER_MAX_TABS` | `false`, `3` | `true` lets adapters open extra tabs, up to `JW_BROWSER_MAX_TABS` (2-4). Off = one tab. The memory cap is the same either way. |
+| `JW_BROWSER_MAX_TABS` | `3` | Most tabs the browser may have open at once. `1` = a single tab; more than 1 lets adapters open extra tabs. No upper limit, but each tab costs memory and the container cap does not change. |
 | `JW_LOG_LEVEL` | `info` | `trace` to `fatal`. |
 | `JW_METRICS_ENABLED`, `JW_METRICS_PORT` | `false`, `9464` | Prometheus `/metrics` on its own port. |
 
@@ -413,4 +413,4 @@ The repository is an Nx and npm-workspaces monorepo: `packages/sdk` (the adapter
 
 Tool definitions live in code and each adapter package has a generated `catalog/` snapshot: after changing a tool, run `npm run catalog:gen` and commit the result. To add a source, `npm run new:adapter -- <id> --kind http`, then follow the checklist in [`docs/plans/03-router-spec.md`](docs/plans/03-router-spec.md). Work happens on a branch, one pull request per step, squash-merged once `npm run ci` is green; the whole test suite must stay under five minutes.
 
-Contributing rules that matter most: keep every tool read-only, never commit secrets, cookies, browser profiles or captured pages (`deploy/.env`, `secrets/`, `profiles/` and `data/` are gitignored), and keep the browser to one instance at a time and, unless `JW_BROWSER_MULTITAB` is on, one tab. The measured benchmark in `docs/measurements.md` is the ceiling for memory and request budgets; features work inside it.
+Contributing rules that matter most: keep every tool read-only, never commit secrets, cookies, browser profiles or captured pages (`deploy/.env`, `secrets/`, `profiles/` and `data/` are gitignored), and keep the browser to one instance at a time and to the tab limit `JW_BROWSER_MAX_TABS`. The measured benchmark in `docs/measurements.md` is the ceiling for memory and request budgets; features work inside it.

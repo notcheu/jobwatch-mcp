@@ -245,7 +245,7 @@ describe('tabs', () => {
   it('is one tab by default: maxTabs is 1 and openTab refuses', async () => {
     const session = createGuardedSession(fakePage().page, hosts);
     expect(session.maxTabs).toBe(1);
-    await expect(session.openTab()).rejects.toThrow('JW_BROWSER_MULTITAB');
+    await expect(session.openTab()).rejects.toThrow('JW_BROWSER_MAX_TABS');
   });
 
   it('opens a tab that has the same allowlist and can be closed once', async () => {
