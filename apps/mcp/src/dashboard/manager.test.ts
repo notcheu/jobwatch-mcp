@@ -41,6 +41,7 @@ async function build(over: Partial<DashboardSettings> = {}) {
       installed: installedFixtures,
       pinned: false,
       runtime: () => undefined,
+      sessionStates: () => new Map(),
     },
     createLogger({ level: 'silent' }),
     () => Date.now(),

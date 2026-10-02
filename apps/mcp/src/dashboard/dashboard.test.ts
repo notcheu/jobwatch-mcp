@@ -174,6 +174,13 @@ async function build(over: Partial<DashboardDeps> = {}, authRequired = false, oi
     installed: installedFixtures,
     pinned: false,
     runtime: () => undefined,
+    sessionStates: () =>
+      new Map([
+        [
+          'linkedin',
+          { platform: 'linkedin', logged_in: true, state: 'ok' as const, checked_at: new Date(NOW - 60_000).toISOString(), cached: false },
+        ],
+      ]),
     logger: createLogger({ level: 'silent' }),
     publicOrigin: ORIGIN,
     authRequired,
@@ -563,5 +570,42 @@ describe('changes need CSRF protection and a recent sign-in', () => {
     expect(late.status).toBe(401);
     expect(await json(late)).toEqual({ error: 'reauth_required', message: 'Sign in again to make this change.' });
     expect((await t.call('/dashboard/api/v1/overview', { cookie })).status).toBe(200);
+  });
+});
+
+describe('session states in the tools answer', () => {
+  it('shows what the last session check found for a browser platform, and nothing for the others', async () => {
+    const t = await build();
+    const tools = await json(await t.call('/dashboard/api/v1/tools'));
+    const probe = tools.adapters.find((a: any) => a.id === 'probe');
+    expect(probe.session).toBeNull(); // an HTTP adapter has no session
+    expect(tools.adapters.every((a: any) => 'session' in a)).toBe(true);
+  });
+});
+
+describe('the Origin of a change in local development', () => {
+  const put = (t: Awaited<ReturnType<typeof build>>, origin: string | undefined) =>
+    t.call('/dashboard/api/v1/_probe', {
+      method: 'POST',
+      host: '127.0.0.1:18933',
+      headers: { 'x-jw-csrf': '1', ...(origin ? { origin } : {}) },
+    });
+  const local = () => build({ writes: (router) => void router.post('/_probe', (_req, res) => void res.json({ changed: true })) }, false);
+
+  it("accepts the page's own loopback origin, which is not the public one, and refuses any other", async () => {
+    const t = await local();
+    expect((await put(t, 'http://127.0.0.1:18933')).status).toBe(200);
+    expect((await put(t, 'http://evil.example')).status).toBe(403);
+    expect((await put(t, 'http://127.0.0.1:9999')).status).toBe(403); // another port is another origin
+    expect((await put(t, undefined)).status).toBe(403);
+  });
+
+  it('with sign-in required, only the public origin is accepted, whatever the Host', async () => {
+    const t = await build({ writes: (router) => void router.post('/_probe', (_req, res) => void res.json({ changed: true })) }, true);
+    const session = t.deps.sessions.create('me@example.com');
+    const send = (origin: string) =>
+      t.call('/dashboard/api/v1/_probe', { method: 'POST', cookie: `jw_dash=${session.id}`, headers: { 'x-jw-csrf': '1', origin } });
+    expect((await send(ORIGIN)).status).toBe(200);
+    expect((await send(`http://${new URL(ORIGIN).host}`)).status).toBe(403); // same host, other scheme
   });
 });

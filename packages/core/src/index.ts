@@ -90,4 +90,5 @@ export type { BreakerListener } from './limits/breaker';
 export { createGuard, policyFor } from './limits/guard';
 export { FakeBackend } from './runtime/fake';
 export { OPS_ADAPTER_ID, createOpsAdapter } from './ops/ops';
+export type { PlatformStatus } from './ops/ops';
 export type { OpsDeps } from './ops/ops';

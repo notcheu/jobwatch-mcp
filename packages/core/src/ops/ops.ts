@@ -34,11 +34,14 @@ export interface OpsDeps {
   limiter: RateLimiter;
   breaker: CircuitBreaker;
   contexts: ContextProvider;
+  /** Where the last session check of each platform is kept; pass one to read it from elsewhere. */
+  sessionCache?: Map<string, PlatformStatus>;
   clock: Clock;
   logger: EngineLogger;
 }
 
-interface PlatformStatus {
+/** What `session_status` last found for one platform (also read by the dashboard, which never triggers a check). */
+export interface PlatformStatus {
   platform: string;
   logged_in: boolean;
   state: SessionState;
@@ -95,7 +98,7 @@ const memoryReportSchema = z.object({
  * is open does not block them, and they never touch a site whose breaker says a verification is pending.
  */
 export function createOpsAdapter(deps: OpsDeps): AdapterModule {
-  const cache = new Map<string, PlatformStatus>();
+  const cache = deps.sessionCache ?? new Map<string, PlatformStatus>();
   const sessionAdapters = (): BrowserAdapter[] =>
     deps.enabledAdapters().filter((adapter): adapter is BrowserAdapter => adapter.kind === 'browser' && adapter.sessionCheck !== undefined);
 

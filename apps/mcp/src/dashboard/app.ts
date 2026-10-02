@@ -107,6 +107,15 @@ export function createDashboardApp(deps: DashboardDeps): Express {
 
   app.get(`${BASE}/assets/login.css`, (_req, res) => void res.type('text/css').send(LOGIN_CSS));
 
+  // The Origin a change must come from: the public origin when sign-in is required; in local development the dashboard has its own
+  // loopback port (the Host check has already limited the name to loopback), so its own origin is accepted.
+  const originOk = (req: Request): boolean => {
+    const sent = req.headers.origin;
+    if (sent === undefined) return false;
+    if (sent === origin.origin) return true;
+    return !deps.authRequired && sent === `http://${req.headers.host ?? ''}`;
+  };
+
   // --- who is calling
   const sessionOf = (req: Request): Session | undefined => deps.sessions.get(readCookie(req, SESSION_COOKIE));
   const localSession: Session = { id: 'local', email: 'local', signedInAt: 0, expiresAt: Number.MAX_SAFE_INTEGER };
@@ -184,7 +193,7 @@ export function createDashboardApp(deps: DashboardDeps): Express {
     deps.onActivity();
     // A change needs a header only the app sets, the right Origin and a sign-in that is recent enough.
     if (!['GET', 'HEAD'].includes(req.method)) {
-      if (req.headers['x-jw-csrf'] !== '1' || req.headers.origin !== origin.origin)
+      if (req.headers['x-jw-csrf'] !== '1' || !originOk(req))
         return sendError(res, 403, 'forbidden', 'This request did not come from the dashboard.');
       if (deps.authRequired && now() - session.signedInAt > deps.writeWindowMs)
         return sendError(res, 401, 'reauth_required', 'Sign in again to make this change.');
@@ -264,7 +273,7 @@ export function createDashboardApp(deps: DashboardDeps): Express {
   app.use(`${API_PREFIX}`, api);
 
   app.post(`${BASE}/auth/logout`, (req, res) => {
-    if (req.headers['x-jw-csrf'] !== '1' || req.headers.origin !== origin.origin) return void res.status(403).end();
+    if (req.headers['x-jw-csrf'] !== '1' || !originOk(req)) return void res.status(403).end();
     const session = sessionOf(req);
     if (session !== undefined) deps.sessions.revoke(session.id);
     res.setHeader('Set-Cookie', cookie(SESSION_COOKIE, '', { path: BASE, maxAgeS: 0, sameSite: 'Strict', secure }));
