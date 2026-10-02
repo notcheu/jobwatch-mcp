@@ -48,7 +48,7 @@ Tasks: update the routine docs per `13-…`; run old and new paths in parallel f
 **Exit**: 5 consecutive unattended daily runs meeting the global acceptance list in `11-…`.
 
 ## Dashboard (planned, 2026-10-03)
-An on-demand operator dashboard (React, shadcn, TanStack Table): run history kept in memory, stored jobs with a detail panel, searches, tool state with enable / disable, and analytics with the estimated tokens returned to Claude. Plan, decisions, API, security and the step list in `17-dashboard.md`; nothing built, questions for the owner in its section 12.
+An on-demand operator dashboard (React, shadcn, TanStack Table): run history kept in memory, stored jobs with a detail panel, searches, tool state with enable / disable, and analytics with the estimated tokens returned to Claude. Plan, decisions, API, security and the step list in `17-dashboard.md`; nothing built. The owner's answers of 2026-10-03 are folded in (hot reload of adapters, persisted aggregates, call parameters kept in memory, served at `<domain>/dashboard`); five points are still open in its section 12.
 
 ## Backlog / ideas
 - **Future possibility, not planned (decided 2026-10-02): one shared tool definition for the company-board ATS tools.** `teamtailor_jobs`, `greenhouse_jobs`, `lever_jobs` and `ashby_jobs` have identical parameters and differ only in the resolver and the parser, so their schemas, descriptions and catalog entries are written four times. A `defineBoardTool(source)` factory in the SDK would remove that. The adapters stay separate (one per ATS, one budget each); only the tool definition would be shared. Not implemented.
