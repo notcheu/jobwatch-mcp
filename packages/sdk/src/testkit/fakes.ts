@@ -197,6 +197,11 @@ export interface TestContext<C> {
   paced: PaceKind[];
   /** The store behind `ctx.jobs`: seed it with `put`, assert on `jobs`. */
   jobs: FakeJobStore;
+  /**
+   * Budget units the engine would have measured so far: every `ctx.http` request, every `session.goto`, plus `ctx.spend`.
+   * A test can compare it with the `cost` a handler reports: they must agree.
+   */
+  spent: () => number;
 }
 
 function baseParts(options: TestContextOptions): {
@@ -206,14 +211,34 @@ function baseParts(options: TestContextOptions): {
   logs: CapturedLog[];
   paced: PaceKind[];
   pace: (k: PaceKind) => Promise<void>;
+  spend: (units?: number) => void;
+  meter: { units: number };
 } {
+  const meter = { units: 0 };
   const logs: CapturedLog[] = [];
   const paced: PaceKind[] = [];
   const push = (level: CapturedLog['level']) => (message: string, fields?: Record<string, unknown>) => {
     logs.push({ level, message, ...(fields ? { fields } : {}) });
   };
+  const http = new FakeHttpClient(options.allowedHosts, options.routes, options.openHttps);
+  // the engine counts every request, wherever it ends
+  const get = http.get.bind(http);
+  const postJson = http.postJson.bind(http);
+  http.get = (url, request) => {
+    meter.units += 1;
+    return get(url, request);
+  };
+  http.postJson = (url, body, request) => {
+    meter.units += 1;
+    return postJson(url, body, request);
+  };
   return {
-    http: new FakeHttpClient(options.allowedHosts, options.routes, options.openHttps),
+    http,
+    meter,
+    spend: (units = 1) => {
+      if (!Number.isInteger(units) || units < 1) throw new RangeError('spend takes a positive whole number of units');
+      meter.units += units;
+    },
     jobs: new FakeJobStore(undefined, options.platform),
     log: { debug: push('debug'), info: push('info'), warn: push('warn'), error: push('error') },
     logs,
@@ -227,15 +252,21 @@ function baseParts(options: TestContextOptions): {
 
 /** Context for testing a `kind: "http"` adapter. */
 export function createHttpTestContext(options: TestContextOptions): TestContext<HttpAdapterContext> {
-  const { http, jobs, log, logs, paced, pace } = baseParts(options);
-  return { ctx: { http, jobs, log, pace }, http, jobs, logs, paced };
+  const { http, jobs, log, logs, paced, pace, spend, meter } = baseParts(options);
+  return { ctx: { http, jobs, log, pace, spend }, http, jobs, logs, paced, spent: () => meter.units };
 }
 
 /** Context for testing a `kind: "browser"` adapter. Also returns the fake session for assertions. */
 export function createBrowserTestContext(
   options: TestContextOptions,
 ): TestContext<BrowserAdapterContext> & { session: FakeBrowserSession } {
-  const { http, jobs, log, logs, paced, pace } = baseParts(options);
+  const { http, jobs, log, logs, paced, pace, spend, meter } = baseParts(options);
   const session = new FakeBrowserSession(options.allowedHosts, options.pages);
-  return { ctx: { http, jobs, log, pace, session }, http, jobs, logs, paced, session };
+  // the engine counts every page load
+  const goto = session.goto.bind(session);
+  session.goto = (url, gotoOptions) => {
+    meter.units += 1;
+    return goto(url, gotoOptions);
+  };
+  return { ctx: { http, jobs, log, pace, spend, session }, http, jobs, logs, paced, session, spent: () => meter.units };
 }

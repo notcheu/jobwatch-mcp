@@ -16,7 +16,7 @@ import {
   type Detail,
   type SessionStatus,
 } from '@jobwatch/sdk';
-import { MAX_PAGES, PAGE_SIZE, readJobPage, readMatches } from './api';
+import { MAX_PAGES, PAGE_SIZE, pagesFor, readJobPage, readMatches } from './api';
 import { EXTRACT_PAGE_STATE, type PageState } from './extract';
 import { HOST, MATCHES_URL, jobId, parseJobUrl, type Card, type JobRef } from './parse';
 
@@ -140,7 +140,7 @@ const matches = defineBrowserTool({
   input: z.object({ ...matchFields }).strict(),
   output: z.object({ cards: z.array(cardSchema), total_matches: z.number().nullable(), pages_loaded: z.number() }),
   annotations,
-  limits: { timeoutS: 180, cost: MAX_PAGES, outputMaxBytes: 262_144 },
+  limits: { timeoutS: 180, cost: MAX_PAGES, estimate: (args) => pagesFor(args.max_results), outputMaxBytes: 262_144 },
   handler: async (args, ctx) => {
     const found = await readMatches(ctx, args.max_results);
     const cards = withinRange(found.cards, args.posted_within);
@@ -153,7 +153,6 @@ const matches = defineBrowserTool({
         pages_loaded: found.pages,
       },
       warnings: found.warnings,
-      cost: found.pages,
     };
   },
 });
@@ -181,7 +180,7 @@ const job = defineBrowserTool({
     failed: z.array(failedSchema),
   }),
   annotations,
-  limits: { timeoutS: 300, cost: 25, outputMaxBytes: 262_144 },
+  limits: { timeoutS: 300, cost: 25, estimate: (args) => new Set(args.urls).size, outputMaxBytes: 262_144 },
   handler: async (args, ctx) => {
     const refs = new Map<string, JobRef>();
     for (const url of args.urls) {
@@ -207,7 +206,6 @@ const job = defineBrowserTool({
     return {
       data: { jobs: fit, not_returned_ids: rest, excluded: outcome.excluded, failed: outcome.failed },
       warnings: outcome.failed.map((failed) => `job ${failed.id}: ${failed.status}`),
-      cost: outcome.visits,
     };
   },
 });
@@ -258,7 +256,13 @@ const matchesAndRead = defineBrowserTool({
     pages_loaded: z.number(),
   }),
   annotations,
-  limits: { timeoutS: 300, cost: MAX_PAGES + 50, outputMaxBytes: 262_144 },
+  limits: {
+    timeoutS: 300,
+    cost: MAX_PAGES + 50,
+    // the match pages and the jobs it may read; stored and excluded ones are refunded when the call ends
+    estimate: (args) => pagesFor(args.max_results) + Math.min(args.max_jobs, args.max_results),
+    outputMaxBytes: 262_144,
+  },
   handler: async (args, ctx) => {
     const deadline = Date.now() + READ_BUDGET_MS;
     const found = await readMatches(ctx, args.max_results);
@@ -308,7 +312,6 @@ const matchesAndRead = defineBrowserTool({
         pages_loaded: found.pages,
       },
       warnings,
-      cost: found.pages + outcome.visits,
     };
   },
 });

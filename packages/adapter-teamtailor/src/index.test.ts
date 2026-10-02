@@ -149,7 +149,7 @@ describe('teamtailor_jobs', () => {
     ]);
     expect([...c.jobs.jobs.values()].every((job) => job.source === 'teamtailor' && job.board === 'acme')).toBe(true);
     expect(c.jobs.jobs.size).toBe(4);
-    expect(result.cost).toBe(1);
+    expect(c.spent()).toBe(1);
   });
 
   it('reads a company on its own domain, once the host is open', async () => {
@@ -277,7 +277,7 @@ describe('teamtailor_jobs', () => {
       ['Not A Handle', 'invalid'],
     ]);
     expect(result.warnings.join(' ')).toMatch(/ghost: not_found/);
-    expect(result.cost).toBe(6); // the invalid entry never reached the network; the site that is not a feed also costs one page read
+    expect(c.spent()).toBe(6); // the invalid entry never reached the network; the site that is not a feed also costs one page read
   });
 
   it('never asks for a host that cannot be public, and says so', async () => {
@@ -285,7 +285,7 @@ describe('teamtailor_jobs', () => {
     const result = await run(c.ctx, { boards: ['https://192.168.1.10/', 'https://printer.local/'] });
     expect(data(result).boards.map((b) => b.status)).toEqual(['invalid', 'invalid']);
     expect(c.http.requests).toEqual([]);
-    expect(result.cost).toBe(0);
+    expect(c.spent()).toBe(0);
   });
 
   it('reports a refused host (the client said no) as refused, not as a crash', async () => {
@@ -447,7 +447,7 @@ describe('teamtailor_jobs on a site that is not at the guessed address', () => {
       'https://www.acme.com/careers/jobs/123-dev',
       'https://www.acme.com/team/careers/jobs.json',
     ]);
-    expect(result.cost).toBe(3);
+    expect(c.spent()).toBe(3);
   });
 
   it('uses the guess when it is right, without reading the page', async () => {

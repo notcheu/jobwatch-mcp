@@ -60,7 +60,7 @@ function logSink(): { stream: Writable; text: () => string } {
 
 const okProvider = (released: { count: number }): ContextProvider => ({
   acquire: async () => ({
-    ctx: { http: {} as never, jobs: {} as never, log: {} as never, pace: async () => undefined },
+    ctx: { http: {} as never, jobs: {} as never, log: {} as never, pace: async () => undefined, spend: () => undefined },
     release: async () => {
       released.count += 1;
     },
@@ -220,7 +220,7 @@ describe('callTool: context provider', () => {
   it('does not let a failing release hide the result', async () => {
     const provider: ContextProvider = {
       acquire: async () => ({
-        ctx: { http: {} as never, jobs: {} as never, log: {} as never, pace: async () => undefined },
+        ctx: { http: {} as never, jobs: {} as never, log: {} as never, pace: async () => undefined, spend: () => undefined },
         release: async () => {
           throw new Error('container did not stop');
         },

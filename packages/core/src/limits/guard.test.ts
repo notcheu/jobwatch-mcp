@@ -7,7 +7,7 @@ import {
   z,
   type AdapterModule,
   type BaseContext,
-  type JobwatchError,
+  JobwatchError,
 } from '@jobwatch/sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { callTool, type CallDeps, type ToolOutcome } from '../call';
@@ -22,7 +22,13 @@ const annotations = { readOnlyHint: true, openWorldHint: true, idempotentHint: t
 let behaviour: () => Promise<{ data: { n: number }; warnings: string[]; cost?: number }>;
 const handlerRuns = { count: 0 };
 
-function adapterOf(id: string, platform: string, rate?: { perHour: number; perDay: number }, cost = 1): AdapterModule {
+function adapterOf(
+  id: string,
+  platform: string,
+  rate?: { perHour: number; perDay: number },
+  cost = 1,
+  estimate?: (args: { n: number }) => number,
+): AdapterModule {
   return defineAdapter({
     id,
     displayName: id,
@@ -37,10 +43,10 @@ function adapterOf(id: string, platform: string, rate?: { perHour: number; perDa
         name: `${id}_run`,
         title: 'Run (read-only)',
         description: 'Runs. Read-only, no side effects.',
-        input: z.object({}).strict(),
+        input: z.object({ n: z.number().int().min(1).max(10).default(1) }).strict(),
         output: z.object({ n: z.number() }),
         annotations,
-        limits: { timeoutS: 5, cost, outputMaxBytes: 2048 },
+        limits: { timeoutS: 5, cost, outputMaxBytes: 2048, ...(estimate ? { estimate } : {}) },
         handler: async () => {
           handlerRuns.count += 1;
           return behaviour();
@@ -52,6 +58,9 @@ function adapterOf(id: string, platform: string, rate?: { perHour: number; perDa
 
 let now: number;
 let store: Store;
+/** What the engine's meter would say the call spent; undefined = a provider that does not measure. */
+let measure: (() => number) | undefined;
+let acquireFails = false;
 let outcomes: ToolOutcome[];
 
 async function setup(adapters: AdapterModule[]) {
@@ -64,7 +73,12 @@ async function setup(adapters: AdapterModule[]) {
   );
   const deps: CallDeps = {
     registry,
-    contexts: { acquire: async () => ({ ctx: {} as BaseContext, release: async () => undefined }) },
+    contexts: {
+      acquire: async () => {
+        if (acquireFails) throw new JobwatchError('busy', 'The browser is busy.');
+        return { ctx: {} as BaseContext, release: async () => undefined, ...(measure ? { spent: measure } : {}) };
+      },
+    },
     logger: createLogger({ level: 'silent' }),
     guard: createGuard(limiter, breaker),
     record: (outcome) => outcomes.push(outcome),
@@ -77,6 +91,8 @@ const code = async (deps: CallDeps, tool: string, args: unknown = {}) => (await 
 beforeEach(() => {
   now = Date.UTC(2026, 9, 1, 12, 0, 0);
   outcomes = [];
+  measure = undefined;
+  acquireFails = false;
   handlerRuns.count = 0;
   behaviour = async () => ({ data: { n: 1 }, warnings: [] });
 });
@@ -156,17 +172,17 @@ describe('settling the real cost', () => {
     expect(handlerRuns.count).toBe(1);
   });
 
-  it('clamps a report above the reservation and ignores nonsense', async () => {
+  it('caps a report above the tool maximum, and keeps the reservation when the report is nonsense', async () => {
     const { deps, limiter } = await setupCost();
     behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: 99 });
     await code(deps, 'alpha_run');
-    expect(limiter.status('alpha').hour.used).toBe(10);
+    expect(limiter.status('alpha').hour.used).toBe(10); // capped at the maximum, 10
     behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: Number.NaN });
     await code(deps, 'alpha_run');
-    expect(limiter.status('alpha').hour.used).toBe(20);
+    expect(limiter.status('alpha').hour.used).toBe(20); // ignored: the reservation (10) stands
     behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: -4 });
     await code(deps, 'alpha_run');
-    expect(limiter.status('alpha').hour.used).toBe(20);
+    expect(limiter.status('alpha').hour.used).toBe(30); // a negative report is not a refund
   });
 
   it('removes the charge when nothing reached the platform (cost 0) and keeps full charge on failure', async () => {
@@ -179,6 +195,98 @@ describe('settling the real cost', () => {
     };
     await code(deps, 'alpha_run');
     expect(limiter.status('alpha').hour.used).toBe(10);
+  });
+});
+
+describe('reserving from the arguments of the call', () => {
+  const sized = (perHour = 12) => setup([adapterOf('alpha', 'alpha', { perHour, perDay: 100 }, 10, (args) => args.n)]);
+
+  it('reserves what this call needs, not the tool maximum', async () => {
+    const { deps, limiter } = await sized();
+    expect(await code(deps, 'alpha_run', { n: 2 })).toBe('ok');
+    expect(limiter.status('alpha').hour.used).toBe(2); // not 10
+    expect(await code(deps, 'alpha_run', { n: 10 })).toBe('ok'); // 2 + 10 = 12, fits
+    expect(await code(deps, 'alpha_run', { n: 1 })).toBe('rate_limited');
+  });
+
+  it('a small call is not refused for lack of room that a big one would have needed', async () => {
+    const { deps } = await sized(15);
+    expect(await code(deps, 'alpha_run', { n: 9 })).toBe('ok');
+    expect(await code(deps, 'alpha_run', { n: 10 })).toBe('rate_limited'); // 9 + 10 > 15
+    expect(await code(deps, 'alpha_run', { n: 3 })).toBe('ok'); // 9 + 3 <= 15
+  });
+
+  it('keeps the estimate between 1 and the maximum, and falls back to the maximum when it is broken', async () => {
+    for (const [estimate, reserved] of [
+      [() => 0, 1],
+      [() => -5, 1],
+      [() => 99, 10],
+      [() => 2.2, 3],
+      [() => Number.NaN, 10],
+      [() => Number.POSITIVE_INFINITY, 10],
+      [
+        () => {
+          throw new Error('boom');
+        },
+        10,
+      ],
+    ] as [() => number, number][]) {
+      const { deps, limiter } = await setup([adapterOf('alpha', 'alpha', { perHour: 100, perDay: 100 }, 10, estimate)]);
+      await code(deps, 'alpha_run');
+      expect(limiter.status('alpha').hour.used, String(estimate)).toBe(reserved);
+    }
+  });
+});
+
+describe('charging what a call really did', () => {
+  const run = () => setup([adapterOf('alpha', 'alpha', { perHour: 100, perDay: 100 }, 10, () => 6)]);
+
+  it('a call that succeeds without reporting is charged what the engine measured', async () => {
+    const { deps, limiter } = await run();
+    measure = () => 2;
+    await code(deps, 'alpha_run');
+    expect(limiter.status('alpha').hour.used).toBe(2);
+  });
+
+  it('a call that FAILS half way is charged what it did, not the whole reservation', async () => {
+    const { deps, limiter } = await run();
+    measure = () => 3;
+    behaviour = async () => {
+      throw new JobwatchError('timeout', 'too slow');
+    };
+    expect(await code(deps, 'alpha_run')).toBe('timeout');
+    expect(limiter.status('alpha').hour.used).toBe(3);
+  });
+
+  it('a call that failed before touching anything costs nothing, and so does one that never got the browser', async () => {
+    const { deps, limiter } = await run();
+    measure = () => 0;
+    behaviour = async () => {
+      throw new Error('crash');
+    };
+    expect(await code(deps, 'alpha_run')).toBe('internal');
+    expect(limiter.status('alpha').hour.used).toBe(0);
+    acquireFails = true;
+    expect(await code(deps, 'alpha_run')).toBe('busy');
+    expect(limiter.status('alpha').hour.used).toBe(0);
+  });
+
+  it('a call that spent more than it reserved records the excess, up to the tool maximum, and never refuses it', async () => {
+    const { deps, limiter } = await run();
+    measure = () => 9;
+    await code(deps, 'alpha_run'); // reserved 6, spent 9
+    expect(limiter.status('alpha').hour.used).toBe(9);
+    measure = () => 400;
+    await code(deps, 'alpha_run'); // an absurd count is capped at the maximum, 10
+    expect(limiter.status('alpha').hour.used).toBe(9 + 10);
+  });
+
+  it('what the handler reports wins over the measure', async () => {
+    const { deps, limiter } = await run();
+    measure = () => 5;
+    behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: 1 });
+    await code(deps, 'alpha_run');
+    expect(limiter.status('alpha').hour.used).toBe(1);
   });
 });
 

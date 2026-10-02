@@ -292,20 +292,19 @@ export function boardsInput(description: string, maxBoards = 10) {
 
 /**
  * The whole body of a board tool: read each requested board (one request each, failures reported per board and never fatal),
- * then judge the postings with `judgeBoardPostings`. `cost` is the number of requests actually made.
+ * then judge the postings with `judgeBoardPostings`. The cost is what the engine counts: one unit per request made.
  */
 export async function runBoardTool<S extends string>(
   ctx: { http: HttpClient; jobs: JobStore },
   source: S,
   board: BoardSource,
   args: BoardFilters & { boards: readonly string[] },
-): Promise<{ data: z.infer<ReturnType<typeof boardToolOutput<S>>>; warnings: string[]; cost: number }> {
+): Promise<{ data: z.infer<ReturnType<typeof boardToolOutput<S>>>; warnings: string[] }> {
   const warnings: string[] = [];
   const reports: BoardReport[] = [];
   const found: { posting: BoardPosting; report: BoardReport }[] = [];
   const seen = new Set<string>();
   const requested = new Set<string>();
-  let requests = 0;
   const fail = (name: string, feedUrl: string | null, status: BoardReport['status'], message: string): void => {
     reports.push({ board: name, feed_url: feedUrl, status, jobs_total: null, relevant: null, message });
   };
@@ -319,7 +318,6 @@ export async function runBoardTool<S extends string>(
     // The same board given as a handle and as two URLs is one request.
     if (requested.has(address.feedUrl)) continue;
     requested.add(address.feedUrl);
-    requests += 1;
     let target: BoardAddress = address;
     try {
       let response = await ctx.http.get(address.feedUrl, { timeoutMs: 25_000 });
@@ -329,11 +327,9 @@ export async function runBoardTool<S extends string>(
         address.pageUrl !== undefined &&
         board.discover !== undefined
       ) {
-        requests += 1;
         const found = await board.discover(address, ctx.http);
         if (found !== null && found.feedUrl !== address.feedUrl && !requested.has(found.feedUrl)) {
           requested.add(found.feedUrl);
-          requests += 1;
           response = await ctx.http.get(found.feedUrl, { timeoutMs: 25_000 });
           target = { ...found, label: address.label };
         }
@@ -394,6 +390,5 @@ export async function runBoardTool<S extends string>(
   return {
     data: { jobs: judged.jobs, not_returned_ids: judged.notReturned, excluded: judged.excluded, boards: reports },
     warnings,
-    cost: requests,
   };
 }

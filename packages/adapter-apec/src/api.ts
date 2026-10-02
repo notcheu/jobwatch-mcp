@@ -6,6 +6,9 @@ export const PAGE_SIZE = 20;
 /** Apec's search is sorted newest first; five pages (100 offers) is more than a daily watch needs. */
 export const MAX_SEARCH_PAGES = 5;
 
+/** How many search pages a request for `max_results` results loads at most (the results may end sooner). */
+export const searchPagesFor = (maxResults: number): number => Math.max(1, Math.min(MAX_SEARCH_PAGES, Math.ceil(maxResults / PAGE_SIZE)));
+
 export const offerUrl = (id: string): string => `https://www.apec.fr/candidat/recherche-emploi.html/emploi/detail-offre/${id}`;
 
 export interface SearchArgs {
@@ -78,6 +81,8 @@ async function call(
   ctx: BrowserAdapterContext,
   arg: { kind: 'search'; body: unknown } | { kind: 'offer'; id: string },
 ): Promise<EndpointAnswer> {
+  // a request made from inside the page: the engine cannot see it, so it is reported (before it can fail)
+  ctx.spend();
   const answer = await ctx.session.evaluate<EndpointAnswer, typeof arg>(CALL_ENDPOINT, arg);
   if (answer.blocked) throw new Checkpoint(BLOCKED);
   return answer;

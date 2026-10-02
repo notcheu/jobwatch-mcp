@@ -87,6 +87,12 @@ async function loadPage(ctx: BrowserAdapterContext, layout: SearchLayout, args: 
  * (paced), and stops early when a page is not full (the end of the results). Duplicates across pages are dropped. The remote
  * filter is applied last, so `max_results` counts what was examined, not what was kept.
  */
+/** How many search pages a request for `max_results` results starting at `page` loads at most (the results may end sooner). */
+export function pagesFor(args: { page: number; max_results: number }): number {
+  const wanted = Math.ceil(args.max_results / PAGE_SIZE);
+  return Math.max(1, Math.min(args.page + wanted - 1, MAX_PAGE) - args.page + 1);
+}
+
 export async function searchCards(ctx: BrowserAdapterContext, layout: SearchLayout, args: SearchArgs): Promise<SearchResult> {
   const warnings: string[] = [];
   const wanted = Math.ceil(args.max_results / PAGE_SIZE);

@@ -6,6 +6,9 @@ import { MATCHES_URL, findJobPosting, jobUrl, parseCard, postingDescription, pos
 export const PAGE_SIZE = 10;
 export const MAX_PAGES = 5;
 
+/** How many match pages a request for `max_results` results loads at most (the list may end sooner). */
+export const pagesFor = (maxResults: number): number => Math.max(1, Math.min(MAX_PAGES, Math.ceil(maxResults / PAGE_SIZE)));
+
 /** A login page or a bot check instead of what we asked for: stop, and let the engine open the breaker. */
 export function assertUsable(path: string, state: { loginForm: boolean; challenge: boolean }): void {
   if (state.challenge)
@@ -62,6 +65,7 @@ export async function readMatches(ctx: BrowserAdapterContext, maxResults: number
     }
     if (cards.length >= maxResults || pages >= MAX_PAGES || !page.hasNext) break;
     await ctx.pace('page');
+    ctx.spend(); // pressing "Next Page" loads the next list: a page view the engine cannot see
     const moved = await ctx.session.evaluate<{ moved: boolean }>(CLICK_NEXT);
     if (!moved.moved) break;
     page = await ctx.session.evaluate<ExtractedMatches>(EXTRACT_MATCHES);

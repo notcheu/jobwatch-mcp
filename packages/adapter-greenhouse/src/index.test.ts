@@ -129,7 +129,7 @@ describe('greenhouse_jobs', () => {
     expect(data(result).jobs[0]?.stack_hints).toEqual(expect.arrayContaining(['react', 'typescript']));
     expect(data(result).boards).toEqual([{ board: 'acme', feed_url: ACME, status: 'ok', jobs_total: 4, relevant: 4 }]);
     expect([...c.jobs.jobs.values()].every((j) => j.source === 'greenhouse' && j.board === 'acme')).toBe(true);
-    expect(result.cost).toBe(1);
+    expect(c.spent()).toBe(1);
     expect(c.http.requests.map((r) => r.url)).toEqual(['https://boards-api.greenhouse.io/v1/boards/acme/jobs']);
     const full = await run(c.ctx, { detail: 'full' });
     expect(data(full).jobs[0]?.description).toContain('React & TypeScript');
@@ -174,7 +174,7 @@ describe('greenhouse_jobs', () => {
       ['https://evil.example/acme', 'invalid'],
       ['https://192.168.1.1/', 'invalid'],
     ]);
-    expect(result.cost).toBe(4);
+    expect(c.spent()).toBe(4);
     expect(new Set(c.http.requests.map((r) => new URL(r.url).hostname))).toEqual(new Set(['boards-api.greenhouse.io']));
   });
 

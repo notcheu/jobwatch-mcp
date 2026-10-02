@@ -118,6 +118,7 @@ describe('lever_jobs', () => {
   it('reads a board, stores the jobs with source and board named after the site, and reports it', async () => {
     const c = context();
     const result = await run(c.ctx);
+    expect(c.spent()).toBe(1); // one request for one board
     expect(ids(result)).toEqual([J1, J4, J2, J3]);
     expect(data(result).jobs[0]).toMatchObject({ source: 'lever', board: 'acme', company: null, locations: ['Paris, France'] });
     const full = await run(c.ctx, { detail: 'full' });
@@ -129,7 +130,6 @@ describe('lever_jobs', () => {
     expect(data(result).jobs[0]?.summary).toMatch(/^Role: Build UIs; Review code/);
     expect(data(result).boards).toEqual([{ board: 'acme', feed_url: ACME, status: 'ok', jobs_total: 4, relevant: 4 }]);
     expect([...c.jobs.jobs.values()].every((j) => j.source === 'lever' && j.board === 'acme')).toBe(true);
-    expect(result.cost).toBe(1);
   });
 
   it('says so in the location when Lever marks a posting remote, so location filters can find it', async () => {

@@ -13,7 +13,16 @@ import type { Registry } from './registry';
 
 /** Gives a handler its context (HTTP client, browser session, logger) and takes it back. Real providers arrive in steps 5 and 6. */
 export interface ContextProvider {
-  acquire(adapter: AdapterModule, requestId: string): Promise<{ ctx: BaseContext; release: () => Promise<void>; signal?: AbortSignal }>;
+  acquire(
+    adapter: AdapterModule,
+    requestId: string,
+  ): Promise<{
+    ctx: BaseContext;
+    release: () => Promise<void>;
+    signal?: AbortSignal;
+    /** Budget units the call has spent so far: HTTP requests, page loads, and what the adapter reported with `ctx.spend`. */
+    spent?: () => number;
+  }>;
 }
 
 /** The provider of a build without a runtime: every acquisition fails with a clear `internal` error. */
@@ -32,7 +41,7 @@ export interface Admission {
 }
 
 export interface CallGuard {
-  admit(adapter: AdapterModule, tool: ErasedTool<BaseContext>): Admission | undefined;
+  admit(adapter: AdapterModule, tool: ErasedTool<BaseContext>, args: unknown): Admission | undefined;
   failed(adapter: AdapterModule, error: JobwatchError): void;
 }
 
@@ -176,13 +185,15 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
 
   let admission: Admission | undefined;
   try {
-    admission = deps.guard?.admit(adapter, tool);
+    admission = deps.guard?.admit(adapter, tool, parsed.data);
   } catch (error) {
     if (error instanceof JobwatchError) return fail(error.toBody());
     throw error;
   }
 
   let lease: Awaited<ReturnType<ContextProvider['acquire']>> | undefined;
+  // Units the handler reported itself (success only). Otherwise the engine's own count of what the call did is used.
+  let reported: number | undefined;
   try {
     lease = await deps.contexts.acquire(adapter, requestId);
     // One cast, here: the registry stores tools with their argument type erased; `input` has just validated the arguments.
@@ -216,7 +227,7 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
         details: { limit_bytes: tool.limits.outputMaxBytes },
       });
     }
-    if (produced.cost !== undefined) admission?.settle(produced.cost);
+    reported = produced.cost;
     const result: ToolCallResult = {
       isError: false,
       content: [{ type: 'text', text }],
@@ -232,6 +243,12 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
     log.error({ err: error }, 'tool_call_failed');
     return fail({ code: 'internal', message: 'Internal error.', retry_after_s: null, details: {} });
   } finally {
+    // One place, whatever way the call ended: the reservation becomes what was really spent. A call that failed before touching
+    // anything (no lease, a refused queue) costs nothing; one that failed half way costs what it did.
+    if (reported !== undefined) admission?.settle(reported);
+    else if (lease === undefined) admission?.settle(0);
+    else if (lease.spent !== undefined) admission?.settle(lease.spent());
+    // else: a provider that does not measure (only in tests) leaves the reservation as it was
     if (lease !== undefined) {
       await lease.release().catch((error: unknown) => log.error({ err: error }, 'context_release_failed'));
     }

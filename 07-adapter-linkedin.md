@@ -84,7 +84,7 @@ linkedin_search_and_read { keywords: "backend engineer", max_results: 50, disall
 ```
 For a deep sweep use `max_results: 250` (ten pages). If a result has `remaining_ids`, repeat that same call until it is empty.
 
-**Budget accounting.** A call reserves its maximum up front (so two concurrent calls cannot both pass the last units) and the engine hands back what the handler did not use (`AdapterResult.cost`, `03-router-spec.md`). The reservation is what must fit in the hour: with 200 per hour a `linkedin_search_and_read` (35) can start 5 times at once. What counts afterwards is the real spend: 2 search pages + 25 job pages = 27.
+**Budget accounting.** A call reserves what its own arguments need (`linkedin_search_and_read` with 25 results: one search page plus up to 25 job reads, at most 60) so that two concurrent calls cannot both take the last units, and is settled to what the engine measured: page loads actually made. A failed call is charged what it did, not the reservation; a stored or excluded job costs nothing (`03-router-spec.md`, "Cost model"). With 200 per hour, 6 to 7 `linkedin_search_and_read` calls of 25 results fit in an hour (it was 6 when the maximum was always reserved).
 
 ### How much text a tool returns: `detail`
 A description is 3,000 to 6,000 characters, mostly the company's pitch, benefits and legal notices. The search tools therefore return a **summary by default** and the full text only on request; the full text is always stored.
