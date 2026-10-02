@@ -1,4 +1,4 @@
-/** DevTools port inside the browser container, reached through the `socat` forward (05-browser-runtime.md, G2). */
+/** DevTools port inside the browser container, reached through the `socat` forward (docs/plans/05-browser-runtime.md, G2). */
 export const DEVTOOLS_PORT = 9222;
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::(\d{1,5}))?$/;

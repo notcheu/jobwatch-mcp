@@ -53,7 +53,7 @@ export function adapterFiles(spec) {
   const index = browser
     ? `import { SDK_API_VERSION, defineAdapter, defineBrowserTool, z } from '@jobwatch/sdk';
 
-// TODO: replace this example with the real tools of the ${name} adapter (see docs/03-router-spec.md, "Adapter SDK").
+// TODO: replace this example with the real tools of the ${name} adapter (see docs/plans/03-router-spec.md, "Adapter SDK").
 const exampleTool = defineBrowserTool({
   name: '${tool}',
   title: '${name} example (read-only)',
@@ -85,7 +85,7 @@ export default defineAdapter({
 `
     : `import { SDK_API_VERSION, defineAdapter, defineHttpTool, z } from '@jobwatch/sdk';
 
-// TODO: replace this example with the real tools of the ${name} adapter (see docs/03-router-spec.md, "Adapter SDK").
+// TODO: replace this example with the real tools of the ${name} adapter (see docs/plans/03-router-spec.md, "Adapter SDK").
 const exampleTool = defineHttpTool({
   name: '${tool}',
   title: '${name} example (read-only)',

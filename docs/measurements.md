@@ -17,7 +17,7 @@
 - **RAM is the binding constraint.** The default `memory.max` of 1100 MB for Chrome plus always-on services (front, router, Watchtower, a second rootless daemon) does not fit in 1332 MB available without pushing the host deeper into swap. V4 (one headful Chrome in about 1 GB) is at risk; S3 must measure real Chrome on LinkedIn pages and the budgets in `06-…` may need to drop (for example `max` 800 MB) or other containers may need to be stopped during runs.
 - **Rootless Docker is a second daemon**, separate from the existing rootful one (its own images and containers, plus its own memory overhead). Existing containers and the existing Watchtower are not affected and cannot see ours.
 - **Rootless overlay2 on ZFS is unverified (but likely fine).** Rootless Docker stores data under the `jobwatch` user's home; if that filesystem is ZFS, native overlay may not work and Docker falls back to `fuse-overlayfs` or `vfs` (slower, more disk). Put the `jobwatch` home on ext4/xfs if possible. VERIFY in S7.
-- Everything else from the Phase 0 spike list is still open; see `14-risks-and-open-questions.md`.
+- Everything else from the Phase 0 spike list is still open; see `docs/plans/14-risks-and-open-questions.md`.
 
 ## `host-check.sh` results (run as `noguetith`, 2026-10-01)
 | Check | Result | Meaning |

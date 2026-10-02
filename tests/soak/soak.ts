@@ -1,5 +1,5 @@
 /**
- * Soak test of a RUNNING router (11-testing-and-validation.md: 6 h of periodic calls, no growth in router RSS, no leaked
+ * Soak test of a RUNNING router (docs/plans/11-testing-and-validation.md: 6 h of periodic calls, no growth in router RSS, no leaked
  * containers, logs clean). Plain Node 26 (types are stripped), no dependencies, read-only: it only calls the tools you list.
  *
  *   docker run --rm --network jobwatch_jobwatch-core -e SOAK_SECRET=<JW_FRONT_SHARED_SECRET> \

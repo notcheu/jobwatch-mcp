@@ -20,7 +20,7 @@ jobs:
           cache: npm
       - run: npm ci
       # format check + lint (incl. architecture rules) + typecheck + unit/contract tests.
-      # Integration tests need the browser runtime and run on the NUC only (see 11-testing-and-validation.md).
+      # Integration tests need the browser runtime and run on the NUC only (see docs/plans/11-testing-and-validation.md).
       # The whole suite must stay under 5 minutes (CLAUDE.md). A test that spins the CPU defeats vitest's own timeouts, so
       # this step cap is what turns a hang into a quick failure instead of a 12-minute stall.
       - run: npm run ci

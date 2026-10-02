@@ -24,7 +24,7 @@ export interface ManagerConfig {
   idleTtlS: number;
   maxLifetimeS: number;
   queueTimeoutS: number;
-  /** Defaults: hard cap and soft mark of 06-memory-and-lifecycle-policy.md. Per-lease budgets override. */
+  /** Defaults: hard cap and soft mark of docs/plans/06-memory-and-lifecycle-policy.md. Per-lease budgets override. */
   memMaxMb: number;
   memHighMb: number;
   startTimeoutS?: number;
@@ -97,7 +97,7 @@ function withTimeout<T>(work: Promise<T>, ms: number, message: string): Promise<
 }
 
 /**
- * One browser at a time, for the whole router (06-memory-and-lifecycle-policy.md). The per-platform state machine of the
+ * One browser at a time, for the whole router (docs/plans/06-memory-and-lifecycle-policy.md). The per-platform state machine of the
  * spec collapses to ONE slot, because a second platform can only run after the first is gone:
  *
  *   COLD -> STARTING -> BUSY -> IDLE_GRACE -> STOPPING -> COLD

@@ -5,7 +5,7 @@
  * job-search routine, whose notes explain both scripts: the classic list is VIRTUALIZED (LinkedIn renders only the cards near
  * the viewport, and removes far ones), and a job description is rendered lazily, after its container already exists.
  * The markup was observed in the owner's own session on 2026-10-01. The real-browser behaviour of these scripts is checked by
- * hand (see 07-adapter-linkedin.md, "Verification status"); the unit tests give the adapter canned results instead.
+ * hand (see docs/plans/07-adapter-linkedin.md, "Verification status"); the unit tests give the adapter canned results instead.
  */
 
 /**

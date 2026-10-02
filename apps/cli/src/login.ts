@@ -22,7 +22,7 @@ const LOGIN_USAGE = `Usage:
 `;
 
 /**
- * Manual login (05-browser-runtime.md, "Login procedure"): a headful browser on the platform's persistent profile, reached
+ * Manual login (docs/plans/05-browser-runtime.md, "Login procedure"): a headful browser on the platform's persistent profile, reached
  * through noVNC published on the host's loopback only. The viewer is never started by a tool call and never public.
  */
 export async function login(deps: Deps, args: string[]): Promise<number> {

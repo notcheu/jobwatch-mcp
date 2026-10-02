@@ -1,7 +1,7 @@
 import { Checkpoint, SessionInvalid } from '@jobwatch/sdk';
 import type { BreakerReason, BreakerRow, Clock, Store } from '../store/store';
 
-/** How long a checkpoint keeps the platform closed to us: the docs' rule is to wait at least 6 hours (09-security.md says 24 h after a real one). */
+/** How long a checkpoint keeps the platform closed to us: the docs' rule is to wait at least 6 hours (docs/plans/09-security.md says 24 h after a real one). */
 export const CHECKPOINT_TTL_S = 6 * 3600;
 
 /** A checkpoint is more serious than a lost session and is never downgraded by one. */

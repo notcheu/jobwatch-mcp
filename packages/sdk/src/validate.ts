@@ -32,7 +32,7 @@ const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{2,63}$/;
 const OUTPUT_MAX_BYTES_CEILING = 262_144;
 
 /**
- * The startup rules every adapter must satisfy (03-router-spec.md, "Rules the SDK and registry enforce").
+ * The startup rules every adapter must satisfy (docs/plans/03-router-spec.md, "Rules the SDK and registry enforce").
  * Pure function: the engine calls it at startup (fail fast), the CLI calls it for `doctor`, and the
  * contract test of every adapter calls it. An empty array means the adapter is acceptable.
  * Uniqueness of tool names ACROSS adapters is the registry's job (it sees all adapters).

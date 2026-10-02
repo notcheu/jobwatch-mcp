@@ -7,7 +7,7 @@ import { ConfigError } from './errors';
 /**
  * Which installed adapters the router plugs in. Stored in `<dataDir>/adapters.json`:
  * `{ "enabled": ["linkedin"] }`. A fresh install has no file, which means NOTHING is enabled
- * (the LinkedIn usage budget must be approved before it is switched on, see 09-security.md).
+ * (the LinkedIn usage budget must be approved before it is switched on, see docs/plans/09-security.md).
  */
 export const ADAPTERS_FILE = 'adapters.json';
 

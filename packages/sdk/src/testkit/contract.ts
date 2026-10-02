@@ -24,7 +24,7 @@ export interface ContractOptions {
 }
 
 /**
- * The contract test every adapter package runs (11-testing-and-validation.md). Call it from a `*.test.ts` file:
+ * The contract test every adapter package runs (docs/plans/11-testing-and-validation.md). Call it from a `*.test.ts` file:
  * `describeAdapterContract(adapter, { snapshotDir: new URL('../catalog', import.meta.url).pathname })`.
  */
 export function describeAdapterContract(adapter: AdapterModule, options: ContractOptions): void {

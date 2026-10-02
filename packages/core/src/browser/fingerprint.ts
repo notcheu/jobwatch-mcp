@@ -1,6 +1,6 @@
 import { z } from '@jobwatch/sdk';
 
-/** Evaluated in the single tab right after the browser is ready (05-browser-runtime.md, "Startup fingerprint self-check"). */
+/** Evaluated in the single tab right after the browser is ready (docs/plans/05-browser-runtime.md, "Startup fingerprint self-check"). */
 export const FINGERPRINT_SCRIPT = `() => ({
   webdriver: navigator.webdriver,
   userAgent: navigator.userAgent,

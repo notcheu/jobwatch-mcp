@@ -1,6 +1,6 @@
 import type { PaceKind, Pacing } from '@jobwatch/sdk';
 
-/** Browser adapters: 2.5 to 5 s between page loads (07-adapter-linkedin.md). HTTP adapters are paced per host by the client. */
+/** Browser adapters: 2.5 to 5 s between page loads (docs/plans/07-adapter-linkedin.md). HTTP adapters are paced per host by the client. */
 export const DEFAULT_BROWSER_PACING: Pacing = { minMs: 2500, maxMs: 5000 };
 export const NO_PACING: Pacing = { minMs: 0, maxMs: 0 };
 

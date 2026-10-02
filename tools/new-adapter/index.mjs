@@ -81,7 +81,7 @@ if (!values['no-install']) {
 }
 console.log(`
 Next steps
-  1. Edit packages/adapter-${id}/src/index.ts: real tools, hosts and limits (docs/03-router-spec.md, "Adapter SDK")
+  1. Edit packages/adapter-${id}/src/index.ts: real tools, hosts and limits (docs/plans/03-router-spec.md, "Adapter SDK")
   2. npm run catalog:gen        (after every change to a tool definition; commit packages/adapter-${id}/catalog)
   3. npm run ci
   4. Add its pacing and budget to docs/07 or docs/08, then on the host: jobwatch adapters enable ${id}
