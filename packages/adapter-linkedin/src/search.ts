@@ -164,8 +164,3 @@ export async function readJob(ctx: BrowserAdapterContext, id: string): Promise<J
   const status: JobStatus = page.description === null ? 'not_loaded' : page.closed ? 'closed' : 'ok';
   return { id, title, company, description, status, url: jobUrl(id), ...extractHints(description) };
 }
-
-export const clip = (text: string, max: number): { text: string; truncated: boolean } => ({
-  text: text.slice(0, max),
-  truncated: text.length > max,
-});

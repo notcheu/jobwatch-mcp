@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { HttpClient, JobStore } from './context';
 import { AdapterBroken, HostNotAllowedError, JobwatchError } from './errors';
 import { POSTED_WITHIN, containsAny, extractHints, fitToBytes, fold, postedCutoff, termMatcher } from './jobtext';
+import { DETAILS, describeJob } from './summary';
 
 /**
  * What every "company board" adapter (Teamtailor, Greenhouse, Lever, Ashby...) shares: the same filters, the same judging rules,
@@ -26,6 +27,27 @@ export interface BoardPosting {
   postedAt: string | null;
   /** Plain text. */
   description: string;
+}
+
+/**
+ * How much of each job's text to return. `summary` (the default of the search tools) is a few hundred characters: the start of the
+ * role and of the requirements; `full` is the text, cut at `description_max_chars`; `none` leaves both out. The full text is always
+ * stored, and the job tools of each platform (and `stored_job_texts`) return it in batches.
+ */
+export function detailFields(defaultDetail: (typeof DETAILS)[number]) {
+  return {
+    detail: z
+      .enum(DETAILS)
+      .default(defaultDetail)
+      .describe('summary: a short summary of the role and requirements. full: the description (see description_max_chars). none: neither.'),
+    description_max_chars: z
+      .number()
+      .int()
+      .min(500)
+      .max(6000)
+      .default(3000)
+      .describe('With detail=full: characters of description returned per job. The full text is stored.'),
+  } as const;
 }
 
 /** The filter arguments every board tool takes, to spread into the tool's input object. */
@@ -58,14 +80,8 @@ export const boardFilters = {
       'title: reject on the title (such a job is neither stored nor returned). title_then_description: then also reject on the description (such a job is stored, not returned).',
     ),
   only_new: z.boolean().default(false).describe('Return only jobs this router had not stored before.'),
-  max_results: z.number().int().min(1).max(200).default(50),
-  description_max_chars: z
-    .number()
-    .int()
-    .min(0)
-    .max(6000)
-    .default(1500)
-    .describe('0 leaves the descriptions out. The full text is stored.'),
+  max_results: z.number().int().min(1).max(200).default(50).describe('Most jobs returned.'),
+  ...detailFields('summary'),
 } as const;
 
 export type BoardFilters = z.infer<z.ZodObject<typeof boardFilters>>;
@@ -101,8 +117,14 @@ export function boardJobSchema<S extends string>(source: S) {
     locations: z.array(z.string()),
     url: z.string(),
     posted_at: z.string().nullable(),
-    description: z.string(),
+    summary: z.string().describe('With detail=summary: the start of the role and of the requirements. Empty otherwise.'),
+    summary_kind: z
+      .enum(['sections', 'excerpt'])
+      .nullable()
+      .describe('excerpt: no headings were found, the summary is only the start of the text: read the full text if it matters.'),
+    description: z.string().describe('With detail=full: the description. Empty otherwise.'),
     description_truncated: z.boolean(),
+    description_chars: z.number().describe('Length of the whole stored description.'),
     read_from: z.literal('fetched').describe('Always fetched: the board is read fresh on every call.'),
     new: z.boolean().describe('true when this call stored the job for the first time.'),
     first_seen: z.string(),
@@ -182,7 +204,7 @@ export async function judgeBoardPostings<S extends string>(
     const isNew = !known.has(posting.id);
     if (filters.only_new && !isNew) continue;
     const row = await jobs.get(posting.id);
-    const text = posting.description.slice(0, filters.description_max_chars);
+    const text = describeJob(posting.description, filters.detail, filters.description_max_chars);
     const stamp = new Date(now).toISOString();
     accepted.push({
       id: posting.id,
@@ -193,8 +215,7 @@ export async function judgeBoardPostings<S extends string>(
       locations: posting.locations,
       url: posting.url,
       posted_at: posting.postedAt,
-      description: text,
-      description_truncated: posting.description.length > text.length,
+      ...text,
       read_from: 'fetched',
       new: isNew,
       first_seen: row?.firstSeen ?? stamp,

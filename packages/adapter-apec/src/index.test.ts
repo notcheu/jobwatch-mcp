@@ -94,6 +94,8 @@ interface Out {
     salary_text: string | null;
     posted_at: string | null;
     description: string;
+    summary: string;
+    summary_kind: string | null;
     locations: string[];
   }[];
   cards: { id: string; known: boolean; posted_at: string | null }[];
@@ -362,11 +364,22 @@ describe('apec_search_and_read', () => {
     expect(out(onlyNew).jobs).toEqual([]);
   });
 
-  it('caps the answer with max_returned and names the rest', async () => {
-    const result = await runRead(context().ctx, { max_returned: 2 });
+  it('max_results caps what is examined and therefore what is shown: ask for 2 and see at most 2', async () => {
+    const result = await runRead(context().ctx, { max_results: 2 });
+    expect(out(result).scanned).toBe(2);
     expect(out(result).jobs).toHaveLength(2);
-    expect(out(result).not_returned_ids).toHaveLength(2);
-    expect(result.warnings.join(' ')).toMatch(/apec_job/);
+    expect(out(result).remaining_ids).toEqual([]);
+  });
+
+  it('returns a summary by default and the text only when asked, and a job is stored whole either way', async () => {
+    const c = context();
+    const brief = await runRead(c.ctx, { max_results: 1 });
+    expect(out(brief).jobs[0]).toMatchObject({ description: '', summary_kind: 'sections' });
+    expect(out(brief).jobs[0]?.summary).toContain('Requirements: Maîtrise de TypeScript');
+    expect((c.jobs.jobs.get(O1)?.description.length ?? 0) > (out(brief).jobs[0]?.summary.length ?? 0)).toBe(true);
+    const full = await runRead(c.ctx, { max_results: 1, detail: 'full' });
+    expect(out(full).jobs[0]?.description).toContain('React et TypeScript');
+    expect(out(full).jobs[0]?.summary).toBe('');
   });
 
   it('rejects out-of-range arguments', () => {
@@ -374,7 +387,9 @@ describe('apec_search_and_read', () => {
       { keywords: '' },
       { keywords: 'x', departments: [] },
       { keywords: 'x', departments: ['Paris'] },
-      { keywords: 'x', max_jobs: 26 },
+      { keywords: 'x', max_jobs: 51 },
+      { keywords: 'x', max_returned: 5 },
+      { keywords: 'x', detail: 'everything' },
       { keywords: 'x', max_results: 101 },
       { keywords: 'x', min_salary_k: -1 },
       { keywords: 'x', posted_within: '24h' },

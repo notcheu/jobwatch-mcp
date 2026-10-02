@@ -311,20 +311,19 @@ describe('linkedin_search_and_read', () => {
     expect(visitedJobs(c.session.visited)).toEqual([]);
   });
 
-  it('max_returned caps the answer, newly read jobs first, and names the rest', async () => {
+  it('max_results caps what is examined and therefore what is shown: ask for 2 and see at most 2', async () => {
     const c = context();
-    await c.jobs.put({
-      id: '4000000001',
-      title: 'Senior Frontend Engineer',
-      company: 'Acme',
-      location: null,
-      url: jobUrl('4000000001'),
-      description: 'old',
-    });
-    const result = await tools.searchAndRead.handler(read({ max_returned: 2 }), c.ctx);
-    expect(result.data.jobs.map((j) => j.id)).toEqual(['4000000002', '4000000003']);
-    expect(result.data.not_returned_ids).toEqual(['4000000004', '4000000001']);
-    expect(result.warnings.join(' ')).toMatch(/not returned/);
+    const result = await tools.searchAndRead.handler(read({ max_results: 2 }), c.ctx);
+    expect(result.data.scanned).toBe(2);
+    expect(result.data.jobs.map((j) => j.id)).toEqual(['4000000001', '4000000002']);
+    expect(result.data.remaining_ids).toEqual([]);
+    expect(visitedJobs(c.session.visited)).toEqual(['4000000001', '4000000002']);
+  });
+
+  it('shows everything that passes among the results asked for when max_jobs allows (default 50)', async () => {
+    const result = await tools.searchAndRead.handler(read({ max_results: 4 }), context().ctx);
+    expect(result.data.jobs).toHaveLength(4);
+    expect(result.data.remaining_ids).toEqual([]);
   });
 
   it('keeps going after an unusable page, which is reported and not stored', async () => {
@@ -337,8 +336,10 @@ describe('linkedin_search_and_read', () => {
 
   it('rejects out-of-range arguments', () => {
     const input = tools.searchAndRead.input;
-    expect(input.safeParse({ keywords: 'x', max_jobs: 26 }).success).toBe(false);
-    expect(input.safeParse({ keywords: 'x', max_returned: 51 }).success).toBe(false);
+    expect(input.safeParse({ keywords: 'x', max_jobs: 51 }).success).toBe(false);
+    expect(input.safeParse({ keywords: 'x', max_jobs: 50 }).success).toBe(true);
+    expect(input.safeParse({ keywords: 'x', max_returned: 5 }).success).toBe(false); // gone: max_results is the cap
+    expect(input.safeParse({ keywords: 'x', detail: 'everything' }).success).toBe(false);
     expect(input.safeParse({ keywords: 'x', stored_jobs: 'maybe' }).success).toBe(false);
     expect(input.safeParse({ keywords: 'x', disallowed_terms: Array.from({ length: 61 }, (_, i) => `t${i}`) }).success).toBe(false);
     expect(input.safeParse({ keywords: 'x', disallowed_scope: 'everywhere' }).success).toBe(false);
@@ -426,7 +427,7 @@ describe('max_results and several pages', () => {
     expect(tools.search.input.safeParse({ keywords: 'x', max_results: 251 }).success).toBe(false);
   });
 
-  it('search_and_read scans the pages, skips known and excluded jobs, caps the visits and charges pages plus visits', async () => {
+  it('search_and_read scans the pages, skips excluded titles, judges the stored job without a visit and charges pages plus visits', async () => {
     const jobPages = Object.fromEntries(
       Array.from({ length: 50 }, (_, n) => [jobUrl(String(5_000_000_000 + n)), jobPage(`Text ${n}`)] as const),
     );
@@ -443,13 +444,13 @@ describe('max_results and several pages', () => {
     const result = await tools.searchAndRead.handler(input, c.ctx);
     expect(result.data).toMatchObject({ pages_loaded: 2, scanned: 50 });
     expect(result.data.excluded.map((e) => e.id)).toEqual(['5000000001']);
-    // 25 newly read jobs plus the stored one pass; max_returned (25) keeps the new ones and names the stored one
-    expect(result.data.jobs).toHaveLength(25);
-    expect(result.data.jobs.every((job) => job.read_from === 'fetched')).toBe(true);
-    expect(result.data.not_returned_ids).toEqual(['5000000002']);
-    expect(result.data.remaining_ids).toHaveLength(50 - 1 - 1 - 25);
-    expect(result.cost).toBe(2 + 25);
-    expect(c.jobs.jobs.size).toBe(26);
+    // 48 new jobs are read, the stored one is judged from the database: all 49 that pass are shown, newly read ones first
+    expect(result.data.jobs).toHaveLength(49);
+    expect(result.data.jobs.filter((job) => job.read_from === 'fetched')).toHaveLength(48);
+    expect(result.data.jobs.at(-1)?.read_from).toBe('stored');
+    expect(result.data.remaining_ids).toEqual([]);
+    expect(result.cost).toBe(2 + 48);
+    expect(c.jobs.jobs.size).toBe(49);
   });
 });
 
@@ -509,7 +510,7 @@ describe('where a job comes from', () => {
 });
 
 describe('result size', () => {
-  it('hands back fewer jobs rather than failing when 25 long descriptions do not fit, and names the others', async () => {
+  it('hands back fewer jobs rather than failing when 25 full descriptions do not fit, and names the others', async () => {
     const many = Array.from({ length: 25 }, (_, n) => ({
       id: String(6_000_000_000 + n),
       lines: [`Engineer ${n}`, 'Co', 'Paris', '1 hour ago'],
@@ -517,7 +518,7 @@ describe('result size', () => {
     const pages: Record<string, FakePage> = { [SEARCH_URL]: searchPage({ cards: many }) };
     for (const card of many) pages[jobUrl(card.id)] = jobPage('x'.repeat(20_000));
     const c = createBrowserTestContext({ allowedHosts: adapter.allowedHosts, pages });
-    const result = await tools.searchAndRead.handler(read({ description_max_chars: 6000, max_returned: 50 }), c.ctx);
+    const result = await tools.searchAndRead.handler(read({ detail: 'full', description_max_chars: 6000, max_results: 25 }), c.ctx);
     const returned = result.data.jobs.length;
     expect(returned).toBeGreaterThan(5);
     expect(returned).toBeLessThan(25);

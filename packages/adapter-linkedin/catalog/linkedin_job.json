@@ -16,10 +16,20 @@
     "properties": {
       "description_max_chars": {
         "default": 3000,
-        "description": "Description characters returned per job; the full text is stored.",
+        "description": "With detail=full: characters of description returned per job. The full text is stored.",
         "maximum": 6000,
         "minimum": 500,
         "type": "integer"
+      },
+      "detail": {
+        "default": "full",
+        "description": "summary: a short summary of the role and requirements. full: the description (see description_max_chars). none: neither.",
+        "enum": [
+          "summary",
+          "full",
+          "none"
+        ],
+        "type": "string"
       },
       "disallowed_scope": {
         "default": "title",
@@ -140,7 +150,12 @@
               ]
             },
             "description": {
+              "description": "With detail=full: the description. Empty otherwise.",
               "type": "string"
+            },
+            "description_chars": {
+              "description": "Length of the whole stored description.",
+              "type": "number"
             },
             "description_truncated": {
               "type": "boolean"
@@ -199,6 +214,25 @@
               },
               "type": "array"
             },
+            "summary": {
+              "description": "With detail=summary: the start of the role and of the requirements. Empty otherwise.",
+              "type": "string"
+            },
+            "summary_kind": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "sections",
+                    "excerpt"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "excerpt: no headings were found, the summary is only the start of the text: read the full text if it matters."
+            },
             "title": {
               "type": [
                 "string",
@@ -220,8 +254,11 @@
             "title",
             "company",
             "location",
+            "summary",
+            "summary_kind",
             "description",
             "description_truncated",
+            "description_chars",
             "url",
             "source",
             "board",

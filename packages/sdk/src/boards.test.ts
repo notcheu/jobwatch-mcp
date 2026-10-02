@@ -86,14 +86,37 @@ describe('judgeBoardPostings', () => {
     expect([...store.jobs.values()].every((job) => job.lastSeen === new Date(NOW).toISOString())).toBe(true);
   });
 
-  it('caps the results, names the rest, and truncates descriptions without shortening what is stored', async () => {
-    const { judged, store } = await judge({ max_results: 2, description_max_chars: 10 });
+  it('caps the results and names the rest', async () => {
+    const { judged } = await judge({ max_results: 2 });
     expect(judged.jobs).toHaveLength(2);
     expect(judged.notReturned).toHaveLength(3);
-    expect(judged.jobs[0]?.description).toHaveLength(10);
-    expect(judged.jobs[0]?.description_truncated).toBe(true);
-    expect((store.jobs.get('4')?.description.length ?? 0) > 10).toBe(true);
-    expect((await judge({ description_max_chars: 0 })).judged.jobs[0]?.description).toBe('');
+  });
+
+  const longText = `Intro of the company.\n\nWhat you'll do\n- ${'Build the design system. '.repeat(40)}\n\nWhat we're looking for\n- ${'Five years of React. '.repeat(40)}`;
+  const longPostings = [posting('L1', 'Engineer', { description: longText })];
+
+  it('returns a summary by default and not the text, and still stores the whole text', async () => {
+    const store = new FakeJobStore(() => new Date(NOW), 'ats');
+    const judged = await judgeBoardPostings(store, 'ats', longPostings, filters(), NOW);
+    expect(judged.jobs[0]).toMatchObject({
+      description: '',
+      description_truncated: false,
+      summary_kind: 'sections',
+      description_chars: longText.length,
+    });
+    expect(judged.jobs[0]?.summary).toMatch(/^Role: Build the design system.*Requirements: Five years of React/);
+    expect(judged.jobs[0]?.summary.length).toBeLessThan(800);
+    expect(store.jobs.get('L1')?.description).toBe(longText);
+  });
+
+  it('detail=full returns the text cut at the limit, detail=none neither', async () => {
+    const store = new FakeJobStore(() => new Date(NOW), 'ats');
+    const full = await judgeBoardPostings(store, 'ats', longPostings, filters({ detail: 'full', description_max_chars: 500 }), NOW);
+    expect(full.jobs[0]).toMatchObject({ summary: '', summary_kind: null, description_truncated: true });
+    expect(full.jobs[0]?.description).toHaveLength(500);
+    expect((store.jobs.get('L1')?.description.length ?? 0) > 500).toBe(true);
+    const none = await judgeBoardPostings(store, 'ats', longPostings, filters({ detail: 'none' }), NOW);
+    expect(none.jobs[0]).toMatchObject({ summary: '', description: '', summary_kind: null, description_chars: longText.length });
   });
 
   it('hands back fewer jobs rather than failing when many long descriptions do not fit', async () => {
@@ -102,7 +125,7 @@ describe('judgeBoardPostings', () => {
       new FakeJobStore(),
       'ats',
       big,
-      filters({ description_max_chars: 6000, max_results: 200 }),
+      filters({ detail: 'full', description_max_chars: 6000, max_results: 200 }),
       NOW,
     );
     expect(judged.jobs.length).toBeGreaterThan(5);
@@ -115,6 +138,8 @@ describe('judgeBoardPostings', () => {
     expect(parse({})).toBe(true);
     expect(parse({ posted_within: '24h' })).toBe(false);
     expect(parse({ max_results: 201 })).toBe(false);
+    expect(parse({ detail: 'everything' })).toBe(false);
+    expect(parse({ description_max_chars: 10 })).toBe(false);
     expect(parse({ disallowed_scope: 'everywhere' })).toBe(false);
     expect(parse({ title_any: Array.from({ length: 21 }, (_, i) => `t${i}`) })).toBe(false);
   });

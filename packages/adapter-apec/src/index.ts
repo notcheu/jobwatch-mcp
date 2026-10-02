@@ -2,6 +2,8 @@ import {
   POSTED_WITHIN,
   SDK_API_VERSION,
   boardJobSchema,
+  describeJob,
+  detailFields,
   defineAdapter,
   defineBrowserTool,
   fitToBytes,
@@ -11,6 +13,7 @@ import {
   z,
   type AcceptedJob,
   type BrowserSession,
+  type Detail,
   type SessionStatus,
 } from '@jobwatch/sdk';
 import { MAX_SEARCH_PAGES, openApec, readOffer, searchOffers, type ApecCard } from './api';
@@ -97,17 +100,10 @@ const termFields = {
       'title: reject on the title before any offer is read (free). title_then_description: then also reject after reading the description (the offer is stored anyway).',
     ),
 };
-const descriptionChars = z
-  .number()
-  .int()
-  .min(500)
-  .max(6000)
-  .default(3000)
-  .describe('Description characters returned per job; the full text is stored.');
 
 const annotations = { readOnlyHint: true, openWorldHint: true, idempotentHint: true } as const;
 
-function toJob(job: AcceptedJob, maxChars: number, posted: ReadonlyMap<string, ApecCard>): Job {
+function toJob(job: AcceptedJob, detail: Detail, maxChars: number, posted: ReadonlyMap<string, ApecCard>): Job {
   const card = posted.get(job.id);
   return {
     id: job.id,
@@ -118,8 +114,7 @@ function toJob(job: AcceptedJob, maxChars: number, posted: ReadonlyMap<string, A
     locations: job.location ? [job.location] : [],
     url: job.url,
     posted_at: card?.posted_at ?? null,
-    description: job.description.slice(0, maxChars),
-    description_truncated: job.description.length > maxChars,
+    ...describeJob(job.description, detail, maxChars),
     read_from: job.readFrom,
     new: job.isNew,
     first_seen: job.firstSeen,
@@ -170,7 +165,7 @@ const job = defineBrowserTool({
     .object({
       ids: z.array(offerId).min(1).max(25),
       refresh: z.boolean().default(false).describe('Read Apec again even if the offer is stored.'),
-      description_max_chars: descriptionChars,
+      ...detailFields('full'),
       ...termFields,
     })
     .strict(),
@@ -198,7 +193,7 @@ const job = defineBrowserTool({
       },
     });
     const { fit, rest } = fitToBytes(
-      outcome.accepted.map((accepted) => toJob(accepted, args.description_max_chars, new Map())),
+      outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, new Map())),
       JOBS_JSON_BUDGET,
     );
     return {
@@ -225,15 +220,16 @@ const searchAndRead = defineBrowserTool({
         .enum(['evaluate', 'skip'])
         .default('evaluate')
         .describe('evaluate: judge stored offers again with THESE terms, from the database. skip: only list them in known_ids.'),
-      max_jobs: z.number().int().min(0).max(25).default(25).describe('Most offers to read from Apec in this call (0 = classify only).'),
-      max_returned: z
+      max_jobs: z
         .number()
         .int()
-        .min(1)
+        .min(0)
         .max(50)
-        .default(25)
-        .describe('Most jobs handed back; the others are named in not_returned_ids.'),
-      description_max_chars: descriptionChars,
+        .default(50)
+        .describe(
+          'Most job pages to read in this call (0 = classify only). The call also stops reading after about 200 s and lists the rest in remaining_ids.',
+        ),
+      ...detailFields('summary'),
       ...termFields,
     })
     .strict(),
@@ -249,7 +245,7 @@ const searchAndRead = defineBrowserTool({
     pages_loaded: z.number(),
   }),
   annotations,
-  limits: { timeoutS: 300, cost: 1 + MAX_SEARCH_PAGES + 25, outputMaxBytes: 262_144 },
+  limits: { timeoutS: 300, cost: 1 + MAX_SEARCH_PAGES + 50, outputMaxBytes: 262_144 },
   handler: async (args, ctx) => {
     const deadline = Date.now() + READ_BUDGET_MS;
     await openApec(ctx);
@@ -260,7 +256,7 @@ const searchAndRead = defineBrowserTool({
       skip: new Set(args.skip_ids),
       stored: args.stored_jobs,
       maxJobs: args.max_jobs,
-      maxReturned: args.max_returned,
+      maxReturned: args.max_results,
       matchTitle: matches,
       matchDescription: args.disallowed_scope === 'title_then_description' ? matches : null,
       deadline,
@@ -268,7 +264,7 @@ const searchAndRead = defineBrowserTool({
     });
     const byId = new Map(found.cards.map((card) => [card.id, card] as const));
     const { fit, rest } = fitToBytes(
-      outcome.accepted.map((accepted) => toJob(accepted, args.description_max_chars, byId)),
+      outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, byId)),
       JOBS_JSON_BUDGET,
     );
     const notReturned = [...rest, ...outcome.notReturned];
@@ -276,7 +272,7 @@ const searchAndRead = defineBrowserTool({
     if (outcome.remaining.length > 0)
       warnings.push(`${outcome.remaining.length} offer(s) not read yet: call again with the same arguments to continue.`);
     if (notReturned.length > 0)
-      warnings.push(`${notReturned.length} more job(s) passed but were not returned (max_returned or size): read them with apec_job.`);
+      warnings.push(`${notReturned.length} more job(s) passed but were not returned (max_results or size): read them with apec_job.`);
     return {
       data: {
         jobs: fit,

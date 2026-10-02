@@ -25,11 +25,21 @@
         "type": "array"
       },
       "description_max_chars": {
-        "default": 1500,
-        "description": "0 leaves the descriptions out. The full text is stored.",
+        "default": 3000,
+        "description": "With detail=full: characters of description returned per job. The full text is stored.",
         "maximum": 6000,
-        "minimum": 0,
+        "minimum": 500,
         "type": "integer"
+      },
+      "detail": {
+        "default": "summary",
+        "description": "summary: a short summary of the role and requirements. full: the description (see description_max_chars). none: neither.",
+        "enum": [
+          "summary",
+          "full",
+          "none"
+        ],
+        "type": "string"
       },
       "disallowed_scope": {
         "default": "title",
@@ -64,6 +74,7 @@
       },
       "max_results": {
         "default": 50,
+        "description": "Most jobs returned.",
         "maximum": 200,
         "minimum": 1,
         "type": "integer"
@@ -217,7 +228,12 @@
               ]
             },
             "description": {
+              "description": "With detail=full: the description. Empty otherwise.",
               "type": "string"
+            },
+            "description_chars": {
+              "description": "Length of the whole stored description.",
+              "type": "number"
             },
             "description_truncated": {
               "type": "boolean"
@@ -277,6 +293,25 @@
               },
               "type": "array"
             },
+            "summary": {
+              "description": "With detail=summary: the start of the role and of the requirements. Empty otherwise.",
+              "type": "string"
+            },
+            "summary_kind": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "sections",
+                    "excerpt"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "excerpt: no headings were found, the summary is only the start of the text: read the full text if it matters."
+            },
             "title": {
               "type": "string"
             },
@@ -299,8 +334,11 @@
             "locations",
             "url",
             "posted_at",
+            "summary",
+            "summary_kind",
             "description",
             "description_truncated",
+            "description_chars",
             "read_from",
             "new",
             "first_seen",
