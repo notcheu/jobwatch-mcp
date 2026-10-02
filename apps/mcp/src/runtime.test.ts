@@ -123,6 +123,8 @@ describe('browser tools end to end through the real provider (fake CDP)', () => 
         waitForSelector: async () => true,
         text: async () => null,
         url: () => 'about:blank',
+        maxTabs: 1,
+        openTab: async () => Promise.reject(new Error('one tab')),
       },
       park: async () => void steps.push('park'),
       keepSessionCookies: async () => 0,

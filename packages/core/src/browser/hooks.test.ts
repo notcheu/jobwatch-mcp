@@ -31,6 +31,8 @@ function setup(over: Partial<BrowserHooksOptions> = {}, fp: unknown = goodFp) {
       waitForSelector: async () => true,
       text: async () => null,
       url: () => 'about:blank',
+      maxTabs: 1,
+      openTab: async () => Promise.reject(new Error('one tab')),
     },
     park: async () => void calls.push('park'),
     keepSessionCookies: async () => 0,

@@ -179,7 +179,15 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   }
 
   const contexts =
-    options.contexts ?? createContextProvider({ runtime, connect: options.connectBrowser ?? connectBrowser, logger, store, clock });
+    options.contexts ??
+    createContextProvider({
+      runtime,
+      connect: options.connectBrowser ?? connectBrowser,
+      logger,
+      store,
+      clock,
+      maxTabs: config.maxTabs,
+    });
   const ops = createOpsAdapter({ enabledAdapters: () => enabledOnly.adapters, runtime, store, limiter, breaker, contexts, clock, logger });
   const registry = await loadAdapters(enabled.ids, table, [ops]);
   policyAdapters = registry.adapters;

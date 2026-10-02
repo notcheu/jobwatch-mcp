@@ -94,6 +94,8 @@ const idleSession: BrowserSession = {
   waitForSelector: async () => true,
   text: async () => null,
   url: () => 'about:blank',
+  maxTabs: 1,
+  openTab: async () => Promise.reject(new Error('one tab')),
 };
 
 async function setup(
@@ -196,7 +198,7 @@ describe('browser adapters', () => {
     const t = await setup([browserAdapter(async (session) => void seen.push(session.url()))]);
     const { outcome } = await callTool(t.deps, 'web_open', {});
     expect(outcome.code).toBe('ok');
-    expect(t.connect).toHaveBeenCalledWith(expect.stringMatching(/^172\.18\.0\./), ['www.web.example.com']);
+    expect(t.connect).toHaveBeenCalledWith(expect.stringMatching(/^172\.18\.0\./), ['www.web.example.com'], { maxTabs: 1 });
     expect(seen).toEqual(['about:blank']);
   });
 
@@ -418,6 +420,55 @@ describe('the call meter', () => {
 });
 
 describe('the call meter for a browser adapter', () => {
+  it('counts the page loads of an extra tab too, and hands the tab limit to the connection', async () => {
+    const options: unknown[] = [];
+    const tab = { ...idleSession, close: async () => undefined };
+    const session: BrowserSession = { ...idleSession, maxTabs: 3, openTab: async () => tab };
+    const logger = createLogger({ level: 'silent' });
+    const runtime = new RuntimeManager(
+      backend,
+      {
+        image: 'img',
+        network: 'net',
+        profileVolumePrefix: 'p-',
+        idleTtlS: 120,
+        maxLifetimeS: 1800,
+        queueTimeoutS: 60,
+        memMaxMb: 1500,
+        memHighMb: 1200,
+      },
+      logger,
+    );
+    const provider = createContextProvider({
+      runtime,
+      connect: async (_address, _hosts, connectOptions) => (options.push(connectOptions), connection(session)),
+      logger,
+      createHttp: () => ({}) as HttpClient,
+      pacerOptions: { sleep: async () => undefined },
+      maxTabs: 3,
+    });
+    const browser = defineAdapter({
+      id: 'site',
+      displayName: 'Site',
+      description: 'A browser adapter.',
+      sdkApi: SDK_API_VERSION,
+      platform: 'site',
+      kind: 'browser',
+      allowedHosts: ['www.example.com'],
+      tools: [],
+    });
+    const lease = await provider.acquire(browser, 'r1');
+    const ctx = lease.ctx as unknown as { session: BrowserSession };
+    expect(ctx.session.maxTabs).toBe(3);
+    const extra = await ctx.session.openTab();
+    await extra.goto('https://www.example.com/a', { timeoutMs: 1000 });
+    await ctx.session.goto('https://www.example.com/b', { timeoutMs: 1000 });
+    expect(lease.spent?.()).toBe(2);
+    expect(options).toEqual([{ maxTabs: 3 }]);
+    await expect(extra.close()).resolves.toBeUndefined();
+    await lease.release();
+  });
+
   it('counts every page load, whether or not it succeeds, and the units the adapter reports', async () => {
     let fail = false;
     const session: BrowserSession = {

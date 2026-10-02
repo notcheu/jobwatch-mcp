@@ -107,6 +107,36 @@ describe.skipIf(!enabled)('real browser container', () => {
     }
   });
 
+  it('with maxTabs 3: opens extra tabs up to the limit, keeps them through popups, and park closes them', async () => {
+    const connection = await connectBrowser(handle.address, ['www.example.com'], { maxTabs: 3 });
+    try {
+      const count = async () =>
+        ((await (await fetch(`${devtoolsBaseUrl(handle.address)}/json/list`)).json()) as { type: string }[]).filter(
+          (t) => t.type === 'page',
+        ).length;
+      const first = await connection.session.openTab();
+      const second = await connection.session.openTab();
+      expect(await count()).toBe(3);
+      await expect(connection.session.openTab()).rejects.toMatchObject({ code: 'internal' }); // the limit
+      await expect(first.goto('https://evil.example/', { timeoutMs: 5000 })).rejects.toMatchObject({ code: 'internal' });
+      await second.close();
+      expect(await count()).toBe(2);
+      await connection.park(); // the tab left open does not outlive the call
+      expect(await count()).toBe(1);
+    } finally {
+      await connection.disconnect();
+    }
+  });
+
+  it('with the default (maxTabs 1) openTab refuses', async () => {
+    const connection = await connectBrowser(handle.address, ['www.example.com']);
+    try {
+      await expect(connection.session.openTab()).rejects.toMatchObject({ code: 'internal' });
+    } finally {
+      await connection.disconnect();
+    }
+  });
+
   it('disconnecting does not quit the browser (the next call reuses it)', async () => {
     expect(await backend.inspect(handle)).toMatchObject({ running: true });
     const again = await connectBrowser(handle.address, []);

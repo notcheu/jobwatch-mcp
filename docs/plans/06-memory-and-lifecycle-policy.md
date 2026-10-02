@@ -19,7 +19,16 @@ BUSY/IDLE_GRACE ──watchdog >90%──▶ STOPPING(kill) ; max_lifetime reach
 - **Preemption**: if a call for platform B arrives while platform A is IDLE_GRACE, stop A immediately (do not wait for the TTL), then start B. If A is BUSY, B queues (FIFO) up to `queue_timeout` (default 60 s), else `busy`.
 - **Max lifetime**: a runtime older than `max_lifetime` (default 30 min) is recycled at the next IDLE_GRACE/lease boundary, never mid-call.
 
-## Tab policy (decided by the owner, 2026-10-01): exactly one tab, always
+## Benchmark ceiling (decided 2026-10-02)
+The measurements in `docs/measurements.md` and the budgets below are the **maximum target for tool usage**: the browser container's `memory.max` / `high`, one browser at a time, the per-platform and per-board rate budgets. No feature raises them. Anything that lets a call use more of the browser than a single tab did (multi-tab, below) works inside the same container cap, and the watchdog still sheds memory at the warn mark by closing every extra tab.
+
+## Multi-tab (opt-in, decided 2026-10-02)
+Off by default: the single-tab policy below is unchanged. `JW_BROWSER_MULTITAB=true` lets an adapter call `session.openTab()` (`BrowserSession.maxTabs` tells how many tabs may be open at once, this one included); `JW_BROWSER_MAX_TABS` (2 to 4, default 3) is the limit and has no effect while the flag is off.
+- An extra tab has the same host allowlist, error mapping and page-load metering as the session (every `goto` is a rate-limit unit, in any tab). It has `close()`, cannot open further tabs and is never the router's primary tab: the primary tab is still navigated to `about:blank` at the end of the call and never closed.
+- Only `openTab` creates a tab. A popup or `target=_blank` is still closed at once, and at the end of the call (`park`) and at the memory warn mark (`shedMemory`) every tab except the primary is closed.
+- The container memory cap does not change. More tabs mean more renderer memory, so the limit is deliberately low (4 at most); measure before raising `JW_BROWSER_MAX_TABS` and keep `memory_report` `peak_mb` under the cap. No adapter uses extra tabs yet.
+
+## Tab policy (decided 2026-10-01): exactly one tab by default
 - The browser always has **exactly one tab**. The router never opens a second one (no `newPage`, no `window.open`, no `target=_blank`) and never closes the last one (closing it would close Chrome).
 - The single tab is the one Chrome starts with. At lease start the router takes `context.pages()[0]`; the adapter navigates it with `goto`. At lease end it **navigates the tab to `about:blank`** (not `close()`), which releases the page's renderer memory.
 - Between steps of one call (for example the search page, then each job page) the adapter just navigates the same tab; it may park on `about:blank` between phases to drop memory (measured: the job page after a search used 640 MB vs 1040 MB for the search page).

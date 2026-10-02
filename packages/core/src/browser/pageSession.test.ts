@@ -180,10 +180,12 @@ describe('reading the page', () => {
     expect(createGuardedSession(fakePage().page, hosts).url()).toBe('https://www.example.com/a');
   });
 
-  it('exposes no way to open another tab or leave the page: the session has exactly these methods', () => {
+  it('exposes no way to leave the page: the session has exactly these members, and openTab refuses unless multi-tab is on', () => {
     expect(Object.keys(createGuardedSession(fakePage().page, hosts)).sort()).toEqual([
       'evaluate',
       'goto',
+      'maxTabs',
+      'openTab',
       'text',
       'url',
       'waitForSelector',
@@ -218,5 +220,60 @@ describe('mapBrowserError', () => {
   it('copes with non-Error throws', () => {
     expect(mapBrowserError('a string')).toMatchObject({ code: 'internal' });
     expect(mapBrowserError(undefined)).toMatchObject({ code: 'internal' });
+  });
+});
+
+describe('tabs', () => {
+  const tabSupport = (max: number) => {
+    const opened: ReturnType<typeof fakePage>[] = [];
+    const closed: PageLike[] = [];
+    return {
+      opened,
+      closed,
+      support: {
+        max,
+        open: async () => {
+          const extra = fakePage({ url: () => 'https://www.example.com/tab' });
+          opened.push(extra);
+          return extra.page;
+        },
+        close: async (page: PageLike) => void closed.push(page),
+      },
+    };
+  };
+
+  it('is one tab by default: maxTabs is 1 and openTab refuses', async () => {
+    const session = createGuardedSession(fakePage().page, hosts);
+    expect(session.maxTabs).toBe(1);
+    await expect(session.openTab()).rejects.toThrow('JW_BROWSER_MULTITAB');
+  });
+
+  it('opens a tab that has the same allowlist and can be closed once', async () => {
+    const t = tabSupport(3);
+    const session = createGuardedSession(fakePage().page, hosts, t.support);
+    expect(session.maxTabs).toBe(3);
+    const tab = await session.openTab();
+    await tab.goto('https://www.example.com/jobs', { timeoutMs: 5000 });
+    expect(t.opened[0]?.calls[0]?.method).toBe('goto');
+    await expect(tab.goto('https://evil.example.org/', { timeoutMs: 5000 })).rejects.toBeInstanceOf(HostNotAllowedError);
+    expect(tab.url()).toBe('https://www.example.com/tab');
+    await tab.close();
+    await tab.close();
+    expect(t.closed).toHaveLength(1);
+  });
+
+  it('a tab cannot open another tab', async () => {
+    const session = createGuardedSession(fakePage().page, hosts, tabSupport(3).support);
+    const tab = await session.openTab();
+    await expect(tab.openTab()).rejects.toBeInstanceOf(JobwatchError);
+  });
+
+  it('turns a failure to open (the limit) into a client-safe error', async () => {
+    const session = createGuardedSession(fakePage().page, hosts, {
+      max: 2,
+      open: async () => Promise.reject(new Error('At most 2 tabs may be open.')),
+      close: async () => undefined,
+    });
+    await expect(session.openTab()).rejects.toBeInstanceOf(JobwatchError);
   });
 });

@@ -116,3 +116,19 @@ describe('test contexts run real handlers', () => {
     expect(paced).toEqual(['page', 'detail']);
   });
 });
+
+describe('FakeBrowserSession tabs', () => {
+  it("refuses to open a tab unless maxTabs allows it, counts the extra tab's page loads, and stops at the limit", async () => {
+    const off = createBrowserTestContext({ allowedHosts: ['www.example.com'] });
+    await expect(off.session.openTab()).rejects.toThrow('Multi-tab is off');
+
+    const on = createBrowserTestContext({ allowedHosts: ['www.example.com'], maxTabs: 2 });
+    const tab = await on.session.openTab();
+    await tab.goto('https://www.example.com/a', { timeoutMs: 1000 });
+    expect(on.spent()).toBe(1);
+    expect(tab.url()).toBe('https://www.example.com/a');
+    await expect(on.session.openTab()).rejects.toThrow('At most 2 tabs');
+    await tab.close();
+    await expect(on.session.openTab()).resolves.toBeDefined();
+  });
+});

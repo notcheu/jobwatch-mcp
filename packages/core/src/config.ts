@@ -38,6 +38,8 @@ const envSchema = z.object({
     .string()
     .regex(/^[A-Za-z0-9,;=.-]{2,512}$/)
     .optional(),
+  JW_BROWSER_MULTITAB: flag.default(false),
+  JW_BROWSER_MAX_TABS: integer(2, 4, 3),
   JW_FINGERPRINT: z.enum(['enforce', 'warn', 'off']).default('enforce'),
   JW_PROFILE_VOLUME_PREFIX: z
     .string()
@@ -76,6 +78,8 @@ export interface Config {
   /** UI language and `navigator.languages` of the browser (copied from the everyday browser, 05 G8). The list is personal: keep it in the untracked deploy/.env. */
   browserLang: string;
   browserAcceptLangs: readonly string[] | undefined;
+  /** Most tabs the browser may have open at once: 1 unless `JW_BROWSER_MULTITAB=true`, then `JW_BROWSER_MAX_TABS` (2-4, default 3). */
+  maxTabs: number;
   /** `enforce`: refuse to use a browser that fails its startup fingerprint check. */
   fingerprint: 'enforce' | 'warn' | 'off';
   profileVolumePrefix: string;
@@ -175,6 +179,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       browserAcceptLangs: parsed.JW_BROWSER_ACCEPT_LANGS?.split(',')
         .map((l) => l.trim())
         .filter(Boolean),
+      maxTabs: parsed.JW_BROWSER_MULTITAB ? parsed.JW_BROWSER_MAX_TABS : 1,
       fingerprint: parsed.JW_FINGERPRINT,
       profileVolumePrefix: parsed.JW_PROFILE_VOLUME_PREFIX,
       dataDir: parsed.JW_DATA_DIR,

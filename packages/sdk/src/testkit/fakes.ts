@@ -1,9 +1,10 @@
 import type { z } from 'zod';
-import { AdapterBroken } from '../errors';
+import { AdapterBroken, JobwatchError } from '../errors';
 import { assertUrlAllowed, redactUrl } from '../hosts';
 import type {
   BrowserAdapterContext,
   BrowserSession,
+  BrowserTab,
   GotoOptions,
   HttpAdapterContext,
   HttpClient,
@@ -74,11 +75,26 @@ export class FakeBrowserSession implements BrowserSession {
   /** Every navigation, redacted (no query string). */
   readonly visited: string[] = [];
   private current = 'about:blank';
+  /** The extra tabs opened with `openTab`, closed ones included (they stay here for assertions). */
+  readonly tabs: FakeBrowserTab[] = [];
+  /** Called with every tab as it opens: the test context uses it to count its page loads. */
+  onTab: ((tab: FakeBrowserTab) => void) | undefined;
 
   constructor(
     private readonly allowedHosts: readonly string[],
     private readonly pages: Readonly<Record<string, FakePage>> = {},
+    readonly maxTabs = 1,
   ) {}
+
+  openTab(): Promise<FakeBrowserTab> {
+    const open = this.tabs.filter((tab) => !tab.closed).length;
+    if (this.maxTabs <= 1) return Promise.reject(new JobwatchError('internal', 'Multi-tab is off: only one tab is allowed.'));
+    if (open + 1 >= this.maxTabs) return Promise.reject(new JobwatchError('internal', `At most ${this.maxTabs} tabs may be open.`));
+    const tab = new FakeBrowserTab(this.allowedHosts, this.pages, this.maxTabs);
+    this.tabs.push(tab);
+    this.onTab?.(tab);
+    return Promise.resolve(tab);
+  }
 
   private page(): FakePage {
     const withoutQuery = this.current.split('?')[0] ?? this.current;
@@ -108,6 +124,20 @@ export class FakeBrowserSession implements BrowserSession {
 
   url(): string {
     return this.current;
+  }
+}
+
+/** An extra tab of a `FakeBrowserSession`. */
+export class FakeBrowserTab extends FakeBrowserSession implements BrowserTab {
+  closed = false;
+
+  override openTab(): Promise<FakeBrowserTab> {
+    return Promise.reject(new JobwatchError('internal', 'A tab cannot open another tab: ask the session.'));
+  }
+
+  close(): Promise<void> {
+    this.closed = true;
+    return Promise.resolve();
   }
 }
 
@@ -186,6 +216,8 @@ export interface TestContextOptions {
   /** Mirror the adapter's `openHttps`: any public https host is reachable (no DNS check in tests). */
   openHttps?: boolean;
   pages?: Readonly<Record<string, FakePage>>;
+  /** Browser contexts: tabs allowed at once (`JW_BROWSER_MAX_TABS`); 1 = multi-tab off, the default. */
+  maxTabs?: number;
   routes?: readonly FakeHttpRoute[];
 }
 
@@ -261,12 +293,16 @@ export function createBrowserTestContext(
   options: TestContextOptions,
 ): TestContext<BrowserAdapterContext> & { session: FakeBrowserSession } {
   const { http, jobs, log, logs, paced, pace, spend, meter } = baseParts(options);
-  const session = new FakeBrowserSession(options.allowedHosts, options.pages);
-  // the engine counts every page load
-  const goto = session.goto.bind(session);
-  session.goto = (url, gotoOptions) => {
-    meter.units += 1;
-    return goto(url, gotoOptions);
+  const session = new FakeBrowserSession(options.allowedHosts, options.pages, options.maxTabs);
+  // the engine counts every page load, in an extra tab as well
+  const count = (target: FakeBrowserSession): void => {
+    const goto = target.goto.bind(target);
+    target.goto = (url, gotoOptions) => {
+      meter.units += 1;
+      return goto(url, gotoOptions);
+    };
   };
+  count(session);
+  session.onTab = count;
   return { ctx: { http, jobs, log, pace, spend, session }, http, jobs, logs, paced, session, spent: () => meter.units };
 }

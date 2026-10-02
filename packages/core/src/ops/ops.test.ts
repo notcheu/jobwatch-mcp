@@ -129,6 +129,8 @@ async function setup(adapters: AdapterModule[], over: { contexts?: ContextProvid
     waitForSelector: async () => true,
     text: async () => null,
     url: () => 'about:blank',
+    maxTabs: 1,
+    openTab: async () => Promise.reject(new Error('one tab')),
   };
   const contexts: ContextProvider =
     over.contexts ??

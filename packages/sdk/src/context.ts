@@ -16,7 +16,8 @@ export interface GotoOptions {
 /**
  * The ONLY browser surface adapters see. Implemented once over Playwright/CDP in `@jobwatch/core`
  * (the single file importing playwright-core), so swapping Playwright for Patchright or raw CDP never touches an adapter.
- * There is exactly one tab (docs/plans/06-memory-and-lifecycle-policy.md): `goto` navigates it; nothing can open another.
+ * There is exactly one tab by default (docs/plans/06-memory-and-lifecycle-policy.md): `goto` navigates it and nothing can open
+ * another. Only when the operator sets `JW_BROWSER_MULTITAB=true` may `openTab()` add tabs, up to `maxTabs`.
  */
 export interface BrowserSession {
   /** Navigate the single tab. Throws `HostNotAllowedError` unless the URL passes `isUrlAllowed` for the adapter. */
@@ -33,6 +34,19 @@ export interface BrowserSession {
   text(selector: string): Promise<string | null>;
   /** Current URL of the tab. */
   url(): string;
+  /** Most tabs that may be open at once, this one included. 1 (the default) means `openTab` always refuses. */
+  readonly maxTabs: number;
+  /**
+   * Open one more tab with the same host allowlist, budget metering and error mapping. Throws when multi-tab is off or when
+   * `maxTabs` tabs are already open. Close it with `close()` as soon as you are done: every tab costs memory, and any tab left
+   * open is closed by the engine when the call ends.
+   */
+  openTab(): Promise<BrowserTab>;
+}
+
+/** An extra tab: the same surface as the session, plus `close`. */
+export interface BrowserTab extends BrowserSession {
+  close(): Promise<void>;
 }
 
 export interface HttpRequestOptions {

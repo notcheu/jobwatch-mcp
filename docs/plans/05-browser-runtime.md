@@ -79,14 +79,14 @@ import { chromium } from "playwright-core";
 // containerIp from `docker inspect` (connect by IP, never by name: G2). Verified in spike S6 (playwright-core 1.63.0, Chrome 154).
 const browser = await chromium.connectOverCDP(`http://${containerIp}:9222`);
 const ctx = browser.contexts()[0];             // the profile's default context (persistent profile)
-const page = ctx.pages()[0];                   // the ONE tab, always; never newPage() (policy: exactly one tab)
+const page = ctx.pages()[0];                   // the primary tab; extra tabs only through session.openTab() with JW_BROWSER_MULTITAB=true
 await page.route("**/*", allowlistRouter);     // abort requests to non-allowlisted hosts
 // ...                                         // adapter: goto + evaluate
 await page.goto("about:blank");                // always; park the tab, never close it (frees renderer memory)
 // runtime stop:
 const cdp = await browser.newBrowserCDPSession(); await cdp.send("Browser.close");
 ```
-Rules: never call `browser.close()` expecting it to quit Chrome; exactly one tab at all times (see `06-…` Tab policy): never `newPage`, never `page.close()`; the watchdog closes any stray page (popups, `target=_blank`). Navigation only to URLs built by the adapter from validated arguments (host allowlist from the catalog).
+Rules: never call `browser.close()` expecting it to quit Chrome; exactly one tab by default (see `06-…` Tab policy and Multi-tab): never `newPage` except through the guarded `session.openTab()` when `JW_BROWSER_MULTITAB=true`, never close the primary tab; the watchdog closes any stray page (popups, `target=_blank`) and, at the end of a call, every tab but the primary. Navigation only to URLs built by the adapter from validated arguments (host allowlist from the catalog).
 
 ## Navigation policy and fingerprint implementation (step 6, decided 2026-10-01)
 The adapter's `allowedHosts` are enforced on `BrowserSession.goto` and again on every document or frame navigation the page makes by itself; sub-resources are not filtered (see `03-router-spec.md`, step 6). The startup self-check is implemented in `packages/core/src/browser/fingerprint.ts` and is `enforce` by default (`JW_FINGERPRINT`).
