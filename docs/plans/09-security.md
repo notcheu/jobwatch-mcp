@@ -38,6 +38,9 @@
 ## Browser container hardening checklist
 `--cap-drop ALL`, `--security-opt no-new-privileges`, read-only root fs + tmpfs for `/tmp`/`/run`, non-root user, `--pids-limit`, `--memory`/`--memory-swap`, `--cpus`, the custom Chrome seccomp profile (Docker default plus `unshare`, `setns`, `clone`, `chroot`; decided in spike S7, `05` G6) so Chrome keeps its own sandbox; `--no-sandbox` only as a recorded fallback, no host mounts except the platform profile, downloads disabled (Chrome policy or `Browser.setDownloadBehavior deny`), clipboard/permissions denied, no device passthrough.
 
+## Operator dashboard
+An on-demand admin surface at `https://<domain>/dashboard` (`17-dashboard.md`). It is closed until `jobwatch dashboard start` is run on the host, signs in with Google by itself (no email allowlist: the Google app decides who may sign in, so keep it in Testing status with only the owner as a test user), keeps sessions in memory for at most 8 hours, accepts changes only with a CSRF header, the exact Origin and a sign-in within 10 minutes, and can change nothing but the list of enabled adapters and a restart. The call history it shows (with each call's parameters) is in memory only. The checklist run and what is still open are in `17-dashboard.md` section 8.2. Its client secret is the connector's by default; a Google client of its own is the cleaner choice.
+
 ## Authorization model
 Single user. Scopes: `jobwatch.read` (all read-only tools) and `jobwatch.state` (only for `seen_mark` if/when enabled). Enforce scope per tool in the router (the front passes claims in a signed header). Log every call with request id and result code.
 

@@ -246,6 +246,25 @@ export const usageSchemaResponse = z
   .strict();
 export type Usage = z.infer<typeof usageSchemaResponse>;
 
+// ------------------------------------------------------------------------------------------------------ settings
+
+/** The limits that are in force, read only. Nothing here is a secret: the Google client secret and every token are left out. */
+export const settingsSchema = z
+  .object({
+    signIn: z.enum(['google', 'none']),
+    idleStopMinutes: z.number(),
+    sessionMaxHours: z.number(),
+    writeWindowMinutes: z.number(),
+    callBuffer: z.number(),
+    charsPerToken: z.number(),
+    jobRetentionDays: z.number(),
+    maxTabs: z.number(),
+    browser: z.object({ idleStopSeconds: z.number(), memoryHighMb: z.number(), memoryMaxMb: z.number() }).strict(),
+    adaptersPinned: z.boolean(),
+  })
+  .strict();
+export type Settings = z.infer<typeof settingsSchema>;
+
 // ------------------------------------------------------------------------------------------------------ errors
 
 export const apiErrorSchema = z.object({ error: z.string(), message: z.string() }).strict();

@@ -224,6 +224,29 @@ Read from the source and docs of `babs/mcp-auth-proxy` (`config/config.go`, `mai
 
 What was **not** verified, because it needs real Google credentials and a deployed domain: an actual sign-in end to end. Step 3 proves it with a fake OIDC provider in tests and step 4 with a real sign-in behind Nginx.
 
+### 8.2 Checklist run (2026-10-03)
+
+| Control | Result | Evidence |
+|---|---|---|
+| Off unless started, started only from the host | pass | `manager.test.ts`, `reload.test.ts` (closed at startup, opens on `dashboard.start`, closes on stop, idle and shutdown); no MCP tool and no route starts it; `tests/dashboard/smoke.mjs` |
+| Own Google sign-in: code flow, PKCE S256, `state` bound to the browser, `nonce`, ID token verified, `email_verified` | pass | `dashboard.test.ts` against a fake Google: forged state, forged nonce, other audience, unverified or missing `email_verified`, expired token, forged code, replayed state are all refused with no session |
+| No email allowlist: the Google app decides | by decision (D11) | keep the Google app in Testing status with only the owner as a test user |
+| Session cookie `HttpOnly`, `Secure`, `SameSite=Strict`, path `/dashboard`, in memory, 8 hours, revoked by stop | pass | `dashboard.test.ts`, `manager.test.ts` |
+| Writes: CSRF header, exact Origin, sign-in within 10 minutes | pass | `dashboard.test.ts` (header, Origin, window), `reload.test.ts` (live), the smoke script |
+| Host must be the public host (no DNS rebinding) | pass | `dashboard.test.ts`, smoke script (421) |
+| Headers: CSP `default-src 'self'` and `frame-ancestors 'none'`, `nosniff`, `no-referrer`, `no-store`, no `X-Powered-By` | pass | `dashboard.test.ts`, smoke script |
+| Responses cannot leak a field: every one is parsed by a strict schema; lists carry no job text and no parameters; settings carry no secret | pass | `packages/dashboard-api` tests, `dashboard.test.ts` leak tests |
+| Parameters of a call: memory only, 16 KB per call, 4 MiB in total, never in the database, a log line, `memory_report` or an MCP result | pass | `call.test.ts`, `callLog.test.ts`, `server.test.ts`; `tool_usage_daily` has no parameter column (`store.test.ts`) |
+| Untrusted text rendered as text, never HTML | pass | ESLint forbids `dangerouslySetInnerHTML` and `innerHTML` in `apps/dashboard`; tests render hostile call parameters and job descriptions |
+| Links to postings only `https`, opened with `rel="noopener noreferrer"` | pass | `Jobs.test.tsx` |
+| The front end imports only `@jobwatch/dashboard-api` | pass | ESLint `no-restricted-imports` and the Nx module boundaries (`type:ui`) |
+| No Docker endpoint; writes limited to `adapters.json`, the reload and a restart | pass | `writes.ts` is the only writer; nothing in the dashboard imports the runtime beyond its read-only `status()` |
+| Client secret not logged | pass | `config.test.ts` (`describeConfig` redacts it); the config is the only place it is read |
+| Dependencies: scripts denied, lockfile, audit | pass | `allowScripts` unchanged; CI runs `npm audit --omit=dev --audit-level=high` (0 vulnerabilities today) and `npm run build` |
+| Nginx: own rate limit, small body, off-page while closed | pass | `nginx -t` on `deploy/nginx/mcp.example.com.conf` with throwaway certificates |
+| Real Google sign-in behind Nginx on the host | **not done** | needs the deployed domain and the redirect URI added in Google Cloud Console |
+| Penetration-style tests from outside (scan, brute force) | **not done** | for the owner's Phase 4 security checklist |
+
 ## 9. Testing
 
 - **API**: vitest against the real handlers with an in-memory `Store`; every endpoint's response is parsed by its `packages/dashboard-api` schema (contract test), and a **leak test** serialises each response and fails on any forbidden key (`cookie`, `token`, `secret`, `password`, `authorization`, `argsHash` outside the call detail, container ids, the control socket path).
@@ -256,7 +279,7 @@ The measured benchmark remains the ceiling (`docs/plans/06`). The dashboard must
 | 6 | `feat/dashboard-jobs` (**built**) | Jobs table (TanStack Table, server-side) and the right-hand detail; Searches | click a row, read the full description |
 | 7 | `feat/dashboard-tools` (**built**) | Tools & status; `PUT /adapters/:id` with hot reload; the *Restart router* action | enable / disable takes effect without a restart |
 | 8 | `feat/dashboard-analytics` (**built**) | Analytics page; daily aggregates table; Session / Lifetime / Historical | all panels of section 7 populated from real calls |
-| 9 | `docs/dashboard-hardening` | security checklist run (section 8), `npm audit` CI job, smoke script, measurements, docs `09` | checklist ticked |
+| 9 | `feat/dashboard-hardening` (**built**) | security checklist run (section 8), `npm audit` CI job, smoke script, measurements, docs `09` | checklist ticked |
 
 Each step ends with `npm run ci` green and the docs updated in the same PR.
 

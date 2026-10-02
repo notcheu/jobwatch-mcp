@@ -152,3 +152,12 @@ All three stages completed and read their data (25 cards; descriptions 1826 and 
 
 ## Multi-architecture check: browser image on Apple Silicon (2026-10-01, a Mac, Docker Desktop, arm64)
 Built `spikes/chrome` natively for arm64 (Debian Chromium, 378 MB image) and ran it with the same hardening as the reference host: `--cap-drop ALL`, `no-new-privileges`, the custom seccomp profile, read-only root, tmpfs home, 1500 MB cap. **Result: Chromium 154.0.8037.57 starts with its sandbox ON, DevTools answers on 9222 (`uname -m` = aarch64).** `/json/version` still reports a "Chrome/154" UA string (Chrome freezes the UA platform to `X11; Linux x86_64`), so the differences from the reference host's Google Chrome are in other signals (for example `navigator.userAgentData` brands), not visible in the UA: the arm64 image is for development only. Not measured on the Mac: memory, LinkedIn pages, fingerprint. The OAuth front, Redis, Nginx files and the full compose stack have not been run (they need the Google credentials and the public hostname); `docker compose config` resolves both the production file and the dev override.
+
+## Dashboard call history (2026-10-03, development Mac, Node 26, `--expose-gc`)
+The router keeps the last `JW_DASHBOARD_CALL_BUFFER` calls in memory, with their parameters (`docs/plans/17-dashboard.md`, section 10). Heap growth after filling a `CallLog` (heap measured after two forced collections, with a throwaway script):
+| Case | Heap used |
+|---|---|
+| 2000 calls (the default), about 0.6 KB of parameters each (a typical search with 50 skipped ids) | 4.8 MB |
+| 20000 calls (the largest buffer), 16 KB of parameters each (the worst case) | 18.0 MB, parameters dropped on 19759 calls by the 4 MiB bound, rows kept |
+The parameters are bounded at 4 MiB in total whatever the buffer size, so the default adds about 5 MB to the router process and the worst case 18 MB. Not measured: the router's RSS under the 6 h soak with the buffer full (the soak itself is still to run on the reference host). The browser container, which holds the RAM budget of `06`, is not touched.
+

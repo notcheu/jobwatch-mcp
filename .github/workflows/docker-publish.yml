@@ -25,6 +25,11 @@ jobs:
       # this step cap is what turns a hang into a quick failure instead of a 12-minute stall.
       - run: npm run ci
         timeout-minutes: 5
+      # The dashboard is a front end with many packages: fail on a known high or critical advisory in anything that ships
+      # (docs/plans/17-dashboard.md, section 8), and make sure every app, the interface included, still builds.
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build
+        timeout-minutes: 5
 
   build-and-push:
     needs: test

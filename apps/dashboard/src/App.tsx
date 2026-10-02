@@ -6,6 +6,7 @@ import { Jobs } from '@/pages/Jobs';
 import { Overview } from '@/pages/Overview';
 import { Runs } from '@/pages/Runs';
 import { Searches } from '@/pages/Searches';
+import { Settings } from '@/pages/Settings';
 import { Tools } from '@/pages/Tools';
 import { Soon } from '@/pages/Soon';
 
@@ -21,7 +22,7 @@ export function AppRoutes() {
         <Route path="jobs/:source/:id" element={<Jobs />} />
         <Route path="searches" element={<Searches />} />
         <Route path="tools" element={<Tools />} />
-        <Route path="settings" element={<Soon name="Settings" />} />
+        <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Soon name="This page" />} />
       </Route>
     </Routes>

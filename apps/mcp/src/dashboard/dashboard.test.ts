@@ -174,6 +174,18 @@ async function build(over: Partial<DashboardDeps> = {}, authRequired = false, oi
     installed: installedFixtures,
     pinned: false,
     runtime: () => undefined,
+    settings: {
+      signIn: 'none',
+      idleStopMinutes: 30,
+      sessionMaxHours: 8,
+      writeWindowMinutes: 10,
+      callBuffer: 2000,
+      charsPerToken: 3.5,
+      jobRetentionDays: 30,
+      maxTabs: 3,
+      browser: { idleStopSeconds: 120, memoryHighMb: 1200, memoryMaxMb: 1500 },
+      adaptersPinned: false,
+    },
     sessionStates: () =>
       new Map([
         [
@@ -683,5 +695,23 @@ describe('usage over time', () => {
     const t = await build();
     expect((await t.call('/dashboard/api/v1/usage?scope=forever')).status).toBe(400);
     expect((await t.call('/dashboard/api/v1/usage?scope=historical&from=yesterday')).status).toBe(400);
+  });
+});
+
+describe('settings', () => {
+  it('shows the limits in force and nothing secret', async () => {
+    const t = await build();
+    const settings = await json(await t.call('/dashboard/api/v1/settings'));
+    expect(settings).toMatchObject({
+      signIn: 'none',
+      idleStopMinutes: 30,
+      sessionMaxHours: 8,
+      writeWindowMinutes: 10,
+      callBuffer: 2000,
+      maxTabs: 3,
+      browser: { memoryMaxMb: 1500 },
+    });
+    expect(Object.keys(settings).join(' ')).not.toMatch(/secret|password|authorization|oidc|client|cookie/i);
+    expect(JSON.stringify(settings)).not.toMatch(/secret|password|authorization|cookie/i);
   });
 });
