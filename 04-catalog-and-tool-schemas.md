@@ -51,12 +51,15 @@ Output: `{ cards: [{ id, title, company, location, work_mode: "remote|hybrid|on-
 `url` is always `https://www.linkedin.com/jobs/view/<id>` (no tracking parameters).
 
 ### `linkedin_job` (Phase 1)
-Input: `{ "ids": ["<id>", ...] (maxItems 25), "refresh": false, "description_max_chars": 3000 (500-6000), "disallowed_terms": ["…"] (maxItems 60, default none), "disallowed_scope": "title" | "title_then_description" }`.
+Input: `{ "ids": ["<id>", ...] (maxItems 25), "refresh": false, "detail": "full" | "summary" | "none" (default full), "description_max_chars": 3000 (500-6000, with detail full), "disallowed_terms": ["…"] (maxItems 60, default none), "disallowed_scope": "title" | "title_then_description" }`.
 Output: `{ jobs: [{ id, title, company, location, description (untrusted text, cut to N chars), description_truncated, url, source: "linkedin", board: null, read_from: "fetched"|"stored", new, first_seen, fetched_at, last_seen, stack_hints, years_hints, remote_hints, salary_text }], not_returned_ids, excluded: [{ id, title, reason, term }], failed: [{ id, status: "not_loaded"|"closed" }] }`.
 Behaviour: see `07-adapter-linkedin.md`. Stored jobs are answered without a visit; opened jobs are opened **by navigation** with human-like pacing and stored as soon as their title passes.
 
+### Returned text: `summary`, `description`, `detail` (all job tools)
+Every returned job has `summary`, `summary_kind` (`sections` | `excerpt` | null), `description`, `description_truncated` and `description_chars`. `detail: "summary"` (default of the search-and-read and board tools) fills `summary`; `detail: "full"` (default of the `*_job` tools) fills `description`; `none` fills neither. `max_results` is the most jobs returned (and examined); there is no `max_returned`. Details in `07`.
+
 ### `linkedin_search_and_read` (Phase 1, the routine's tool)
-Input: the search args + `{ "skip_ids": [...] (maxItems 500), "stored_jobs": "evaluate" | "skip", "max_jobs": 25 (0-25, job pages to visit), "max_returned": 25 (1-50), "description_max_chars": 3000, "disallowed_terms": [...], "disallowed_scope": "title"|"title_then_description" }`. No built-in terms: the caller sends them.
+Input: the search args + `{ "skip_ids": [...] (maxItems 500), "stored_jobs": "evaluate" | "skip", "max_jobs": 50 (0-50, job pages to read; the call also stops reading after about 200 s), "detail": "summary" | "full" | "none" (default summary), "description_max_chars": 3000, "disallowed_terms": [...], "disallowed_scope": "title"|"title_then_description" }`. No built-in terms: the caller sends them.
 Output: `{ jobs: [as above, `read_from` "fetched" or "stored"], known_ids, not_returned_ids, excluded, failed, remaining_ids, page, pages_loaded, scanned, has_more }`. `remaining_ids` non-empty = call again with the same arguments to continue.
 
 ### `ashby_jobs` (Phase 3, built)

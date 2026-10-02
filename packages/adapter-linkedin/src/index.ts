@@ -1,12 +1,12 @@
-import { SDK_API_VERSION, defineAdapter, defineBrowserTool, z } from '@jobwatch/sdk';
-import type { BrowserSession, SessionStatus } from '@jobwatch/sdk';
+import { SDK_API_VERSION, defineAdapter, defineBrowserTool, describeJob, detailFields, z } from '@jobwatch/sdk';
+import type { BrowserSession, Detail, SessionStatus } from '@jobwatch/sdk';
 import { EXTRACT_PAGE_STATE, type ExtractedPageState } from './extract';
 import { aiSearchResultsLayout } from './layouts/aiSearchResults';
 import { classicLayout } from './layouts/classic';
 import type { SearchLayout } from './layouts/layout';
 import { POSTED_WITHIN, classifyPage, termMatcher } from './parse';
 import { readByIds, readNew, type AcceptedJob } from './read';
-import { MAX_PAGE, clip, searchCards, type SearchArgs } from './search';
+import { MAX_PAGE, searchCards, type SearchArgs } from './search';
 
 const HOSTS = ['www.linkedin.com', 'media.licdn.com'];
 
@@ -50,8 +50,14 @@ const jobSchema = z.object({
   title: z.string().nullable(),
   company: z.string().nullable(),
   location: z.string().nullable(),
-  description: z.string(),
+  summary: z.string().describe('With detail=summary: the start of the role and of the requirements. Empty otherwise.'),
+  summary_kind: z
+    .enum(['sections', 'excerpt'])
+    .nullable()
+    .describe('excerpt: no headings were found, the summary is only the start of the text: read the full text if it matters.'),
+  description: z.string().describe('With detail=full: the description. Empty otherwise.'),
   description_truncated: z.boolean(),
+  description_chars: z.number().describe('Length of the whole stored description.'),
   url: z.string(),
   source: z.literal('linkedin').describe('The platform the job comes from.'),
   board: z.null().describe('LinkedIn is one board for everyone: there is no company board.'),
@@ -124,23 +130,15 @@ const storedJobs = z
   .describe(
     'evaluate: a job already stored is judged again with THESE terms, from the database (no visit), and returned if it passes. skip: stored jobs are only listed in known_ids.',
   );
-const descriptionChars = z
-  .number()
-  .int()
-  .min(500)
-  .max(6000)
-  .default(3000)
-  .describe('Description characters returned per job; the full text is stored.');
 
-function toOutput(job: AcceptedJob, maxChars: number): z.infer<typeof jobSchema> {
-  const text = clip(job.description, maxChars);
+function toOutput(job: AcceptedJob, detail: Detail, maxChars: number): z.infer<typeof jobSchema> {
+  const text = describeJob(job.description, detail, maxChars);
   return {
     id: job.id,
     title: job.title,
     company: job.company,
     location: job.location,
-    description: text.text,
-    description_truncated: text.truncated,
+    ...text,
     url: job.url,
     source: 'linkedin' as const,
     board: null,
@@ -237,7 +235,7 @@ export function createLinkedinTools(layout: SearchLayout) {
       .object({
         ids: z.array(jobId).min(1).max(25),
         refresh: z.boolean().default(false).describe('Visit LinkedIn again even if the job is stored.'),
-        description_max_chars: descriptionChars,
+        ...detailFields('full'),
         ...termFields,
       })
       .strict(),
@@ -256,10 +254,10 @@ export function createLinkedinTools(layout: SearchLayout) {
         matchTitle: matchTerm,
         matchDescription: args.disallowed_scope === 'title_then_description' ? matchTerm : null,
       });
-      const { fit, rest } = fitJobs(outcome.accepted.map((job) => toOutput(job, args.description_max_chars)));
+      const { fit, rest } = fitJobs(outcome.accepted.map((job) => toOutput(job, args.detail, args.description_max_chars)));
       const warnings = outcome.failed.map((f) => `job ${f.id}: ${f.status}`);
       if (rest.length > 0)
-        warnings.push(`${rest.length} job(s) did not fit in the result: ask for them again with a lower description_max_chars.`);
+        warnings.push(`${rest.length} job(s) did not fit in the result: ask for them again with detail=summary or fewer ids.`);
       return {
         data: { jobs: fit, not_returned_ids: rest, excluded: outcome.excluded, failed: outcome.failed },
         warnings,
@@ -276,15 +274,16 @@ export function createLinkedinTools(layout: SearchLayout) {
       .extend({
         skip_ids: z.array(jobId).max(500).default([]).describe('Job ids to leave alone entirely, e.g. the ones you already reported.'),
         stored_jobs: storedJobs,
-        max_returned: z
+        max_jobs: z
           .number()
           .int()
-          .min(1)
+          .min(0)
           .max(50)
-          .default(25)
-          .describe('Most jobs handed back; the others are named in not_returned_ids and cost nothing to read with linkedin_job.'),
-        max_jobs: z.number().int().min(0).max(25).default(25).describe('Most job pages to visit in this call (0 = classify only).'),
-        description_max_chars: descriptionChars,
+          .default(50)
+          .describe(
+            'Most job pages to read in this call (0 = classify only). The call also stops reading after about 200 s and lists the rest in remaining_ids.',
+          ),
+        ...detailFields('summary'),
         ...termFields,
       })
       .strict(),
@@ -301,7 +300,7 @@ export function createLinkedinTools(layout: SearchLayout) {
       has_more: z.boolean(),
     }),
     annotations,
-    limits: { timeoutS: 300, cost: MAX_PAGE + 25, outputMaxBytes: 262_144 },
+    limits: { timeoutS: 300, cost: MAX_PAGE + 50, outputMaxBytes: 262_144 },
     handler: async (args, ctx) => {
       const deadline = Date.now() + OPEN_BUDGET_MS;
       const found = await searchCards(ctx, layout, args as SearchArgs);
@@ -310,7 +309,7 @@ export function createLinkedinTools(layout: SearchLayout) {
         skip: new Set(args.skip_ids),
         stored: args.stored_jobs,
         maxJobs: args.max_jobs,
-        maxReturned: args.max_returned,
+        maxReturned: args.max_results,
         matchTitle: matchTerm,
         matchDescription: args.disallowed_scope === 'title_then_description' ? matchTerm : null,
         deadline,
@@ -318,12 +317,10 @@ export function createLinkedinTools(layout: SearchLayout) {
       const warnings = [...found.warnings, ...outcome.failed.map((f) => `job ${f.id}: ${f.status}`)];
       if (outcome.remaining.length > 0)
         warnings.push(`${outcome.remaining.length} job(s) not opened yet: call again with the same arguments to continue.`);
-      const { fit, rest } = fitJobs(outcome.accepted.map((job) => toOutput(job, args.description_max_chars)));
+      const { fit, rest } = fitJobs(outcome.accepted.map((job) => toOutput(job, args.detail, args.description_max_chars)));
       const notReturned = [...rest, ...outcome.notReturned];
       if (notReturned.length > 0)
-        warnings.push(
-          `${notReturned.length} more job(s) passed but were not returned (max_returned or size): read them with linkedin_job.`,
-        );
+        warnings.push(`${notReturned.length} more job(s) passed but were not returned (max_results or size): read them with linkedin_job.`);
       return {
         data: {
           jobs: fit,

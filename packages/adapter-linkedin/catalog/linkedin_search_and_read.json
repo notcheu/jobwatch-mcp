@@ -16,10 +16,20 @@
     "properties": {
       "description_max_chars": {
         "default": 3000,
-        "description": "Description characters returned per job; the full text is stored.",
+        "description": "With detail=full: characters of description returned per job. The full text is stored.",
         "maximum": 6000,
         "minimum": 500,
         "type": "integer"
+      },
+      "detail": {
+        "default": "summary",
+        "description": "summary: a short summary of the role and requirements. full: the description (see description_max_chars). none: neither.",
+        "enum": [
+          "summary",
+          "full",
+          "none"
+        ],
+        "type": "string"
       },
       "disallowed_scope": {
         "default": "title",
@@ -55,9 +65,9 @@
         "type": "string"
       },
       "max_jobs": {
-        "default": 25,
-        "description": "Most job pages to visit in this call (0 = classify only).",
-        "maximum": 25,
+        "default": 50,
+        "description": "Most job pages to read in this call (0 = classify only). The call also stops reading after about 200 s and lists the rest in remaining_ids.",
+        "maximum": 50,
         "minimum": 0,
         "type": "integer"
       },
@@ -65,13 +75,6 @@
         "default": 25,
         "description": "How many search results to examine. 25 per LinkedIn page, so 50 loads pages 1 and 2 and 250 loads ten pages.",
         "maximum": 250,
-        "minimum": 1,
-        "type": "integer"
-      },
-      "max_returned": {
-        "default": 25,
-        "description": "Most jobs handed back; the others are named in not_returned_ids and cost nothing to read with linkedin_job.",
-        "maximum": 50,
         "minimum": 1,
         "type": "integer"
       },
@@ -127,7 +130,7 @@
   "limits": {
     "output_max_bytes": 262144,
     "rate": {
-      "cost": 35
+      "cost": 60
     },
     "timeout_s": 300
   },
@@ -205,7 +208,12 @@
               ]
             },
             "description": {
+              "description": "With detail=full: the description. Empty otherwise.",
               "type": "string"
+            },
+            "description_chars": {
+              "description": "Length of the whole stored description.",
+              "type": "number"
             },
             "description_truncated": {
               "type": "boolean"
@@ -264,6 +272,25 @@
               },
               "type": "array"
             },
+            "summary": {
+              "description": "With detail=summary: the start of the role and of the requirements. Empty otherwise.",
+              "type": "string"
+            },
+            "summary_kind": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "sections",
+                    "excerpt"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "excerpt: no headings were found, the summary is only the start of the text: read the full text if it matters."
+            },
             "title": {
               "type": [
                 "string",
@@ -285,8 +312,11 @@
             "title",
             "company",
             "location",
+            "summary",
+            "summary_kind",
             "description",
             "description_truncated",
+            "description_chars",
             "url",
             "source",
             "board",

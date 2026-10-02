@@ -371,16 +371,16 @@ describe('wttj_matches_and_read', () => {
     expect(out(second).jobs.filter((j) => j.read_from === 'fetched')).toHaveLength(2);
   });
 
-  it('honours skip_ids, max_jobs=0, stored_jobs=skip and max_returned', async () => {
+  it('honours skip_ids, max_jobs=0, stored_jobs=skip and max_results as the cap', async () => {
     const c = context();
     const classify = await runRead(c.ctx, { max_jobs: 0, skip_ids: [siteId(S1)] });
     expect(out(classify).known_ids).toEqual([siteId(S1)]);
     expect(out(classify).remaining_ids).toHaveLength(4);
     await runRead(c.ctx);
     expect(out(await runRead(c.ctx, { stored_jobs: 'skip' })).known_ids).toHaveLength(5);
-    const capped = await runRead(context().ctx, { max_returned: 2 });
+    const capped = await runRead(context().ctx, { max_results: 2 });
+    expect(out(capped).scanned).toBe(2);
     expect(out(capped).jobs).toHaveLength(2);
-    expect(out(capped).not_returned_ids).toHaveLength(3);
   });
 
   it('applies the date range to the cards before reading', async () => {
@@ -393,8 +393,9 @@ describe('wttj_matches_and_read', () => {
     for (const bad of [
       { max_results: 0 },
       { max_results: 51 },
-      { max_jobs: 26 },
-      { max_returned: 51 },
+      { max_jobs: 51 },
+      { max_returned: 5 },
+      { detail: 'everything' },
       { posted_within: '24h' },
       { skip_ids: ['a b'] },
       { stored_jobs: 'maybe' },

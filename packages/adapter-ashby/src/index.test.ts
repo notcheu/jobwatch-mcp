@@ -58,7 +58,15 @@ type Ctx = ReturnType<typeof context>['ctx'];
 const run = (ctx: Ctx, over: object = {}) => tool.handler(tool.input.parse({ boards: ['acme'], ...over }), ctx);
 const data = (result: Awaited<ReturnType<typeof run>>) =>
   result.data as {
-    jobs: { id: string; board: string; company: string | null; locations: string[]; description: string; source: string }[];
+    jobs: {
+      id: string;
+      board: string;
+      company: string | null;
+      locations: string[];
+      description: string;
+      summary: string;
+      source: string;
+    }[];
     excluded: { id: string; reason: string }[];
     boards: { board: string; status: string; jobs_total: number | null; relevant: number | null }[];
   };
@@ -113,7 +121,9 @@ describe('ashby_jobs', () => {
     const result = await run(c.ctx);
     expect(ids(result)).toEqual([J1, J4, J2, J3]);
     expect(data(result).jobs[0]).toMatchObject({ source: 'ashby', board: 'acme', company: null, locations: ['Paris'] });
-    expect(data(result).jobs[0]?.description).toContain('We use React and TypeScript.');
+    expect(data(result).jobs[0]?.description).toBe('');
+    expect(data(result).jobs[0]?.summary).toContain('We use React and TypeScript.');
+    expect(data(await run(c.ctx, { detail: 'full' })).jobs[0]?.description).toContain('We use React and TypeScript.');
     expect(data(result).boards).toEqual([{ board: 'acme', feed_url: ACME, status: 'ok', jobs_total: 4, relevant: 4 }]);
     expect(c.jobs.jobs.has('a0000005-0000-4000-8000-000000000005')).toBe(false);
     expect([...c.jobs.jobs.values()].every((j) => j.source === 'ashby' && j.board === 'acme')).toBe(true);

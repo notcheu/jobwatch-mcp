@@ -72,6 +72,9 @@ const data = (result: Awaited<ReturnType<typeof run>>) =>
       board: string;
       new: boolean;
       description: string;
+      summary: string;
+      summary_kind: string | null;
+      description_chars: number;
       description_truncated: boolean;
       source: string;
       read_from: string;
@@ -226,22 +229,30 @@ describe('teamtailor_jobs', () => {
     expect([...c.jobs.jobs.values()].every((job) => job.lastSeen !== old)).toBe(true);
   });
 
-  it('caps the results, names the rest, and truncates descriptions but stores the full text', async () => {
+  it('caps the results, names the rest, and returns the full text only when asked', async () => {
     const c = context();
-    const result = await run(c.ctx, { max_results: 2, description_max_chars: 20 });
+    const result = await run(c.ctx, { max_results: 2, detail: 'full', description_max_chars: 500 });
     expect(data(result).jobs).toHaveLength(2);
     expect(data(result).not_returned_ids).toHaveLength(2);
-    expect(data(result).jobs[0]?.description).toHaveLength(20);
-    expect(data(result).jobs[0]?.description_truncated).toBe(true);
-    expect((c.jobs.jobs.get('8000001')?.description.length ?? 0) > 20).toBe(true);
-    expect(data(await run(c.ctx, { description_max_chars: 0 })).jobs[0]?.description).toBe('');
+    // the fixture descriptions are short, so nothing is cut here; the cut itself is tested with the shared code
+    expect(data(result).jobs[0]?.description).toContain('We use React and TypeScript');
+    expect(data(result).jobs[0]?.summary).toBe('');
+    expect(data(await run(c.ctx, { detail: 'none' })).jobs[0]).toMatchObject({ description: '', summary: '' });
   });
 
-  it('turns the HTML into text and finds hints in it', async () => {
-    const result = await run(context().ctx, { title_any: ['senior'] });
-    expect(data(result).jobs[0]?.description).toContain('We use React and TypeScript.');
-    expect(data(result).jobs[0]?.description).not.toContain('<');
+  it('turns the HTML into text, summarizes it by default, and finds hints in it', async () => {
+    const c = context();
+    const result = await run(c.ctx, { title_any: ['senior'] });
+    expect(data(result).jobs[0]).toMatchObject({
+      description: '',
+      description_chars: c.jobs.jobs.get('8000001')?.description.length ?? -1,
+    });
+    expect(data(result).jobs[0]?.summary).toContain('We use React and TypeScript.');
+    expect(data(result).jobs[0]?.summary).not.toContain('<');
     expect(data(result).jobs[0]?.stack_hints).toEqual(expect.arrayContaining(['react', 'typescript']));
+    const full = await run(c.ctx, { title_any: ['senior'], detail: 'full' });
+    expect(data(full).jobs[0]?.description).toContain('We use React and TypeScript.');
+    expect(data(full).jobs[0]?.description).not.toContain('<');
   });
 
   it('reports one bad board without failing the others', async () => {

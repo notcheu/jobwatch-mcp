@@ -53,6 +53,7 @@ const data = (result: Awaited<ReturnType<typeof run>>) =>
       company: string;
       locations: string[];
       description: string;
+      summary: string;
       source: string;
       new: boolean;
       stack_hints: string[];
@@ -122,13 +123,17 @@ describe('greenhouse_jobs', () => {
       locations: ['Paris, France'],
       new: true,
     });
-    expect(data(result).jobs[0]?.description).toContain('React & TypeScript');
-    expect(data(result).jobs[0]?.description).not.toMatch(/[<>]|&amp;|&lt;/);
+    expect(data(result).jobs[0]?.summary).toContain('React & TypeScript');
+    expect(data(result).jobs[0]?.summary).not.toMatch(/[<>]|&amp;|&lt;/);
+    expect(data(result).jobs[0]?.description).toBe('');
     expect(data(result).jobs[0]?.stack_hints).toEqual(expect.arrayContaining(['react', 'typescript']));
     expect(data(result).boards).toEqual([{ board: 'acme', feed_url: ACME, status: 'ok', jobs_total: 4, relevant: 4 }]);
     expect([...c.jobs.jobs.values()].every((j) => j.source === 'greenhouse' && j.board === 'acme')).toBe(true);
     expect(result.cost).toBe(1);
     expect(c.http.requests.map((r) => r.url)).toEqual(['https://boards-api.greenhouse.io/v1/boards/acme/jobs']);
+    const full = await run(c.ctx, { detail: 'full' });
+    expect(data(full).jobs[0]?.description).toContain('React & TypeScript');
+    expect(data(full).jobs[0]?.description).not.toMatch(/[<>]|&amp;|&lt;/);
   });
 
   it('applies the shared filters and rules', async () => {

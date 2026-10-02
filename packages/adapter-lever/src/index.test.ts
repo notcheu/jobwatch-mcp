@@ -62,6 +62,7 @@ const data = (result: Awaited<ReturnType<typeof run>>) =>
       company: string | null;
       locations: string[];
       description: string;
+      summary: string;
       source: string;
       remote_hints: string[];
     }[];
@@ -119,9 +120,13 @@ describe('lever_jobs', () => {
     const result = await run(c.ctx);
     expect(ids(result)).toEqual([J1, J4, J2, J3]);
     expect(data(result).jobs[0]).toMatchObject({ source: 'lever', board: 'acme', company: null, locations: ['Paris, France'] });
-    expect(data(result).jobs[0]?.description).toContain('We use React and TypeScript.');
-    expect(data(result).jobs[0]?.description).toContain('- Build UIs');
-    expect(data(result).jobs[0]?.description).toContain('5 years of experience required.');
+    const full = await run(c.ctx, { detail: 'full' });
+    expect(data(full).jobs[0]?.description).toContain('We use React and TypeScript.');
+    expect(data(full).jobs[0]?.description).toContain('- Build UIs');
+    expect(data(full).jobs[0]?.description).toContain('5 years of experience required.');
+    expect(data(result).jobs[0]?.description).toBe('');
+    // the summary starts at the role section, not at the intro sentence
+    expect(data(result).jobs[0]?.summary).toMatch(/^Role: Build UIs; Review code/);
     expect(data(result).boards).toEqual([{ board: 'acme', feed_url: ACME, status: 'ok', jobs_total: 4, relevant: 4 }]);
     expect([...c.jobs.jobs.values()].every((j) => j.source === 'lever' && j.board === 'acme')).toBe(true);
     expect(result.cost).toBe(1);

@@ -76,6 +76,7 @@ export {
   boardReportSchema,
   boardToolOutput,
   boardsInput,
+  detailFields,
   judgeBoardPostings,
   runBoardTool,
   slugify,
@@ -96,3 +97,6 @@ export type {
   Terms,
   VisitedPage,
 } from './visit';
+
+export { DETAILS, PARTS, describeJob, partsOf, splitSections, summarizeJob } from './summary';
+export type { DescriptionFields, Detail, JobSummary, Part, Section } from './summary';
