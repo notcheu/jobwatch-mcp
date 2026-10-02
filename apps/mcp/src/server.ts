@@ -5,6 +5,11 @@ import {
   DockerCliBackend,
   CallLog,
   connectBrowser,
+  controlSocketPath,
+  createRegistryHolder,
+  startControlServer,
+  type RegistryHolder,
+  type ReloadResult,
   createBrowserHooks,
   createContextProvider,
   createOpsAdapter,
@@ -42,8 +47,10 @@ export interface RunningServer {
   breaker: CircuitBreaker;
   /** The last calls, in memory (what the dashboard shows). */
   callLog: CallLog;
-  /** Present only when a browser adapter is enabled. */
-  runtime: RuntimeManager | undefined;
+  /** Present once a browser adapter has been enabled. */
+  readonly runtime: RuntimeManager | undefined;
+  /** Re-read the list of enabled adapters and swap the registry without a restart. Refused when `JW_ADAPTERS` pins the list. */
+  reloadAdapters(): Promise<ReloadResult>;
   /** The MCP listener. */
   mcp: HttpServer;
   /** The metrics listener, when enabled. */
@@ -71,6 +78,8 @@ export interface StartOptions {
   /** Overrides JW_PORT (tests pass 0 for a free port). */
   port?: number;
   metricsPort?: number;
+  /** Path of the control socket; `false` disables it (tests). Default: `control.sock` in the data directory. */
+  controlSocket?: string | false;
 }
 
 const listen = (server: HttpServer, port: number, host: string): Promise<void> =>
@@ -144,10 +153,11 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const pruneTimer = setInterval(pruneNow, PRUNE_INTERVAL_MS);
   pruneTimer.unref();
 
-  // The browser runtime exists only when an enabled adapter needs one: a router with HTTP adapters only never touches docker.
-  const needsBrowser = enabledOnly.adapters.some((adapter) => adapter.kind === 'browser');
+  // The browser runtime exists only when an enabled adapter needs one: a router with HTTP adapters only never touches docker. It is
+  // created the first time one is needed, at startup or when an adapter is enabled while the router runs.
   let runtime: RuntimeManager | undefined;
-  if (needsBrowser) {
+  const ensureRuntime = async (): Promise<void> => {
+    if (runtime !== undefined) return;
     runtime = new RuntimeManager(
       options.runtimeBackend ?? new DockerCliBackend(undefined, config.browserNetwork),
       {
@@ -179,27 +189,50 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     // Containers left by a previous router (crash, kill -9) would hold RAM and a profile lock. A docker that is not reachable
     // is logged, not fatal: the router comes up and every browser call fails with a clear error until docker is back.
     await runtime.reapOrphans().catch((error: unknown) => logger.error({ err: error }, 'orphan_reap_failed'));
-  }
+  };
+  if (enabledOnly.adapters.some((adapter) => adapter.kind === 'browser')) await ensureRuntime();
 
   const contexts =
     options.contexts ??
     createContextProvider({
-      runtime,
+      runtime: () => runtime,
       connect: options.connectBrowser ?? connectBrowser,
       logger,
       store,
       clock,
       maxTabs: config.maxTabs,
     });
-  const ops = createOpsAdapter({ enabledAdapters: () => enabledOnly.adapters, runtime, store, limiter, breaker, contexts, clock, logger });
+  // The holder is created after `ops`, which needs it: the ops tools read the live list of enabled adapters through this function.
+  const live: { holder?: RegistryHolder } = {};
+  const ops = createOpsAdapter({
+    enabledAdapters: () => live.holder?.current().enabled ?? enabledOnly.adapters,
+    runtime: () => runtime,
+    store,
+    limiter,
+    breaker,
+    contexts,
+    clock,
+    logger,
+  });
   const registry = await loadAdapters(enabled.ids, table, [ops]);
   policyAdapters = registry.adapters;
+  const holder = createRegistryHolder(
+    registry,
+    (ids) => loadAdapters(ids, table, [ops]),
+    async (next) => {
+      // validated before the swap; a browser adapter needs the runtime to exist from its first call
+      if (next.enabled.some((adapter) => adapter.kind === 'browser')) await ensureRuntime();
+      policyAdapters = next.adapters;
+      metrics?.setEnabledAdapters(next.enabled.length);
+    },
+  );
   logger.info({ enabled: enabled.ids, source: enabled.source, tools: [...registry.tools.keys()] }, 'adapters_loaded');
 
   // The last calls, in memory, for the dashboard (docs/plans/17-dashboard.md). Their parameters are kept nowhere else.
   const callLog = new CallLog(config.callBuffer);
+  live.holder = holder;
   const app = createApp({
-    registry,
+    registry: holder.view,
     contexts,
     logger,
     metrics,
@@ -234,18 +267,46 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     'listening',
   );
 
+  /** Hot reload (docs/plans/17-dashboard.md, section 6.4): re-read `adapters.json` and swap the registry. */
+  const reloadAdapters = async (): Promise<ReloadResult> => {
+    if (config.adaptersFromEnv !== undefined)
+      throw new Error('JW_ADAPTERS sets the list of adapters; unset it to change them without a restart.');
+    const wanted = await resolveEnabledAdapters(config);
+    const result = await holder.reload(wanted.ids);
+    logger.info({ enabled: result.enabled, added: result.addedAdapters, removed: result.removedAdapters }, 'adapters_reloaded');
+    return result;
+  };
+
+  // The host-side commands (`jobwatch adapters enable ...` reloads a running router) reach the router through a Unix socket in the
+  // data directory. A router without a writable data directory (tests, read-only setups) simply has no control channel.
+  const controlServer =
+    options.controlSocket === false
+      ? undefined
+      : await startControlServer(
+          options.controlSocket ?? controlSocketPath(config.dataDir),
+          { ping: async () => ({ version: options.version }), 'adapters.reload': async () => ({ ...(await reloadAdapters()) }) },
+          (error) => logger.warn({ err: error }, 'control_socket_error'),
+        ).catch((error: unknown) => {
+          logger.warn({ err: error }, 'control_socket_unavailable');
+          return undefined;
+        });
+
   let closing: Promise<void> | undefined;
   return {
     store,
     limiter,
     breaker,
     callLog,
-    runtime,
+    get runtime() {
+      return runtime;
+    },
+    reloadAdapters,
     mcp: mcpServer,
     metrics: metricsServer,
     close: (graceMs = 10_000) => {
       closing ??= (async () => {
         clearInterval(pruneTimer);
+        await controlServer?.close();
         await runtime?.shutdown();
         await Promise.all([closeServer(mcpServer, graceMs), metricsServer ? closeServer(metricsServer, graceMs) : Promise.resolve()]);
         store.close();

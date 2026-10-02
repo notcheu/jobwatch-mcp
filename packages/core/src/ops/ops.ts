@@ -28,7 +28,8 @@ const annotations = { readOnlyHint: true, openWorldHint: false, idempotentHint: 
 export interface OpsDeps {
   /** The enabled adapters; a getter because the registry that holds the ops tools is built after this object. */
   enabledAdapters: () => readonly AdapterModule[];
-  runtime: RuntimeManager | undefined;
+  /** The browser runtime, or a function that returns it (it can appear while the router runs). */
+  runtime: RuntimeManager | undefined | (() => RuntimeManager | undefined);
   store: Store;
   limiter: RateLimiter;
   breaker: CircuitBreaker;
@@ -227,7 +228,8 @@ export function createOpsAdapter(deps: OpsDeps): AdapterModule {
     limits: { timeoutS: 10, cost: 1, outputMaxBytes: 32_768 },
     handler: async () => {
       const now = deps.clock();
-      const status = deps.runtime?.status();
+      const runtime = typeof deps.runtime === 'function' ? deps.runtime() : deps.runtime;
+      const status = runtime?.status();
       const current = status?.current;
       const platforms = deps
         .enabledAdapters()
@@ -243,7 +245,7 @@ export function createOpsAdapter(deps: OpsDeps): AdapterModule {
           uptime_s: Math.round(process.uptime()),
         },
         runtime: {
-          enabled: deps.runtime !== undefined,
+          enabled: runtime !== undefined,
           state: current?.state ?? 'cold',
           ...(current ? { platform: current.platform } : {}),
           ...(current?.startedAt ? { uptime_s: Math.round((now - current.startedAt) / 1000) } : {}),

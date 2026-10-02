@@ -46,6 +46,7 @@ export async function startTestServer(
     logDestination: sink,
     port: 0,
     metricsPort: 0,
+    controlSocket: false,
     ...extra,
   });
   const address = running.mcp.address() as AddressInfo;
