@@ -101,6 +101,7 @@ The numbered docs cross-reference each other, so context is loaded **on demand, 
 | Tests, acceptance, validation | `11-testing-and-validation.md` | phase exit criteria → `12`; RAM expectations → `06`; security checklist → `09` |
 | Planning, phases, spikes | `12-roadmap.md` | open assumptions → `14`; the area being worked on |
 | Job-watch routine integration | `13-integration-with-job-watch.md` | tool contracts → `04`/`07`/`08`; connector constraints → `02` |
+| Operator dashboard (React, shadcn), on-demand listener, call history, analytics | `17-dashboard.md` | config and ops tools → `03`; security → `09`; compose and ports → `10`; memory benchmark → `06` |
 | Risks, `VERIFY` items, open questions | `14-risks-and-open-questions.md` | the spec file named in the row |
 | External references | `15-sources.md` | — |
 
