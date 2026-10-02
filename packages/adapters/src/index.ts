@@ -17,6 +17,7 @@ export const installed = {
   lever: () => import('@jobwatch/adapter-lever').then((m) => m.default),
   linkedin: () => import('@jobwatch/adapter-linkedin').then((m) => m.default),
   teamtailor: () => import('@jobwatch/adapter-teamtailor').then((m) => m.default),
+  wttj: () => import('@jobwatch/adapter-wttj').then((m) => m.default),
   // <installed:end>
 } satisfies InstalledMap;
 

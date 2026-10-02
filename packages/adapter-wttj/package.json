@@ -1,0 +1,23 @@
+{
+  "name": "@jobwatch/adapter-wttj",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Welcome to the Jungle adapter (read-only).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@jobwatch/sdk": "*"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "nx": {
+    "tags": [
+      "type:adapter"
+    ]
+  }
+}

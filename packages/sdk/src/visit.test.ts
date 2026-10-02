@@ -164,3 +164,33 @@ describe('readByIds', () => {
     expect(jobs.jobs.has('a2')).toBe(false);
   });
 });
+
+describe('per-job boards', () => {
+  it('stores each job under the board its card names, falling back to the plan board', async () => {
+    const jobs = store();
+    const p = platform();
+    const withBoards: JobCard[] = [{ ...card('a1'), board: 'acme' }, { ...card('a2'), board: 'beta' }, card('a3')];
+    const out = await readNew(jobs, withBoards, plan(p.visit, { board: 'default' }));
+    expect(out.accepted.map((j) => [j.id, j.board])).toEqual([
+      ['a1', 'acme'],
+      ['a2', 'beta'],
+      ['a3', 'default'],
+    ]);
+    expect([...jobs.jobs.values()].map((j) => [j.id, j.board])).toEqual([
+      ['a1', 'acme'],
+      ['a2', 'beta'],
+      ['a3', 'default'],
+    ]);
+  });
+
+  it('a stored job keeps its board when judged from the database, and a page can name the board of a job read by id', async () => {
+    const jobs = store();
+    await readNew(jobs, [{ ...card('a1'), board: 'acme' }], plan(platform().visit));
+    const again = await readNew(jobs, [card('a1')], plan(platform().visit));
+    expect(again.accepted[0]).toMatchObject({ board: 'acme', readFrom: 'stored' });
+    const p = platform({ b9: { board: 'gamma' } });
+    const byId = await readByIds(jobs, ['b9'], { visit: p.visit, refresh: false, matchTitle: termMatcher([]), matchDescription: null });
+    expect(byId.accepted[0]).toMatchObject({ id: 'b9', board: 'gamma' });
+    expect(jobs.jobs.get('b9')?.board).toBe('gamma');
+  });
+});
