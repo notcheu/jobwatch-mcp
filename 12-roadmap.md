@@ -36,7 +36,7 @@ Tasks: choose/configure the OAuth front; compose stack; router Docker image (`Do
 **Exit**: a scheduled routine successfully calls `session_status` and `linkedin_search` unattended on 3 consecutive days; second-account sign-in rejected.
 
 ## Phase 3 — More adapters
-Tasks (decided 2026-10-02): one dedicated adapter per ATS (`08-…`). First batch: `teamtailor_jobs` **built (2026-10-02)**, `apec_search` (HTTP) + `apec_job` (browser, full description), `wttj_matches`. Then Greenhouse, Lever, Ashby and the others in the `08` table; (optional) `free_work_search`. Each with fixtures, contract tests, budgets.
+Tasks (decided 2026-10-02): one dedicated adapter per ATS (`08-…`). First batch: `teamtailor_jobs` **built (2026-10-02)**, `greenhouse_jobs` **built (2026-10-02)**, `apec_search` (HTTP) + `apec_job` (browser, full description), `wttj_matches`. Then Greenhouse, Lever, Ashby and the others in the `08` table; (optional) `free_work_search`. Each with fixtures, contract tests, budgets.
 **Exit**: each adapter passes its tests and a live smoke; global semaphore/preemption verified with mixed calls.
 
 ## Phase 4 — Hardening and state

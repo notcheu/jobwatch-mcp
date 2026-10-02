@@ -59,6 +59,9 @@ Behaviour: see `07-adapter-linkedin.md`. Stored jobs are answered without a visi
 Input: the search args + `{ "skip_ids": [...] (maxItems 500), "stored_jobs": "evaluate" | "skip", "max_jobs": 25 (0-25, job pages to visit), "max_returned": 25 (1-50), "description_max_chars": 3000, "disallowed_terms": [...], "disallowed_scope": "title"|"title_then_description" }`. No built-in terms: the caller sends them.
 Output: `{ jobs: [as above, `read_from` "fetched" or "stored"], known_ids, not_returned_ids, excluded, failed, remaining_ids, page, pages_loaded, scanned, has_more }`. `remaining_ids` non-empty = call again with the same arguments to continue.
 
+### `greenhouse_jobs` (Phase 3, built)
+Same arguments and output as `teamtailor_jobs`, with `boards` = Greenhouse board tokens (`algolia`) or board URLs (`https://boards.greenhouse.io/algolia`) and `source: "greenhouse"`. Details in `08`.
+
 ### `teamtailor_jobs` (Phase 3, built)
 Input: `{ "boards": ["bsport", "https://careers.bsport.io/"] (1-10 handles or careers-site URLs), "title_any": [...], "location_any": [...], "posted_within": "last_24_hours|past_week|past_month|any" (default any), "disallowed_terms": [...], "disallowed_scope": "title|title_then_description", "only_new": false, "max_results": 50, "description_max_chars": 1500 }`.
 Output: `{ jobs: [{ id, source: "teamtailor", board, company, title, locations, url, posted_at, description, description_truncated, read_from: "fetched", new, first_seen, fetched_at, last_seen, stack_hints, years_hints, remote_hints, salary_text }], not_returned_ids, excluded: [{ id, board, title, reason, term }], boards: [{ board, feed_url, status, jobs_total, relevant, message? }] }`. Details in `08`.

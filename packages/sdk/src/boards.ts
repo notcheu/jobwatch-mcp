@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { JobStore } from './context';
+import type { HttpClient, JobStore } from './context';
+import { AdapterBroken, HostNotAllowedError, JobwatchError } from './errors';
 import { POSTED_WITHIN, containsAny, extractHints, fitToBytes, fold, postedCutoff, termMatcher } from './jobtext';
 
 /**
@@ -210,5 +211,143 @@ export async function judgeBoardPostings<S extends string>(
     excluded,
     notReturned: [...rest, ...accepted.slice(filters.max_results).map((job) => job.id)],
     relevantIds: new Set(relevant.map((posting) => posting.id)),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------- reading boards
+
+/** A short lower-case name for a company: `PayFit` -> `payfit`, `Société Générale` -> `societe-generale`. The `board` in the database. */
+export function slugify(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+/** Where a handle or URL points: the address of the board's job list, and a label for reports. */
+export interface BoardAddress {
+  feedUrl: string;
+  /** The handle, or the host of a custom domain. */
+  label: string;
+}
+
+/** What one ATS adapter knows. Everything else is shared. */
+export interface BoardSource {
+  /** Human name for messages: `Greenhouse`. */
+  ats: string;
+  /** From a handle or a URL, or null when it is neither. Must never return an address on a host the adapter may not reach. */
+  resolve(input: string): BoardAddress | null;
+  /** Parse the response with `parse(schema)` (a changed shape throws `adapter_broken`) into postings, without the `board`. */
+  parse(parse: <T>(schema: z.ZodType<T>) => T, address: BoardAddress): { name: string | null; postings: Omit<BoardPosting, 'board'>[] };
+  /** Said for an input that is not a handle or a URL of this ATS. */
+  invalidMessage: string;
+}
+
+export function boardToolOutput<S extends string>(source: S) {
+  return z.object({
+    jobs: z.array(boardJobSchema(source)),
+    not_returned_ids: z.array(z.string()),
+    excluded: z.array(boardExcludedSchema),
+    boards: z.array(boardReportSchema),
+  });
+}
+
+/** The `boards` argument of a board tool. */
+export function boardsInput(description: string, maxBoards = 10) {
+  return z.array(z.string().trim().min(1).max(300)).min(1).max(maxBoards).describe(description);
+}
+
+/**
+ * The whole body of a board tool: read each requested board (one request each, failures reported per board and never fatal),
+ * then judge the postings with `judgeBoardPostings`. `cost` is the number of requests actually made.
+ */
+export async function runBoardTool<S extends string>(
+  ctx: { http: HttpClient; jobs: JobStore },
+  source: S,
+  board: BoardSource,
+  args: BoardFilters & { boards: readonly string[] },
+): Promise<{ data: z.infer<ReturnType<typeof boardToolOutput<S>>>; warnings: string[]; cost: number }> {
+  const warnings: string[] = [];
+  const reports: BoardReport[] = [];
+  const found: { posting: BoardPosting; report: BoardReport }[] = [];
+  const seen = new Set<string>();
+  const requested = new Set<string>();
+  let requests = 0;
+  const fail = (name: string, feedUrl: string | null, status: BoardReport['status'], message: string): void => {
+    reports.push({ board: name, feed_url: feedUrl, status, jobs_total: null, relevant: null, message });
+  };
+
+  for (const raw of new Set(args.boards.map((entry) => entry.trim()))) {
+    const address = board.resolve(raw);
+    if (address === null) {
+      fail(raw.slice(0, 80), null, 'invalid', board.invalidMessage);
+      continue;
+    }
+    // The same board given as a handle and as two URLs is one request.
+    if (requested.has(address.feedUrl)) continue;
+    requested.add(address.feedUrl);
+    requests += 1;
+    try {
+      const response = await ctx.http.get(address.feedUrl, { timeoutMs: 25_000 });
+      if (response.status === 404) {
+        fail(address.label, address.feedUrl, 'not_found', `No ${board.ats} job board at this address.`);
+        continue;
+      }
+      if (!response.ok) {
+        fail(address.label, address.feedUrl, 'error', `HTTP ${response.status}`);
+        continue;
+      }
+      const parsed = board.parse((schema) => response.json(schema), address);
+      const name = slugify(parsed.name ?? '') || slugify(address.label) || address.label;
+      const report: BoardReport = {
+        board: name,
+        feed_url: address.feedUrl,
+        status: 'ok',
+        jobs_total: parsed.postings.length,
+        relevant: null,
+      };
+      reports.push(report);
+      let fresh = 0;
+      for (const posting of parsed.postings) {
+        if (seen.has(posting.id)) continue;
+        seen.add(posting.id);
+        fresh += 1;
+        found.push({ posting: { ...posting, board: name }, report });
+      }
+      if (fresh < parsed.postings.length)
+        warnings.push(`${name}: ${parsed.postings.length - fresh} job(s) already listed by another board of this call.`);
+    } catch (error) {
+      if (error instanceof HostNotAllowedError)
+        fail(address.label, address.feedUrl, 'refused', 'This host cannot be read (not a public https site).');
+      else if (error instanceof AdapterBroken)
+        fail(address.label, address.feedUrl, 'not_this_ats', `The address does not answer like a ${board.ats} job board.`);
+      else if (error instanceof JobwatchError) fail(address.label, address.feedUrl, 'error', error.message);
+      else throw error;
+    }
+  }
+
+  const judged = await judgeBoardPostings(
+    ctx.jobs,
+    source,
+    found.map((entry) => entry.posting),
+    args,
+  );
+  for (const report of reports) {
+    if (report.status === 'ok')
+      report.relevant = found.filter((entry) => entry.report === report && judged.relevantIds.has(entry.posting.id)).length;
+  }
+  if (judged.notReturned.length > 0)
+    warnings.push(
+      `${judged.notReturned.length} more job(s) passed but were not returned (max_results or size): ask again with narrower filters.`,
+    );
+  for (const report of reports)
+    if (report.status !== 'ok') warnings.push(`${report.board}: ${report.status}${report.message ? ` (${report.message})` : ''}`);
+  return {
+    data: { jobs: judged.jobs, not_returned_ids: judged.notReturned, excluded: judged.excluded, boards: reports },
+    warnings,
+    cost: requests,
   };
 }

@@ -39,13 +39,5 @@ export function resolveBoard(input: string): ResolvedBoard | null {
   return { input: text, feedUrl: `https://${host}/jobs.json`, host, label: onTeamtailor ? host.slice(0, -'.teamtailor.com'.length) : host };
 }
 
-/** A short lower-case name for a company: `PayFit` -> `payfit`, `Le Bon Coin` -> `le-bon-coin`. Used as the board in the database. */
-export function slug(name: string): string {
-  return name
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-}
+/** A short lower-case name for a company (the shared helper, kept under its old name here). */
+export { slugify as slug } from '@jobwatch/sdk';

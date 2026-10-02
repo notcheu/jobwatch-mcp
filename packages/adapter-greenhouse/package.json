@@ -1,16 +1,13 @@
 {
-  "name": "@jobwatch/adapters",
+  "name": "@jobwatch/adapter-greenhouse",
   "version": "0.0.0",
   "private": true,
-  "description": "The installed adapters: the one place that lists adapter packages. Used by the server and the CLI.",
+  "description": "Greenhouse adapter (read-only).",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@jobwatch/adapter-greenhouse": "*",
-    "@jobwatch/adapter-linkedin": "*",
-    "@jobwatch/adapter-teamtailor": "*",
     "@jobwatch/sdk": "*"
   },
   "scripts": {
@@ -20,7 +17,7 @@
   },
   "nx": {
     "tags": [
-      "type:adapters"
+      "type:adapter"
     ]
   }
 }
