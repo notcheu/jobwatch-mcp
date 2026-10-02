@@ -148,7 +148,7 @@
               "enum": [
                 "ok",
                 "not_found",
-                "not_teamtailor",
+                "not_this_ats",
                 "invalid",
                 "refused",
                 "error"
@@ -229,7 +229,6 @@
               "type": "string"
             },
             "id": {
-              "description": "Teamtailor's numeric job id, unique across all Teamtailor boards.",
               "type": "string"
             },
             "last_seen": {
@@ -253,7 +252,7 @@
             },
             "read_from": {
               "const": "fetched",
-              "description": "Always fetched: the feed is read fresh on every call.",
+              "description": "Always fetched: the board is read fresh on every call.",
               "type": "string"
             },
             "remote_hints": {
