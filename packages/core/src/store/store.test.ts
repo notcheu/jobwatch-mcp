@@ -324,3 +324,52 @@ describe('jobs: last seen', () => {
     store.close();
   });
 });
+
+describe('jobs: source and board', () => {
+  const job = (id: string, board?: string | null): NewJobRow => ({
+    id,
+    board,
+    title: 'T',
+    company: 'C',
+    location: null,
+    url: `https://x.test/${id}`,
+    description: 'D',
+  });
+
+  it('keeps the board an ATS job was found on, and null when there is none', () => {
+    const store = Store.open(':memory:');
+    store.putJob('teamtailor', job('a1', 'bsport'), 1);
+    store.putJob('teamtailor', job('a2', 'ornikar'), 1);
+    store.putJob('linkedin', job('4000000001'), 1);
+    expect(store.getJob('teamtailor', 'a1')?.board).toBe('bsport');
+    expect(store.getJob('linkedin', '4000000001')?.board).toBeNull();
+    store.close();
+  });
+
+  it('a refresh updates the board, caps it at 120 characters, and the same id on two platforms stays apart', () => {
+    const store = Store.open(':memory:');
+    store.putJob('teamtailor', job('a1', 'old'), 1);
+    store.putJob('teamtailor', job('a1', 'new'), 2);
+    expect(store.getJob('teamtailor', 'a1')?.board).toBe('new');
+    store.putJob('greenhouse', job('a1', 'x'.repeat(300)), 3);
+    expect(store.getJob('greenhouse', 'a1')?.board).toHaveLength(120);
+    expect(store.getJob('teamtailor', 'a1')?.board).toBe('new');
+    store.close();
+  });
+
+  it('migrates a version 3 database: existing jobs get a null board', () => {
+    const path = join(dir, 'v3.sqlite');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE usage (id INTEGER PRIMARY KEY, platform TEXT NOT NULL, ts INTEGER NOT NULL, cost INTEGER NOT NULL CHECK (cost > 0));
+      CREATE TABLE breaker (platform TEXT PRIMARY KEY, reason TEXT NOT NULL CHECK (reason IN ('needs_login', 'checkpoint')), opened_at INTEGER NOT NULL, until_ts INTEGER);
+      CREATE TABLE call_log (id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, request_id TEXT NOT NULL, tool TEXT NOT NULL, adapter TEXT NOT NULL, platform TEXT NOT NULL, outcome TEXT NOT NULL, duration_ms INTEGER NOT NULL, args_hash TEXT NOT NULL);
+      CREATE TABLE jobs (platform TEXT NOT NULL, id TEXT NOT NULL, first_seen INTEGER NOT NULL, fetched_at INTEGER NOT NULL, last_seen INTEGER NOT NULL DEFAULT 0, title TEXT, company TEXT, location TEXT, url TEXT NOT NULL, description TEXT NOT NULL, PRIMARY KEY (platform, id)) WITHOUT ROWID;
+      CREATE INDEX jobs_last_seen ON jobs (last_seen);
+      INSERT INTO jobs VALUES ('linkedin', '4000000001', 10, 20, 30, 'T', 'C', NULL, 'https://x.test/1', 'D');
+      PRAGMA user_version = 3;`);
+    old.close();
+    const store = Store.open(path);
+    expect(store.getJob('linkedin', '4000000001')).toMatchObject({ lastSeen: 30, board: null });
+    store.close();
+  });
+});

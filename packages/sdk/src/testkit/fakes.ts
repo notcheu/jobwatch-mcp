@@ -19,7 +19,10 @@ import type {
 /** In-memory `JobStore` for adapter tests. `jobs` is inspectable; `now` can be moved to test retention-independent logic. */
 export class FakeJobStore implements JobStore {
   readonly jobs = new Map<string, StoredJob>();
-  constructor(private readonly clock: () => Date = () => new Date()) {}
+  constructor(
+    private readonly clock: () => Date = () => new Date(),
+    private readonly source = 'test',
+  ) {}
 
   known(ids: readonly string[]): Promise<Set<string>> {
     return Promise.resolve(new Set(ids.filter((id) => this.jobs.has(id))));
@@ -31,7 +34,14 @@ export class FakeJobStore implements JobStore {
 
   put(job: NewJob): Promise<void> {
     const now = this.clock().toISOString();
-    this.jobs.set(job.id, { ...job, firstSeen: this.jobs.get(job.id)?.firstSeen ?? now, fetchedAt: now, lastSeen: now });
+    this.jobs.set(job.id, {
+      ...job,
+      source: this.source,
+      board: job.board ?? null,
+      firstSeen: this.jobs.get(job.id)?.firstSeen ?? now,
+      fetchedAt: now,
+      lastSeen: now,
+    });
     return Promise.resolve();
   }
 
@@ -170,6 +180,8 @@ export interface CapturedLog {
 
 export interface TestContextOptions {
   allowedHosts: readonly string[];
+  /** The adapter's platform: what `ctx.jobs` reports as the `source` of stored jobs. Default `test`. */
+  platform?: string;
   pages?: Readonly<Record<string, FakePage>>;
   routes?: readonly FakeHttpRoute[];
 }
@@ -199,7 +211,7 @@ function baseParts(options: TestContextOptions): {
   };
   return {
     http: new FakeHttpClient(options.allowedHosts, options.routes),
-    jobs: new FakeJobStore(),
+    jobs: new FakeJobStore(undefined, options.platform),
     log: { debug: push('debug'), info: push('info'), warn: push('warn'), error: push('error') },
     logs,
     paced,

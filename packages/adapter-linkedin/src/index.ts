@@ -53,7 +53,9 @@ const jobSchema = z.object({
   description: z.string(),
   description_truncated: z.boolean(),
   url: z.string(),
-  source: z
+  source: z.literal('linkedin').describe('The platform the job comes from.'),
+  board: z.null().describe('LinkedIn is one board for everyone: there is no company board.'),
+  read_from: z
     .enum(['fetched', 'stored'])
     .describe('fetched: read from LinkedIn in this call. stored: read from the router database, LinkedIn not visited.'),
   new: z.boolean().describe('true when this call stored the job for the first time.'),
@@ -140,7 +142,9 @@ function toOutput(job: AcceptedJob, maxChars: number): z.infer<typeof jobSchema>
     description: text.text,
     description_truncated: text.truncated,
     url: job.url,
-    source: job.source,
+    source: 'linkedin' as const,
+    board: null,
+    read_from: job.readFrom,
     new: job.isNew,
     first_seen: job.firstSeen,
     fetched_at: job.fetchedAt,

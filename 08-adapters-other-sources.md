@@ -63,7 +63,7 @@ A combined `ats_jobs` tool was dropped: every ATS has its own URLs, response sha
 
 Companies of the routine's watch list that publish no public board (bsport, ornikar, payfit, manomano, criteo, leboncoin): check whether they sit on Teamtailor, Personio, Recruitee or Workable before building anything for them.
 
-Per adapter, in this order: probe the endpoint, fix the response shape in a zod schema (a changed shape becomes `adapter_broken`, never an empty list), write synthetic fixtures, then tests, docs, live smoke. Conventions every ATS tool follows (same as LinkedIn, `07-adapter-linkedin.md`): a handle (or a short list) in, `disallowed_terms` plus `disallowed_scope` per call, a date range, `max_results`, normalized postings with `source`, `new`, `first_seen`, `last_seen`, and the job store for "have I seen this".
+Per adapter, in this order: probe the endpoint, fix the response shape in a zod schema (a changed shape becomes `adapter_broken`, never an empty list), write synthetic fixtures, then tests, docs, live smoke. Conventions every ATS tool follows (same as LinkedIn, `07-adapter-linkedin.md`): a handle (or a short list) in, `disallowed_terms` plus `disallowed_scope` per call, a date range, `max_results`, normalized postings with `source` (the ATS), `board` (the company handle), `read_from`, `new`, `first_seen`, `last_seen`, and the job store for "have I seen this". **Every stored posting records its source and board** (`03-router-spec.md`): a job id is only unique within one ATS, and the board says which company's page it came from.
 
 Draft code for Greenhouse, Lever and Ashby (provider parsers, HTML-to-text, the watch list) was written on 2026-10-02 and set aside when the decision above was taken; it is a starting point, not a design.
 
