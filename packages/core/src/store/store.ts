@@ -202,6 +202,14 @@ export class Store {
 
   // ---- usage (rate limiting)
 
+  /** The keys (`greenhouse#algolia` -> `algolia`) of a platform that have usage events newer than `sinceMs`. */
+  usageKeys(platform: string, sinceMs: number): string[] {
+    const rows = this.db
+      .prepare('SELECT DISTINCT platform FROM usage WHERE ts > ? AND substr(platform, 1, ?) = ?')
+      .all(sinceMs, platform.length + 1, `${platform}#`) as unknown as Rows[];
+    return rows.map((row) => String(row['platform']).slice(platform.length + 1)).sort();
+  }
+
   /** Events of a platform newer than `sinceMs`, oldest first. */
   usageSince(platform: string, sinceMs: number): UsageEvent[] {
     const rows = this.db

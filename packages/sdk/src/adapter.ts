@@ -33,6 +33,11 @@ interface AdapterBase {
   allowedHosts: readonly string[];
   /** Budget for this platform. Omit to get the engine default for the adapter kind (browser: 120/hour, 300/day; http: 600/hour, 3000/day). */
   rate?: RatePolicy;
+  /**
+   * Budget of ONE company board (a key a tool names in `limits.keys`), separate from `rate`: `rate` caps the whole platform,
+   * `keyRate` caps each board, so one company is never hit harder than its own limit. Required when a tool declares `keys`.
+   */
+  keyRate?: RatePolicy;
   /** Pause `ctx.pace()` waits. Omit for the engine default (browser: 2500 to 5000 ms, http: none; HTTP is paced per host by the client). */
   pacing?: Pacing;
 }

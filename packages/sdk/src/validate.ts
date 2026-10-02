@@ -84,6 +84,23 @@ export function validateAdapter(adapter: AdapterModule): Violation[] {
     }
   }
 
+  if (adapter.keyRate !== undefined) {
+    const { perHour, perDay } = adapter.keyRate;
+    if (!Number.isInteger(perHour) || !Number.isInteger(perDay) || perHour < 1 || perDay < perHour || perDay > 100_000) {
+      add('rate', 'adapter', 'keyRate needs integers with 1 <= perHour <= perDay <= 100000');
+    } else if (adapter.rate !== undefined && perHour > adapter.rate.perHour) {
+      add(
+        'rate',
+        'adapter',
+        `keyRate.perHour (${perHour}) is above rate.perHour (${adapter.rate.perHour}): the platform budget would always be hit first`,
+      );
+    }
+  }
+  for (const tool of adapter.tools) {
+    if (tool.limits.keys !== undefined && adapter.keyRate === undefined)
+      add('rate', `tool:${tool.name}`, 'limits.keys needs the adapter to declare keyRate, the budget of one key');
+  }
+
   if (adapter.tools.length === 0) add('tools', 'adapter', 'an adapter must define at least one tool');
 
   const seen = new Set<string>();

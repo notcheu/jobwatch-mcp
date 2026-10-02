@@ -22,6 +22,13 @@ export interface ToolLimits<I = never> {
    * would have needed. What the call really spends is measured, not estimated: see `AdapterResult.cost` and `ctx.spend`.
    */
   estimate?: (args: I) => number;
+  /**
+   * The company boards (or any sub-budget) this call will touch, from its validated arguments: `['algolia', 'doctolib']`. Each one
+   * is charged 1 unit against its OWN budget (the adapter's `keyRate`), on top of the platform budget, so one company is never
+   * hit harder than its own limit however many calls touch it. A call is refused, naming the board, when any board is out of room.
+   * Give only boards the call will really request, once each: the adapter's own resolver, not the raw input.
+   */
+  keys?: (args: I) => readonly string[];
   /** Hard cap on the serialized result. */
   outputMaxBytes: number;
   /** Optional per-tool memory budget for the platform's browser runtime. */

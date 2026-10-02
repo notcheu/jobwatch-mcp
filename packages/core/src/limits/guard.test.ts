@@ -6,6 +6,7 @@ import {
   defineHttpTool,
   z,
   type AdapterModule,
+  validateAdapter,
   type BaseContext,
   JobwatchError,
 } from '@jobwatch/sdk';
@@ -28,6 +29,7 @@ function adapterOf(
   rate?: { perHour: number; perDay: number },
   cost = 1,
   estimate?: (args: { n: number }) => number,
+  board?: { keyRate: { perHour: number; perDay: number }; keys: (args: { n: number; boards?: string[] }) => readonly string[] },
 ): AdapterModule {
   return defineAdapter({
     id,
@@ -38,15 +40,24 @@ function adapterOf(
     kind: 'http',
     allowedHosts: [`api.${id}.example.com`],
     ...(rate ? { rate } : {}),
+    ...(board ? { keyRate: board.keyRate } : {}),
     tools: [
       defineHttpTool({
         name: `${id}_run`,
         title: 'Run (read-only)',
         description: 'Runs. Read-only, no side effects.',
-        input: z.object({ n: z.number().int().min(1).max(10).default(1) }).strict(),
+        input: z
+          .object({ n: z.number().int().min(1).max(10).default(1), boards: z.array(z.string().max(60)).max(20).default([]) })
+          .strict(),
         output: z.object({ n: z.number() }),
         annotations,
-        limits: { timeoutS: 5, cost, outputMaxBytes: 2048, ...(estimate ? { estimate } : {}) },
+        limits: {
+          timeoutS: 5,
+          cost,
+          outputMaxBytes: 2048,
+          ...(estimate ? { estimate } : {}),
+          ...(board ? { keys: board.keys } : {}),
+        },
         handler: async () => {
           handlerRuns.count += 1;
           return behaviour();
@@ -287,6 +298,112 @@ describe('charging what a call really did', () => {
     behaviour = async () => ({ data: { n: 1 }, warnings: [], cost: 1 });
     await code(deps, 'alpha_run');
     expect(limiter.status('alpha').hour.used).toBe(1);
+  });
+});
+
+describe('a budget per company board', () => {
+  const boardAdapter = (
+    keys: (args: { n: number; boards?: string[] }) => readonly string[] = (args) => args.boards ?? [],
+    keyRate = { perHour: 3, perDay: 10 },
+  ) => adapterOf('ats', 'ats', { perHour: 100, perDay: 1000 }, 10, undefined, { keyRate, keys });
+  const used = (limiter: RateLimiter, key: string) => limiter.status(`ats#${key}`).hour.used;
+
+  it('charges each board one unit against its own budget, beside the platform budget', async () => {
+    const { deps, limiter } = await setup([boardAdapter()]);
+    measure = () => 2;
+    expect(await code(deps, 'ats_run', { boards: ['algolia', 'doctolib'] })).toBe('ok');
+    expect([used(limiter, 'algolia'), used(limiter, 'doctolib')]).toEqual([1, 1]);
+    expect(limiter.status('ats').hour.used).toBe(2); // the platform budget counts the requests
+  });
+
+  it('refuses a call naming a board that is out of room, says which, and leaves the other boards untouched', async () => {
+    const { deps, limiter } = await setup([boardAdapter()]);
+    measure = () => 1;
+    for (let i = 0; i < 3; i += 1) expect(await code(deps, 'ats_run', { boards: ['algolia'] })).toBe('ok');
+    const { result, outcome } = await callTool(deps, 'ats_run', { boards: ['doctolib', 'algolia'] });
+    expect(outcome.code).toBe('rate_limited');
+    const body = JSON.parse(result.content[0]?.text ?? '{}') as {
+      message: string;
+      details: Record<string, unknown>;
+      retry_after_s: number;
+    };
+    expect(body.message).toMatch(/ats\/algolia: 3 of 3 used in the last hour/);
+    expect(body.details).toMatchObject({ platform: 'ats', key: 'algolia', window: 'hour', limit: 3 });
+    expect(body.retry_after_s).toBe(3600);
+    expect(used(limiter, 'doctolib')).toBe(0); // all or nothing
+    expect(limiter.status('ats').hour.used).toBe(3); // nothing was added for the refused call
+  });
+
+  it('keeps boards independent: one company at its limit does not stop another', async () => {
+    const { deps } = await setup([boardAdapter()]);
+    measure = () => 1;
+    for (let i = 0; i < 3; i += 1) await code(deps, 'ats_run', { boards: ['algolia'] });
+    expect(await code(deps, 'ats_run', { boards: ['algolia'] })).toBe('rate_limited');
+    expect(await code(deps, 'ats_run', { boards: ['doctolib'] })).toBe('ok');
+  });
+
+  it('the board budget is the board budget, whatever the platform budget is', async () => {
+    const { deps, limiter } = await setup([boardAdapter(undefined, { perHour: 3, perDay: 10 })]);
+    expect(limiter.status('ats#algolia')).toEqual({ hour: { used: 0, limit: 3 }, day: { used: 0, limit: 10 } });
+    expect(limiter.status('ats')).toEqual({ hour: { used: 0, limit: 100 }, day: { used: 0, limit: 1000 } });
+    void deps;
+  });
+
+  it('gives the boards their unit back when the call touched nothing, and keeps it when it did', async () => {
+    const { deps, limiter } = await setup([boardAdapter()]);
+    measure = () => 0;
+    behaviour = async () => {
+      throw new Error('crash');
+    };
+    await code(deps, 'ats_run', { boards: ['algolia'] });
+    expect(used(limiter, 'algolia')).toBe(0);
+    acquireFails = true;
+    await code(deps, 'ats_run', { boards: ['algolia'] });
+    expect(used(limiter, 'algolia')).toBe(0);
+    acquireFails = false;
+    measure = () => 1;
+    await code(deps, 'ats_run', { boards: ['algolia'] });
+    expect(used(limiter, 'algolia')).toBe(1);
+  });
+
+  it('counts a board once however many times the call names it, and cleans the names', async () => {
+    const { deps, limiter } = await setup([boardAdapter(() => ['Algolia', 'algolia', ' ALGOLIA ', 'Ba d/Name!'])]);
+    measure = () => 1;
+    await code(deps, 'ats_run', {});
+    expect(used(limiter, 'algolia')).toBe(1);
+    expect(used(limiter, 'ba-d-name-')).toBe(1);
+  });
+
+  it('survives a broken keys function: no board budget for that call, never a refused call', async () => {
+    for (const keys of [
+      () => {
+        throw new Error('boom');
+      },
+      () => 'not an array' as never,
+      () => [42, null, '', '---', 'x'.repeat(500)] as never,
+    ]) {
+      const { deps, limiter } = await setup([boardAdapter(keys)]);
+      measure = () => 1;
+      expect(await code(deps, 'ats_run', {})).toBe('ok');
+      expect(limiter.status('ats').hour.used).toBe(1);
+    }
+  });
+
+  it('refuses to load an adapter that declares keys without a keyRate, or a keyRate above the platform budget', async () => {
+    const { keyRate: _dropped, ...withoutKeyRate } = boardAdapter();
+    void _dropped;
+    expect(validateAdapter(withoutKeyRate as AdapterModule).map((v) => v.rule)).toContain('rate');
+    expect(validateAdapter(boardAdapter(undefined, { perHour: 3, perDay: 10 })).map((v) => v.rule)).not.toContain('rate');
+    const tooBig = adapterOf('ats', 'ats', { perHour: 100, perDay: 1000 }, 10, undefined, {
+      keyRate: { perHour: 500, perDay: 900 },
+      keys: () => [],
+    });
+    expect(validateAdapter(tooBig).map((v) => v.rule)).toContain('rate');
+    const nonsense = adapterOf('ats', 'ats', { perHour: 100, perDay: 1000 }, 10, undefined, {
+      keyRate: { perHour: 0, perDay: 900 },
+      keys: () => [],
+    });
+    expect(validateAdapter(nonsense).map((v) => v.rule)).toContain('rate');
   });
 });
 
