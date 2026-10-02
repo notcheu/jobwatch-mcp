@@ -14,7 +14,7 @@ flowchart LR
     Indeed["Indeed connector"]
   end
 
-  Nginx["Existing Nginx reverse proxy<br/>TLS, mcp.noguetith.fr"]
+  Nginx["Existing Nginx reverse proxy<br/>TLS, mcp.example.com"]
   Google["Google sign-in<br/>OAuth app in Testing mode,<br/>one test user"]
 
   subgraph Host["Home Ubuntu host, rootless Docker, limited RAM"]
@@ -221,7 +221,7 @@ flowchart TB
   Prof -- "flags logic" --> Triage
   Triage --> Mail
   Triage -- "update" --> Mem
-  Mail -- "Gmail connector" --> Out(["HTML mail to Matthieu"])
+  Mail -- "Gmail connector" --> Out(["HTML mail to the owner"])
 
   SS -. "needs_login / checkpoint:<br/>notify, skip LinkedIn, continue" .-> Mail
   RouterBox -. "rate_limited / busy: wait retry_after_s once<br/>adapter_broken: report in alerts" .-> Mail

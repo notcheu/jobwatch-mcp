@@ -20,7 +20,7 @@ jobs:
           cache: npm
       - run: npm ci
       # format check + lint (incl. architecture rules) + typecheck + unit/contract tests.
-      # Integration tests need the browser runtime and run on the NUC only (see docs/plans/11-testing-and-validation.md).
+      # Integration tests need the browser runtime and run on the reference host only (see docs/plans/11-testing-and-validation.md).
       # The whole suite must stay under 5 minutes (CLAUDE.md). A test that spins the CPU defeats vitest's own timeouts, so
       # this step cap is what turns a hang into a quick failure instead of a 12-minute stall.
       - run: npm run ci
@@ -75,7 +75,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64 # amd64 = the Ubuntu NUC (x86_64, confirmed); arm64 = Apple Silicon Macs for development
+          platforms: linux/amd64,linux/arm64 # amd64 = the reference Ubuntu host (x86_64, confirmed); arm64 = Apple Silicon Macs for development
           push: true
           tags: ${{ secrets.REGISTRY_URL }}/jobwatch-router:latest
           cache-from: type=gha

@@ -1,5 +1,5 @@
 # Always-on services only. Browser containers are spawned by the router (label jobwatch.managed=true).
-# Your existing Nginx proxies https://mcp.noguetith.fr to the single published MCP port below (deploy/nginx/).
+# Your existing Nginx proxies https://mcp.example.com to the single published MCP port below (deploy/nginx/).
 # Runs on Linux (Ubuntu, rootless Docker) and on macOS (Docker Desktop, arm64) for development: see compose.dev.yml and docs/plans/10-deployment.md.
 name: jobwatch
 volumes:
@@ -11,9 +11,9 @@ services:
   front:                                     # OAuth 2.1 authorization server + reverse proxy (decision D7: babs/mcp-auth-proxy)
     image: ${JW_FRONT_IMAGE:-ghcr.io/babs/mcp-auth-proxy:1.4.1}   # pin by digest once verified (S1)
     environment:
-      PROXY_BASE_URL: ${JW_BASE_URL}                 # https://mcp.noguetith.fr
+      PROXY_BASE_URL: ${JW_BASE_URL}                 # https://mcp.example.com
       UPSTREAM_MCP_URL: http://router:8080/mcp       # path is the public mount AND is forwarded verbatim
-      OIDC_ISSUER_URL: https://accounts.google.com   # the only IdP; access is limited to Matthieu by the Google app's "Testing" mode (see 10)
+      OIDC_ISSUER_URL: https://accounts.google.com   # the only IdP; access is limited to the owner by the Google app's "Testing" mode (see 10)
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}      # from deploy/.env (gitignored). VERIFY whether a *_FILE variant exists
       TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET}  # openssl rand -base64 48 (64 chars, no padding); keep identical across restarts
@@ -52,7 +52,7 @@ services:
       dockerfile: Dockerfile
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
-    user: "0:0"                              # CONFIRMED on the NUC: under rootless Docker uid 0 in the container IS mcpuser on the host. uid 1000 could not write ../data/router (EACCES) nor would it open the socket. Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
+    user: "0:0"                              # CONFIRMED on the reference host: under rootless Docker uid 0 in the container IS mcpuser on the host. uid 1000 could not write ../data/router (EACCES) nor would it open the socket. Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
     read_only: true
     tmpfs: [ "/tmp:rw,size=64m" ]
     cap_drop: [ ALL ]

@@ -28,23 +28,23 @@ Source: Anthropic docs "Authentication for connectors" and "Third party connecto
 ## Implications for this project
 - The OAuth front and router are **always-on**; only browsers are on-demand.
 - Token lifetime/refresh behaviour decides whether unattended routines keep working for weeks: test refresh over days (Phase 0 spike S1/S2). Prefer refresh-token rotation with a long absolute lifetime (e.g., 30–90 days) and a short access token (≈1 h).
-- Single authorized user: the OAuth front must only issue tokens to Matthieu's identity (allowlist one account/email). VERIFY how each candidate front enforces this.
+- Single authorized user: the OAuth front must only issue tokens to the owner's identity (allowlist one account/email). VERIFY how each candidate front enforces this.
 - Static-header fallback: if the org has the beta, a long random bearer token in `Authorization` is the simplest machine-friendly option. Keep it as plan B; treat the token as a password (rotate, never in URL).
 - Tool-level controls in Claude: Claude lets the user set per-tool permissions (Always allow / Blocked). Expose `readOnlyHint` annotations so read-only tools can be safely "always allowed" for the routine.
 
 ## Front in use: babs/mcp-auth-proxy (decision D7)
-- Public URL entered in Claude: `https://mcp.noguetith.fr/mcp`. The proxy's root protected-resource metadata advertises `{PROXY_BASE_URL}/` (trailing slash) for Claude.ai compatibility and the path-specific metadata advertises `https://mcp.noguetith.fr/mcp`; **VERIFY in S1 that Claude accepts the resource match**.
+- Public URL entered in Claude: `https://mcp.example.com/mcp`. The proxy's root protected-resource metadata advertises `{PROXY_BASE_URL}/` (trailing slash) for Claude.ai compatibility and the path-specific metadata advertises `https://mcp.example.com/mcp`; **VERIFY in S1 that Claude accepts the resource match**.
 - It advertises `scopes_supported: []`, so Claude will not append `offline_access`; its refresh tokens are issued regardless (7 days, rotated). **VERIFY in S1** that a scheduled routine still refreshes unattended and what happens after 7 idle days.
 - Redirect URI `https://claude.ai/api/mcp/auth_callback` is accepted at registration; Claude Code loopback URIs are accepted over HTTP only for loopback hosts.
 - Single user is enforced by the Google OAuth app (Testing mode, one test user), not by the proxy: include "a second Google account is refused" in the acceptance run.
 
 ## Acceptance checklist for the auth layer (used in Phase 2)
-- [x] `curl -i https://<host>/mcp` (no token) → `401` + `WWW-Authenticate` with `resource_metadata` (2026-10-01, through Nginx on the NUC; the URL points at `/.well-known/oauth-protected-resource/mcp`).
-- [x] `/.well-known/oauth-protected-resource` returns JSON with exact `resource` and first `authorization_servers` entry (2026-10-01: `resource` = `https://mcp.noguetith.fr/mcp`, `authorization_servers` = `["https://mcp.noguetith.fr"]`, `scopes_supported` empty).
+- [x] `curl -i https://<host>/mcp` (no token) → `401` + `WWW-Authenticate` with `resource_metadata` (2026-10-01, through Nginx on the reference host; the URL points at `/.well-known/oauth-protected-resource/mcp`).
+- [x] `/.well-known/oauth-protected-resource` returns JSON with exact `resource` and first `authorization_servers` entry (2026-10-01: `resource` = `https://mcp.example.com/mcp`, `authorization_servers` = `["https://mcp.example.com"]`, `scopes_supported` empty).
 - [~] AS metadata reachable, lists `registration_endpoint`, `code_challenge_methods_supported: ["S256"]` (2026-10-01: yes, `token_endpoint_auth_methods_supported: ["none"]`, grants `authorization_code` + `refresh_token`, no CIMD flag so Claude uses DCR). **Not met by design:** `scopes_supported` is empty, so no `offline_access`; refresh must be proven unattended (S1).
 - [ ] Token endpoint accepts form-encoded bodies; refresh rotation works; expired/revoked refresh → `invalid_grant`.
 - [ ] Response times < 2 s for discovery/registration/token under normal conditions.
-- [x] Adding the URL as a custom connector in Claude completes the sign-in; tools list appears; a call works (Matthieu, 2026-10-01, echo MCP server behind the real front, Google sign-in).
-- [~] Only Matthieu's account can complete sign-in. **Consciously accepted without a test (Matthieu, 2026-10-01):** enforced by the Google OAuth app being in Testing mode with a single test user; no second-account attempt was made. Re-check if the app is ever published or a test user is added.
+- [x] Adding the URL as a custom connector in Claude completes the sign-in; tools list appears; a call works (the owner, 2026-10-01, echo MCP server behind the real front, Google sign-in).
+- [~] Only the owner's account can complete sign-in. **Consciously accepted without a test (the owner, 2026-10-01):** enforced by the Google OAuth app being in Testing mode with a single test user; no second-account attempt was made. Re-check if the app is ever published or a test user is added.
 - [ ] Works from Claude Code (`claude mcp add --transport http …`) with loopback redirect.
-- [~] Works from a **scheduled routine** (spike S1). **Consciously not tested now (Matthieu, 2026-10-01):** no multi-day ping routine. It is verified in Phase 5 with the real routine; the failure handling is already in `13-…` (connector error → notify and fall back to the Chrome path).
+- [~] Works from a **scheduled routine** (spike S1). **Consciously not tested now (the owner, 2026-10-01):** no multi-day ping routine. It is verified in Phase 5 with the real routine; the failure handling is already in `13-…` (connector error → notify and fall back to the Chrome path).

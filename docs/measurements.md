@@ -2,7 +2,7 @@
 
 > The `spikes/` directory (Phase 0 scripts and prototypes) was removed from the tree after Phase 1. Every `spikes/...` path below can be recovered from git history: `git show dddea88:spikes/<path>`.
 
-## Host facts (Nuc-desktop), recorded 2026-10-01
+## Host facts (the reference host), recorded 2026-10-01
 | Item | Value | Note |
 |---|---|---|
 | CPU arch | x86_64 (4 CPUs) | Google Chrome stable is available (V3); CI `linux/amd64` is correct |
@@ -19,13 +19,13 @@
 - **Rootless overlay2 on ZFS is unverified (but likely fine).** Rootless Docker stores data under the `jobwatch` user's home; if that filesystem is ZFS, native overlay may not work and Docker falls back to `fuse-overlayfs` or `vfs` (slower, more disk). Put the `jobwatch` home on ext4/xfs if possible. VERIFY in S7.
 - Everything else from the Phase 0 spike list is still open; see `docs/plans/14-risks-and-open-questions.md`.
 
-## `host-check.sh` results (run as `noguetith`, 2026-10-01)
+## `host-check.sh` results (run as `<user>`, 2026-10-01)
 | Check | Result | Meaning |
 |---|---|---|
-| subuid / subgid | `noguetith:100000:65536` present | a new `jobwatch` user gets its own range from `adduser` |
+| subuid / subgid | `<user>:100000:65536` present | a new `jobwatch` user gets its own range from `adduser` |
 | `uidmap` | **not installed** | `sudo apt install uidmap dbus-user-session` is required |
 | cgroup v2 delegation to user services | `cpu memory pids` | memory limits (`--memory`, `--memory-reservation`) and `--cpus`, `--pids-limit` work rootless; `cpuset`/`io` are not delegated (not needed) |
-| Linger | yes (for `noguetith`) | must also be enabled for `jobwatch` |
+| Linger | yes (for `<user>`) | must also be enabled for `jobwatch` |
 | User namespaces | `max_user_namespaces=10919`, `kernel.apparmor_restrict_unprivileged_userns=1` | Ubuntu 24.04 blocks unprivileged userns unless an AppArmor profile allows the binary: **rootlesskit needs a profile** (see `10-…`). The same restriction may affect Chrome's sandbox (V10) |
 | Filesystem | `/home` and `/var/lib` both on ZFS | rootful overlay2 on ZFS already works here (`Native Overlay Diff: true`); rootless uses `userxattr`, verify with `docker info` after install |
 | Swap | one 3.7 GB disk partition, 2.9 GB used, **no zram** | zram (compressed RAM swap, higher priority) would absorb Chrome spikes better than disk swap |
@@ -34,7 +34,7 @@
 | `google-chrome-stable` on the host | not found | irrelevant: Chrome is installed **inside the browser image** from Google's repo, not on the host |
 
 ## Decisions and next actions
-- Keep a dedicated `jobwatch` user (not `noguetith`), so the rootless daemon and its `DOCKER_HOST` never interfere with your existing rootful Docker.
+- Keep a dedicated `jobwatch` user (not `<user>`), so the rootless daemon and its `DOCKER_HOST` never interfere with your existing rootful Docker.
 - Before S3, consider enabling zram and, if acceptable, stopping the desktop session during runs (`gnome-shell` and friends) to free memory. Decide after the first Chrome measurement.
 - Budgets in `06-…` stay at the current guesses until S3 measures real Chrome; expect to lower `memory.max`.
 
@@ -123,7 +123,7 @@ Conclusions: a logged-in LinkedIn search page needs about **1.3-1.4 GB** in this
 | 3 | 1800 MB | `BLOCK=image,media,font` (resource types aborted) | no crash, **working set 1338 MB at the search stage (1611 MB overall max), peak 1683 MB**: blocking does **not** reduce the need. Still **0 cards**, no container. The selector diagnostic crashed on a null attribute (fixed) so the page markup is still unknown |
 Running tally: 6 automated LinkedIn page loads today beyond the sessions checks. Stop automated runs on the search page until the page is looked at by a human (noVNC) to see what it actually renders; a blank/skeleton/error page would also explain 0 cards and the odd memory.
 
-### S5 root cause found by reading the page (2026-10-01, Matthieu's Chrome, 4 loads of search pages)
+### S5 root cause found by reading the page (2026-10-01, the owner's Chrome, 4 loads of search pages)
 The three container runs had loaded **a "No results found" page** (`/jobs/search-results/` no longer returns results, see `07-…`), so the 1.3-1.6 GB memory figures describe a mostly empty page and **must not be used for budgeting**. In the same Chrome, the classic `/jobs/search/` URL returned real results with the legacy markup (7 cards, 7 `/jobs/view/` links). JS heap in that tab was 146 MB. Next measurement: the probe targets the classic `/jobs/search/` URL (LinkedIn reverted from the AI `/jobs/search-results/` UI; `SEARCH_URL` overrides it), supports both markups, scrolls the list 3 times, and tries more description selectors; run `pages` once. Until then V4 is **open, not failed**.
 
 ## S5 run on the classic layout (2026-10-01, cap 1800 MB, five loads, all `STATE: ok`, no checkpoint)
@@ -146,9 +146,9 @@ All three stages completed and read their data (25 cards; descriptions 1826 and 
 | `view_2` | 7.6 s | 1043 MB | 956 MB | 1100 MB |
 `kernel oom_kill events = 1`: the kernel killed one process (the page data was still obtained, so it was probably a helper or a spare renderer), and the search stage used 94 % of the cap as process memory. A 1100 MB cap is therefore not safe, and the router's 90 % watchdog (990 MB) would have aborted this very call. **Verdict: the realistic need is about 1.04 GB of process memory on the search page; budget `memory.max` 1500 MB (`high` 1200 MB).** Navigation was fast this time (7-17 s), so the 8-28 s of the previous run came from host memory pressure, not from LinkedIn. The host still has to provide about 2 GB free when a runtime starts.
 
-## Decisions after S5 (Matthieu, 2026-10-01)
+## Decisions after S5 (the owner, 2026-10-01)
 - No hardware upgrade for now; zram will be looked into. The 1500 MB browser budget stays; RAM remains the main operational risk (`10-…`).
 - **Exactly one tab, always** (recorded in `CLAUDE.md`, `05`, `06`, `03`): the router reuses the browser's single tab and parks it on `about:blank`, instead of opening a working tab next to a blank one. The spike probes (S4-S6) still call `newPage()`; they are throwaway.
 
-## Multi-architecture check: browser image on Apple Silicon (2026-10-01, Matthieu's Mac, Docker Desktop, arm64)
-Built `spikes/chrome` natively for arm64 (Debian Chromium, 378 MB image) and ran it with the same hardening as the NUC: `--cap-drop ALL`, `no-new-privileges`, the custom seccomp profile, read-only root, tmpfs home, 1500 MB cap. **Result: Chromium 154.0.8037.57 starts with its sandbox ON, DevTools answers on 9222 (`uname -m` = aarch64).** `/json/version` still reports a "Chrome/154" UA string (Chrome freezes the UA platform to `X11; Linux x86_64`), so the differences from the NUC's Google Chrome are in other signals (for example `navigator.userAgentData` brands), not visible in the UA: the arm64 image is for development only. Not measured on the Mac: memory, LinkedIn pages, fingerprint. The OAuth front, Redis, Nginx files and the full compose stack have not been run (they need the Google credentials and the public hostname); `docker compose config` resolves both the production file and the dev override.
+## Multi-architecture check: browser image on Apple Silicon (2026-10-01, a Mac, Docker Desktop, arm64)
+Built `spikes/chrome` natively for arm64 (Debian Chromium, 378 MB image) and ran it with the same hardening as the reference host: `--cap-drop ALL`, `no-new-privileges`, the custom seccomp profile, read-only root, tmpfs home, 1500 MB cap. **Result: Chromium 154.0.8037.57 starts with its sandbox ON, DevTools answers on 9222 (`uname -m` = aarch64).** `/json/version` still reports a "Chrome/154" UA string (Chrome freezes the UA platform to `X11; Linux x86_64`), so the differences from the reference host's Google Chrome are in other signals (for example `navigator.userAgentData` brands), not visible in the UA: the arm64 image is for development only. Not measured on the Mac: memory, LinkedIn pages, fingerprint. The OAuth front, Redis, Nginx files and the full compose stack have not been run (they need the Google credentials and the public hostname); `docker compose config` resolves both the production file and the dev override.

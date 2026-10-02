@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { describeConfig, loadConfig, loadStorageSettings, parseAdapterList } from './config';
 import { ConfigError } from './errors';
 
-const base = { JW_BASE_URL: 'https://mcp.noguetith.fr' };
+const base = { JW_BASE_URL: 'https://mcp.example.com' };
 const problemsOf = (env: Record<string, string>): readonly string[] => {
   try {
     loadConfig(env);
@@ -18,7 +18,7 @@ describe('loadConfig defaults', () => {
     const { config, warnings } = loadConfig(base);
     expect(warnings).toEqual([]);
     expect(config).toMatchObject({
-      baseUrl: 'https://mcp.noguetith.fr',
+      baseUrl: 'https://mcp.example.com',
       auth: 'front',
       listenHost: '0.0.0.0',
       port: 8080,
@@ -36,10 +36,10 @@ describe('loadConfig defaults', () => {
   });
 
   it('refuses to start without a base URL, saying what to set', () => {
-    expect(problemsOf({})).toEqual(['JW_BASE_URL: is required: the public URL, e.g. https://mcp.noguetith.fr']);
-    expect(problemsOf({ JW_BASE_URL: 'not a url' })).toEqual(['JW_BASE_URL: must be an http(s) URL, e.g. https://mcp.noguetith.fr']);
-    expect(problemsOf({ JW_BASE_URL: 'ftp://mcp.noguetith.fr' })).toEqual([
-      'JW_BASE_URL: must be an http(s) URL, e.g. https://mcp.noguetith.fr',
+    expect(problemsOf({})).toEqual(['JW_BASE_URL: is required: the public URL, e.g. https://mcp.example.com']);
+    expect(problemsOf({ JW_BASE_URL: 'not a url' })).toEqual(['JW_BASE_URL: must be an http(s) URL, e.g. https://mcp.example.com']);
+    expect(problemsOf({ JW_BASE_URL: 'ftp://mcp.example.com' })).toEqual([
+      'JW_BASE_URL: must be an http(s) URL, e.g. https://mcp.example.com',
     ]);
   });
 
@@ -50,7 +50,7 @@ describe('loadConfig defaults', () => {
   });
 
   it('normalises the base URL (no trailing slash)', () => {
-    expect(loadConfig({ JW_BASE_URL: 'https://mcp.noguetith.fr/' }).config.baseUrl).toBe('https://mcp.noguetith.fr');
+    expect(loadConfig({ JW_BASE_URL: 'https://mcp.example.com/' }).config.baseUrl).toBe('https://mcp.example.com');
   });
 });
 
@@ -102,7 +102,7 @@ describe('loadConfig validation', () => {
 
 describe('transport and authentication rules', () => {
   it('refuses plain http for a public hostname', () => {
-    expect(problemsOf({ JW_BASE_URL: 'http://mcp.noguetith.fr' })).toContainEqual(
+    expect(problemsOf({ JW_BASE_URL: 'http://mcp.example.com' })).toContainEqual(
       expect.stringContaining('http is only allowed for localhost'),
     );
   });

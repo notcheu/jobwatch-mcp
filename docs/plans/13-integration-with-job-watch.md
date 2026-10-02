@@ -10,7 +10,7 @@ Only **how sources are read**. Profile, criteria, triage, mail template/rules, m
 ## Mapping (old → new)
 | Old step (Chrome extension) | New step (orchestrator tools) |
 |---|---|
-| Check Chrome availability (`tabs_context_mcp`) | Check connector availability: call `session_status("all")`; `needs_login`/`checkpoint` → notify Matthieu, fall back if possible |
+| Check Chrome availability (`tabs_context_mcp`) | Check connector availability: call `session_status("all")`; `needs_login`/`checkpoint` → notify the owner, fall back if possible |
 | LinkedIn Paris daily (2 keyword sets, 50 results each, `f_TPR=r86400`) | `linkedin_search(keywords=…, geo="paris_idf", posted_within="last_24_hours", max_results=50, disallowed_terms=[…per search…], disallowed_scope="title_then_description")`; repeat a call while `remaining_ids` is not empty |
 | LinkedIn France remote (post-filter) | `linkedin_search(geo="france", remote_only=true, posted_within="last_24_hours", max_results=50, max_jobs=0)` (cards only) then `linkedin_job` for plausible ones |
 | Wednesday sweep (5 pages, no time filter, all offers) | `linkedin_search(posted_within="any", max_results=125, max_jobs=0)` (+ `linkedin_job` for unseen plausible cards); promoted flag available in cards |

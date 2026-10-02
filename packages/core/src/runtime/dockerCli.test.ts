@@ -5,7 +5,7 @@ import { DockerCliBackend, MANAGED_LABEL, loginRunArgs, runArgs, type CliResult,
 const spec: RuntimeSpec = {
   platform: 'linkedin',
   name: 'jw-linkedin',
-  image: 'registry.noguetith.fr/jobwatch-browser:154-1',
+  image: 'registry.example.com/jobwatch-browser:154-1',
   memoryMb: 1500,
   memoryReservationMb: 1200,
   profileVolume: 'jw-profile-linkedin',
@@ -71,7 +71,7 @@ describe('runArgs: the hardening is pinned', () => {
   });
 
   it('puts the image last, after `--`, so it can never be read as an option', () => {
-    expect(args.slice(-2)).toEqual(['--', 'registry.noguetith.fr/jobwatch-browser:154-1']);
+    expect(args.slice(-2)).toEqual(['--', 'registry.example.com/jobwatch-browser:154-1']);
   });
 
   it('passes environment values verbatim, including commas (an Accept-Language list)', () => {

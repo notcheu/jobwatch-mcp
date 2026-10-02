@@ -11,7 +11,7 @@
  *   SOAK_HOURS       default 6 (SOAK_SECONDS overrides, for a quick check)
  *   SOAK_MIN_S/MAX_S pause between rounds, random in [min, max]; default 300 and 1200
  *   SOAK_CALLS       semicolon list of `tool` or `tool=<json args>`; default `memory_report`. The first round always runs
- *                    every call; add e.g. `linkedin_search={"keywords":"frontend"}` ONLY after Matthieu approved the budget.
+ *                    every call; add e.g. `linkedin_search={"keywords":"frontend"}` ONLY after the owner approved the budget.
  *   SOAK_RSS_MB      allowed router RSS growth, default 40
  *   SOAK_DOCKER      1 = also count `jobwatch.managed` containers with the docker CLI (needs the socket in this container)
  * Exit code 0 = green, 1 = a check failed, 2 = could not run.

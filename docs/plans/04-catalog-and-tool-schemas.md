@@ -32,7 +32,7 @@ Rules: `additionalProperties: false` everywhere; every string has `maxLength`; e
 ### `session_status` (Phase 1)
 Input: `{ "platform": "linkedin" | "apec" | "wttj" | "all" }`.
 Output: `[{ platform, logged_in: bool, state: "ok"|"needs_login"|"checkpoint"|"unknown", checked_at, note }]`.
-Behaviour: opens the platform home page in the platform's browser (spawns it), checks logged-in markers. For LinkedIn a cached answer younger than 10 minutes may be returned (`cached: true`) to avoid needless page loads. The routine calls it first and notifies Matthieu when it is not `ok`.
+Behaviour: opens the platform home page in the platform's browser (spawns it), checks logged-in markers. For LinkedIn a cached answer younger than 10 minutes may be returned (`cached: true`) to avoid needless page loads. The routine calls it first and notifies the owner when it is not `ok`.
 
 ### `linkedin_job` (Phase 1)
 Input: `{ "ids": ["<id>", ...] (maxItems 25), "refresh": false, "detail": "full" | "summary" | "none" (default full), "description_max_chars": 3000 (500-6000, with detail full), "disallowed_terms": ["…"] (maxItems 60, default none), "disallowed_scope": "title" | "title_then_description" }`.
@@ -80,7 +80,7 @@ One dedicated adapter and tool per ATS (see `08`); there is no combined `ats_job
 See `08-adapters-other-sources.md` for inputs/outputs. All return the same normalized card shape: `{ id, source, title, company, location, work_mode, salary_text, posted_text, url, promoted? }`.
 
 ### `seen_filter`, `seen_mark` (Phase 4, optional state)
-`seen_filter({ platform, ids[] }) -> { unseen_ids[] }`; `seen_mark({ platform, items:[{id,title,company}] })` writes to the router's SQLite only. `seen_mark` is the only non-read-only tool: annotate `readOnlyHint: false` and `destructiveHint: false`, scope strictly to the router's own data. Decide with Matthieu whether the routine's memory stays in the Claude project (current) or moves here.
+`seen_filter({ platform, ids[] }) -> { unseen_ids[] }`; `seen_mark({ platform, items:[{id,title,company}] })` writes to the router's SQLite only. `seen_mark` is the only non-read-only tool: annotate `readOnlyHint: false` and `destructiveHint: false`, scope strictly to the router's own data. Decide with the owner whether the routine's memory stays in the Claude project (current) or moves here.
 
 ### `memory_report` (Phase 1, ops)
 Output: `{ runtimes: [{platform, state, uptime_s, rss_mb, peak_rss_mb, last_call_at}], last_calls: [{tool, duration_ms, peak_rss_mb, cold_start, result}] }`.

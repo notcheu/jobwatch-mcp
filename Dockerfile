@@ -48,7 +48,7 @@ COPY images/browser/chrome-seccomp.json /etc/jobwatch/chrome-seccomp.json
 # `jobwatch` available inside the container: docker compose exec router jobwatch adapters list
 RUN printf '#!/bin/sh\nexec node /app/dist/cli/main.js "$@"\n' > /usr/local/bin/jobwatch && chmod +x /usr/local/bin/jobwatch
 # State lives in /data (mounted volume). Create it owned by the runtime user: a named volume copies this ownership on first use,
-# so `jobwatch adapters enable` can write adapters.json. (A bind mount keeps the host owner: see deploy/compose.yml, VERIFY on the NUC.)
+# so `jobwatch adapters enable` can write adapters.json. (A bind mount keeps the host owner: see deploy/compose.yml, VERIFY on the reference host.)
 RUN mkdir -p /data && chown node:node /data
 ENV JW_DATA_DIR=/data
 # uid/gid 1000 ("node"); the rest of the filesystem is read-only at run time.
