@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@jobwatch/adapter-greenhouse": "*",
+    "@jobwatch/adapter-lever": "*",
     "@jobwatch/adapter-linkedin": "*",
     "@jobwatch/adapter-teamtailor": "*",
     "@jobwatch/sdk": "*"

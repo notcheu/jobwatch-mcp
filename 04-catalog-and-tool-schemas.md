@@ -59,6 +59,9 @@ Behaviour: see `07-adapter-linkedin.md`. Stored jobs are answered without a visi
 Input: the search args + `{ "skip_ids": [...] (maxItems 500), "stored_jobs": "evaluate" | "skip", "max_jobs": 25 (0-25, job pages to visit), "max_returned": 25 (1-50), "description_max_chars": 3000, "disallowed_terms": [...], "disallowed_scope": "title"|"title_then_description" }`. No built-in terms: the caller sends them.
 Output: `{ jobs: [as above, `read_from` "fetched" or "stored"], known_ids, not_returned_ids, excluded, failed, remaining_ids, page, pages_loaded, scanned, has_more }`. `remaining_ids` non-empty = call again with the same arguments to continue.
 
+### `lever_jobs` (Phase 3, built)
+Same arguments and output as `teamtailor_jobs`, with `boards` = Lever site names (`swile`, case matters) or page URLs (`https://jobs.lever.co/swile`) and `source: "lever"`. Details in `08`.
+
 ### `greenhouse_jobs` (Phase 3, built)
 Same arguments and output as `teamtailor_jobs`, with `boards` = Greenhouse board tokens (`algolia`) or board URLs (`https://boards.greenhouse.io/algolia`) and `source: "greenhouse"`. Details in `08`.
 
