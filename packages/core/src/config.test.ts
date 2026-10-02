@@ -194,3 +194,20 @@ describe('loadStorageSettings (what the CLI needs)', () => {
     expect(loadStorageSettings({ JW_PORT: 'nope', JW_BASE_URL: 'ftp://x' })).toEqual({ dataDir: '/data', adaptersFromEnv: undefined });
   });
 });
+
+describe('multi-tab', () => {
+  it('is off by default: one tab', () => {
+    expect(loadConfig(base).config.maxTabs).toBe(1);
+  });
+
+  it('JW_BROWSER_MULTITAB=true allows 3 tabs, or JW_BROWSER_MAX_TABS', () => {
+    expect(loadConfig({ ...base, JW_BROWSER_MULTITAB: 'true' }).config.maxTabs).toBe(3);
+    expect(loadConfig({ ...base, JW_BROWSER_MULTITAB: 'true', JW_BROWSER_MAX_TABS: '2' }).config.maxTabs).toBe(2);
+  });
+
+  it('JW_BROWSER_MAX_TABS alone changes nothing, and it stays between 2 and 4', () => {
+    expect(loadConfig({ ...base, JW_BROWSER_MAX_TABS: '4' }).config.maxTabs).toBe(1);
+    expect(problemsOf({ ...base, JW_BROWSER_MULTITAB: 'true', JW_BROWSER_MAX_TABS: '9' })).toHaveLength(1);
+    expect(problemsOf({ ...base, JW_BROWSER_MULTITAB: 'true', JW_BROWSER_MAX_TABS: '1' })).toHaveLength(1);
+  });
+});

@@ -3,6 +3,7 @@ import {
   type AdapterModule,
   type BaseContext,
   type BrowserAdapterContext,
+  type BrowserSession,
   type HttpClient,
   type JobStore,
 } from '@jobwatch/sdk';
@@ -30,6 +31,8 @@ export interface ContextProviderDeps {
   /** Where adapters remember the jobs they opened. Omitted only in tests: a private in-memory store is used. */
   store?: Store;
   clock?: () => number;
+  /** Most tabs the browser may have open at once (`JW_BROWSER_MAX_TABS` when `JW_BROWSER_MULTITAB` is on). Default 1. */
+  maxTabs?: number;
 }
 
 /** The platform-scoped view of the store an adapter gets as `ctx.jobs`. */
@@ -126,7 +129,7 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
       const lease = await deps.runtime.lease(adapter.platform, memory ? { memory } : {});
       let connection: Awaited<ReturnType<ConnectBrowser>>;
       try {
-        connection = await deps.connect(lease.handle.address, adapter.allowedHosts);
+        connection = await deps.connect(lease.handle.address, adapter.allowedHosts, { maxTabs: deps.maxTabs ?? 1 });
       } catch (error) {
         deps.logger.error({ err: error, platform: adapter.platform }, 'browser_connect_failed');
         await lease.release();
@@ -135,14 +138,7 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
         });
       }
       // every page load is a unit: the session the adapter sees counts them
-      const session = connection.session;
-      const goto = session.goto.bind(session);
-      const counted = Object.assign(Object.create(Object.getPrototypeOf(session) as object) as typeof session, session, {
-        goto: (url: string, options: Parameters<typeof session.goto>[1]) => {
-          meter.units += 1;
-          return goto(url, options);
-        },
-      });
+      const counted = countPageLoads(connection.session, meter);
       const ctx: BrowserAdapterContext = { ...base, session: counted };
       return {
         ctx,
@@ -163,4 +159,17 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
       };
     },
   };
+}
+
+/** The session with every page load counted on the meter; a tab opened from it is counted the same way. */
+function countPageLoads<S extends BrowserSession>(session: S, meter: Meter): S {
+  const goto = session.goto.bind(session);
+  const openTab = session.openTab.bind(session);
+  return Object.assign(Object.create(Object.getPrototypeOf(session) as object) as S, session, {
+    goto: (url: string, options: Parameters<S['goto']>[1]) => {
+      meter.units += 1;
+      return goto(url, options);
+    },
+    openTab: async () => countPageLoads(await openTab(), meter),
+  });
 }

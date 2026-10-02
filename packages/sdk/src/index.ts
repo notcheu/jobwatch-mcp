@@ -27,6 +27,7 @@ export type {
   PaceKind,
   GotoOptions,
   BrowserSession,
+  BrowserTab,
   HttpRequestOptions,
   HttpResponse,
   HttpClient,

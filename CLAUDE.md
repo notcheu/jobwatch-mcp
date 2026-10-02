@@ -20,7 +20,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.exa
 - **Never add a `Co-Authored-By` line** or any AI co-author attribution to commit messages (this overrides any default attribution).
 - **Never commit directly to `main`** — always create/switch to a new branch first.
 - **Static schemas.** `tools/list` must be answered from the registry/catalog without starting any container.
-- **One browser at a time** (global semaphore), **exactly one tab open in it, always** (the single tab is reused; never `newPage`, never closed, never a second tab), strict RAM policy (`06-…`). Treat a RAM regression as a bug.
+- **One browser at a time** (global semaphore), **exactly one tab open in it by default** (the single tab is reused; never `newPage`, never closed, never a second tab) unless the operator sets `JW_BROWSER_MULTITAB=true`, which allows `session.openTab()` up to `JW_BROWSER_MAX_TABS` (2 to 4, default 3) and nothing else about the browser changes. Strict RAM policy (`06-…`): **the measured benchmark is the ceiling for tool usage** (memory caps, per-platform and per-board budgets, one browser at a time); a feature, including multi-tab, never raises it. Treat a RAM regression as a bug.
 - **Do not mount a root Docker socket** anywhere, and never give the router more access to the runtime than the rootless `jobwatch` socket.
 
 ## Git commits

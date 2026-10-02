@@ -1,4 +1,4 @@
-import { JobwatchError, UpstreamError, assertUrlAllowed, type BrowserSession, type GotoOptions } from '@jobwatch/sdk';
+import { JobwatchError, UpstreamError, assertUrlAllowed, type BrowserSession, type BrowserTab, type GotoOptions } from '@jobwatch/sdk';
 
 /**
  * The few Playwright `Page` methods the session needs. A structural type, so the logic below is tested with a fake page and
@@ -45,13 +45,46 @@ function checkSelector(selector: string): void {
 }
 
 /**
- * The `BrowserSession` adapters receive. There is exactly ONE tab and this object can only navigate it, so no second tab
- * can be opened through it. Every `goto` is checked against the adapter's host allowlist first (https only, exact host).
+ * The `BrowserSession` adapters receive. By default there is exactly ONE tab and this object can only navigate it. With
+ * `tabs` (multi-tab on) it can also open extra tabs, each guarded by the same allowlist, up to `tabs.max`. Every `goto` is
+ * checked against the adapter's host allowlist first (https only, exact host).
  * The same allowlist is enforced a second time, on every navigation the page makes by itself (redirects, links), by the
  * request router that `session.ts` installs.
  */
-export function createGuardedSession(page: PageLike, allowedHosts: readonly string[]): BrowserSession {
+/** What `createGuardedSession` needs to open extra tabs: the limit, and a way to get a new page and to close it again. */
+export interface TabSupport<P extends PageLike = PageLike> {
+  max: number;
+  /** Open a page; it throws when the limit is reached. */
+  open(): Promise<P>;
+  close(page: P): Promise<void>;
+}
+
+export function createGuardedSession(page: PageLike, allowedHosts: readonly string[], tabs?: TabSupport): BrowserSession {
   return {
+    maxTabs: Math.max(1, tabs?.max ?? 1),
+
+    async openTab(): Promise<BrowserTab> {
+      if (tabs === undefined || tabs.max <= 1)
+        throw new JobwatchError('internal', 'Multi-tab is off (JW_BROWSER_MULTITAB): only one tab is allowed.');
+      let opened: PageLike;
+      try {
+        opened = await tabs.open();
+      } catch (error) {
+        throw mapBrowserError(error);
+      }
+      // an extra tab cannot open further tabs: only the session can, so the limit is checked in one place
+      const inner = createGuardedSession(opened, allowedHosts);
+      let closed = false;
+      return Object.assign(Object.create(inner) as BrowserSession, inner, {
+        async close(): Promise<void> {
+          if (closed) return;
+          closed = true;
+          await tabs.close(opened).catch(() => undefined);
+        },
+        openTab: () => Promise.reject(new JobwatchError('internal', 'A tab cannot open another tab: ask the session.')),
+      }) as BrowserTab;
+    },
+
     async goto(url: string, options: GotoOptions): Promise<void> {
       const target = assertUrlAllowed(url, allowedHosts);
       const timeout = clampTimeout(options.timeoutMs);

@@ -8,7 +8,7 @@
  */
 import { isUrlAllowed, type BrowserSession } from '@jobwatch/sdk';
 import { devtoolsBaseUrl } from './address';
-import { createGuardedSession, type PageLike } from './pageSession';
+import { createGuardedSession, type PageLike, type TabSupport } from './pageSession';
 
 export interface BrowserConnection {
   /** Navigation and reading, bound to the adapter's host allowlist. */
@@ -26,7 +26,12 @@ export interface BrowserConnection {
 }
 
 /** Opens a CDP connection. Injected, so everything above this file runs against fakes in tests. */
-export type ConnectBrowser = (address: string, allowedHosts: readonly string[]) => Promise<BrowserConnection>;
+export type ConnectBrowser = (address: string, allowedHosts: readonly string[], options?: ConnectOptions) => Promise<BrowserConnection>;
+
+export interface ConnectOptions {
+  /** Most tabs at once; 1 (default) keeps the single-tab rule. */
+  maxTabs?: number;
+}
 
 export const SESSION_COOKIE_TTL_S = 30 * 24 * 3600;
 
@@ -56,7 +61,8 @@ export function persistentCopies(cookies: readonly CookieLike[], hosts: readonly
  * Connect to the browser container by IP (DevTools rejects other Host headers, G2). The playwright-core module is loaded
  * on first use, so a router that only serves HTTP adapters never loads it.
  */
-export const connectBrowser: ConnectBrowser = async (address, allowedHosts) => {
+export const connectBrowser: ConnectBrowser = async (address, allowedHosts, options = {}) => {
+  const maxTabs = Math.max(1, Math.floor(options.maxTabs ?? 1));
   const { chromium } = await import('playwright-core');
   const browser = await chromium.connectOverCDP(devtoolsBaseUrl(address), { timeout: 15_000 });
   try {
@@ -74,15 +80,38 @@ export const connectBrowser: ConnectBrowser = async (address, allowedHosts) => {
       if (request.isNavigationRequest() && !isUrlAllowed(request.url(), allowedHosts)) await route.abort('blockedbyclient');
       else await route.continue();
     });
-    // A popup or target=_blank would be a second tab: close it at once.
+    // A popup or target=_blank would be a second tab: close it at once. The only tabs that stay are the ones `openTab` asks for.
+    let opening = false;
     context.on('page', (opened) => {
-      if (opened !== page) void opened.close().catch(() => undefined);
+      if (opened !== page && !opening) void opened.close().catch(() => undefined);
     });
 
-    const session = createGuardedSession(page as unknown as PageLike, allowedHosts);
+    const tabs: TabSupport | undefined =
+      maxTabs <= 1
+        ? undefined
+        : {
+            max: maxTabs,
+            open: async () => {
+              if (context.pages().length >= maxTabs) throw new Error(`At most ${maxTabs} tabs may be open.`);
+              opening = true;
+              try {
+                return (await context.newPage()) as unknown as PageLike;
+              } finally {
+                opening = false;
+              }
+            },
+            close: async (extra) => {
+              await (extra as unknown as { close(): Promise<void> }).close();
+            },
+          };
+    const closeExtraTabs = async (): Promise<void> => {
+      for (const other of context.pages()) if (other !== page) await other.close().catch(() => undefined);
+    };
+    const session = createGuardedSession(page as unknown as PageLike, allowedHosts, tabs);
     return {
       session,
       park: async () => {
+        await closeExtraTabs(); // a tab the adapter left open does not outlive its call
         await page.goto('about:blank', { timeout: 10_000, waitUntil: 'domcontentloaded' });
       },
       keepSessionCookies: async () => {
@@ -91,7 +120,7 @@ export const connectBrowser: ConnectBrowser = async (address, allowedHosts) => {
         return copies.length;
       },
       shedMemory: async () => {
-        for (const other of context.pages()) if (other !== page) await other.close().catch(() => undefined);
+        await closeExtraTabs();
         const cdp = await context.newCDPSession(page);
         try {
           await cdp.send('HeapProfiler.collectGarbage');
