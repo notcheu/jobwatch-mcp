@@ -11,6 +11,7 @@ export type InstalledMap = Readonly<Record<string, () => Promise<AdapterModule>>
  */
 export const installed = {
   // <installed:begin>
+  apec: () => import('@jobwatch/adapter-apec').then((m) => m.default),
   ashby: () => import('@jobwatch/adapter-ashby').then((m) => m.default),
   greenhouse: () => import('@jobwatch/adapter-greenhouse').then((m) => m.default),
   lever: () => import('@jobwatch/adapter-lever').then((m) => m.default),

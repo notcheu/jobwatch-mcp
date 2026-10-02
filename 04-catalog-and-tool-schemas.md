@@ -72,7 +72,10 @@ Same arguments and output as `teamtailor_jobs`, with `boards` = Greenhouse board
 Input: `{ "boards": ["bsport", "https://careers.bsport.io/"] (1-10 handles or careers-site URLs), "title_any": [...], "location_any": [...], "posted_within": "last_24_hours|past_week|past_month|any" (default any), "disallowed_terms": [...], "disallowed_scope": "title|title_then_description", "only_new": false, "max_results": 50, "description_max_chars": 1500 }`.
 Output: `{ jobs: [{ id, source: "teamtailor", board, company, title, locations, url, posted_at, description, description_truncated, read_from: "fetched", new, first_seen, fetched_at, last_seen, stack_hints, years_hints, remote_hints, salary_text }], not_returned_ids, excluded: [{ id, board, title, reason, term }], boards: [{ board, feed_url, status, jobs_total, relevant, message? }] }`. Details in `08`.
 
-### `apec_search` (HTTP), `apec_job` (browser), `wttj_matches`, then `greenhouse_jobs`, `lever_jobs`, `ashby_jobs`... (Phase 3)
+### `apec_search`, `apec_job`, `apec_search_and_read` (Phase 3, built; browser)
+Arguments and output follow `linkedin_search`, `linkedin_job` and `linkedin_search_and_read` (`07`), with Apec's search arguments: `keywords`, `departments` (default `["75"]`), `cdi_only`, `min_salary_k`, `posted_within`, `max_results` (20 per page). Jobs carry `source: "apec"`, `board: null`, `read_from`, `new`, `first_seen`, `last_seen`, `posted_at`, `salary_text`. Details in `08`.
+
+### `wttj_matches`, then `greenhouse_jobs`, `lever_jobs`, `ashby_jobs`... (Phase 3)
 One dedicated adapter and tool per ATS (see `08`); there is no combined `ats_jobs`. `wttj_company_jobs` was dropped in v1 (WTTJ `robots.txt`): company jobs come from the company's own ATS tool.
 See `08-adapters-other-sources.md` for inputs/outputs. All return the same normalized card shape: `{ id, source, title, company, location, work_mode, salary_text, posted_text, url, promoted? }`.
 
