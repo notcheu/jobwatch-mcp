@@ -49,7 +49,7 @@ A combined `ats_jobs` tool was dropped: every ATS has its own URLs, response sha
 | **WTTJ** (platform) | French tech | logged-in `jobs-matches` page, browser only (plain HTTP is 403; `robots.txt` disallows query strings) | **first batch**, see above |
 | Greenhouse | Doctolib, Algolia, Mirakl | `GET boards-api.greenhouse.io/v1/boards/<handle>/jobs?content=true` | **adapter built** (`greenhouse_jobs`), verified live 2026-10-02 |
 | Lever | Pigment, Aircall, Swile, Malt, Brevo, BlaBlaCar | `GET api.lever.co/v0/postings/<handle>?mode=json` (handle is case-sensitive) | **adapter built** (`lever_jobs`), verified live 2026-10-02 |
-| Ashby | Alan, Pennylane, Nabla, Back Market, Ledger | `GET api.ashbyhq.com/posting-api/job-board/<handle>` (up to 4 MB) | verified 2026-10-01; next |
+| Ashby | Alan, Pennylane, Nabla, Back Market, Ledger | `GET api.ashbyhq.com/posting-api/job-board/<handle>` (up to 4 MB) | **adapter built** (`ashby_jobs`), verified live 2026-10-02 |
 | SmartRecruiters | large groups | `GET api.smartrecruiters.com/v1/companies/<handle>/postings` | documented API, matched no watched company; VERIFY |
 | Workable | SMBs | `GET apply.workable.com/api/v1/widget/accounts/<handle>` (widget) | VERIFY; the widgets seen returned 0 jobs |
 | Recruitee | SMBs, Europe | `GET <handle>.recruitee.com/api/offers/` | VERIFY |
@@ -88,6 +88,12 @@ Draft code for Greenhouse, Lever and Ashby (provider parsers, HTML-to-text, the 
 - **Remote:** Lever states remote work in `workplaceType`, not in the location, so a posting marked `remote` gets `Remote` added to its locations, which is what `location_any: ["remote"]` matches.
 - **Filters, output, source and board, budget (120 per hour, 600 per day):** as for every company-board tool (`03-router-spec.md`). `source: "lever"`, job id = the Lever uuid.
 - **Not verified:** Lever's EU instance (`api.eu.lever.co` answered 404 for the one company tried).
+
+## Ashby (`packages/adapter-ashby`, tool `ashby_jobs`)
+- **Endpoint (verified live 2026-10-02 on Pennylane, Alan, Back Market, Nabla):** `GET https://api.ashbyhq.com/posting-api/job-board/<name>` returns `{ apiVersion, jobs: [...] }` with every posting: `id` (uuid), `title`, `location`, `secondaryLocations` (strings or `{ location }` objects), `publishedAt`, `isListed`, `isRemote`, `jobUrl`, `descriptionHtml` and `descriptionPlain` (the plain text is used). Pennylane's board is 4.3 MB for 147 jobs, which needs the 8 MB body cap. The name must be spelled exactly (`backmarket`, not `back-market`). Postings carry **no company name**: the `board` is the lower-case board name. Postings with `isListed: false` are dropped. `?includeCompensation=true` exists but the salary summaries were empty on the board tried, so it is not used.
+- **Input:** `boards` = up to 10 board names or page URLs (`https://jobs.ashbyhq.com/<name>[/<posting id>]`, or the API URL). Only the name is taken from a URL; the request always goes to `api.ashbyhq.com`, the only allowed host (not `openHttps`). Ports, credentials, other hosts and other API paths are `invalid`. The same board named several ways is requested once.
+- **Remote:** a posting with `isRemote: true` gets `Remote` added to its locations, which is what `location_any: ["remote"]` matches.
+- **Filters, output, source and board, budget (120 per hour, 600 per day):** as for every company-board tool (`03-router-spec.md`). `source: "ashby"`, job id = the Ashby uuid.
 
 ## Adapter checklist (for any new platform)
 1. Catalog entry (schemas, limits, hosts). 2. Adapter class (+ session check if logged-in). 3. Parser + fixtures. 4. Rate policy and budget. 5. Contract tests. 6. Docs: add a section here with URL patterns, DOM facts, pitfalls.
