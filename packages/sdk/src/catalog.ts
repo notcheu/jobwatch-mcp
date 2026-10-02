@@ -19,6 +19,8 @@ export interface CatalogEntry {
     output_max_bytes: number;
   };
   allowed_hosts: string[];
+  /** Present (true) only for an adapter that may reach any public https host. */
+  open_https?: boolean;
 }
 
 export function buildCatalog(adapter: AdapterModule): CatalogEntry[] {
@@ -39,6 +41,7 @@ export function buildCatalog(adapter: AdapterModule): CatalogEntry[] {
       output_max_bytes: tool.limits.outputMaxBytes,
     },
     allowed_hosts: [...adapter.allowedHosts],
+    ...(adapter.kind === 'http' && adapter.openHttps === true ? { open_https: true } : {}),
   }));
 }
 

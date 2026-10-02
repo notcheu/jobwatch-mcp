@@ -165,7 +165,27 @@ describe('HTTP adapters', () => {
     await (await provider.acquire(httpAdapter, 'r1')).release();
     await (await provider.acquire(httpAdapter, 'r2')).release();
     expect(createHttp).toHaveBeenCalledTimes(1);
-    expect(createHttp).toHaveBeenCalledWith(['api.example.com']);
+    expect(createHttp).toHaveBeenCalledWith(expect.objectContaining({ allowedHosts: ['api.example.com'], openHttps: false }));
+  });
+});
+
+describe('open https adapters', () => {
+  it('builds the client open only for an adapter that declares openHttps, and logs the hosts it reaches', async () => {
+    const createHttp = vi.fn(
+      (_options: { openHttps: boolean; onOpenHost: (host: string) => void }) =>
+        ({
+          get: async () => ({ status: 200, ok: true, headers: {}, text: '', json: () => ({}) as never }),
+          postJson: async () => ({}) as never,
+        }) as HttpClient,
+    );
+    const logger = createLogger({ level: 'silent' });
+    const info = vi.spyOn(logger, 'info');
+    const provider = createContextProvider({ runtime: undefined, connect: vi.fn(), logger, createHttp });
+    await (await provider.acquire({ ...httpAdapter, openHttps: true }, 'r1')).release();
+    const options = createHttp.mock.calls[0]?.[0];
+    expect(options?.openHttps).toBe(true);
+    options?.onOpenHost('careers.bsport.io');
+    expect(info).toHaveBeenCalledWith({ adapter: httpAdapter.id, host: 'careers.bsport.io' }, 'open_https_request');
   });
 });
 

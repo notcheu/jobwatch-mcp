@@ -61,7 +61,17 @@ describe('catalogFileName and summarizeAdapter', () => {
       platform: 'sample',
       kind: 'browser',
       allowedHosts: ['www.example.com'],
+      openHttps: false,
       tools: [{ name: 'page_title', title: 'Page title (read-only)' }],
     });
+  });
+});
+
+describe('open https in the catalog', () => {
+  it('shows open_https only for an adapter that declares it', () => {
+    const plain = buildCatalog(httpAdapter);
+    expect(plain.every((entry) => entry.open_https === undefined)).toBe(true);
+    const open = buildCatalog({ ...httpAdapter, allowedHosts: ['*.teamtailor.com'], openHttps: true });
+    expect(open.every((entry) => entry.open_https === true && entry.allowed_hosts.includes('*.teamtailor.com'))).toBe(true);
   });
 });

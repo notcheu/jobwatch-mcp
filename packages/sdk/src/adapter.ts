@@ -26,7 +26,10 @@ interface AdapterBase {
   sdkApi: number;
   /** Profile name and key of the rate limiter and the circuit breaker. */
   platform: string;
-  /** Bare hostnames this adapter may reach (exact match, https only). Enforced by `BrowserSession` and `HttpClient`. */
+  /**
+   * Hosts this adapter may reach, https only: bare hostnames (exact match) and one-label wildcards (`*.teamtailor.com`, which
+   * matches `bsport.teamtailor.com` but not `a.b.teamtailor.com` or the bare domain). Enforced by `BrowserSession` and `HttpClient`.
+   */
   allowedHosts: readonly string[];
   /** Budget for this platform. Omit to get the engine default for the adapter kind (browser: 120/hour, 300/day; http: 600/hour, 3000/day). */
   rate?: RatePolicy;
@@ -45,6 +48,13 @@ export interface BrowserAdapter extends AdapterBase {
 /** An adapter that only talks HTTP: no container, no semaphore. */
 export interface HttpAdapter extends AdapterBase {
   kind: 'http';
+  /**
+   * Also reach ANY public https host, for ATS boards on a company's own domain (`careers.bsport.io`). Off unless set, shown in
+   * the catalog (`open_https`), and guarded by the HTTP client: GET and POST to https port 443 only, names that cannot be public
+   * are refused, and every address the name resolves to must be public, on every redirect hop (`09-security.md`).
+   * Declare it only when a tool takes a URL from the caller; `allowedHosts` still lists the ATS's own hosts.
+   */
+  openHttps?: boolean;
   tools: readonly ErasedTool<HttpAdapterContext>[];
 }
 
@@ -64,6 +74,7 @@ export interface AdapterSummary {
   platform: string;
   kind: AdapterKind;
   allowedHosts: readonly string[];
+  openHttps: boolean;
   tools: readonly { name: string; title: string }[];
 }
 
@@ -75,6 +86,7 @@ export function summarizeAdapter(adapter: AdapterModule): AdapterSummary {
     platform: adapter.platform,
     kind: adapter.kind,
     allowedHosts: adapter.allowedHosts,
+    openHttps: adapter.kind === 'http' && adapter.openHttps === true,
     tools: adapter.tools.map((tool) => ({ name: tool.name, title: tool.title })),
   };
 }
