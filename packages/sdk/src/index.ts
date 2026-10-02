@@ -56,5 +56,15 @@ export type { CatalogEntry } from './catalog';
 export { inputJsonSchema, outputJsonSchema, findInputSchemaProblems } from './schema';
 export type { JsonSchema, SchemaProblem } from './schema';
 
-export { extractHints, termMatcher } from './jobtext';
-export type { Hints } from './jobtext';
+export {
+  POSTED_WITHIN,
+  containsAny,
+  decodeEntities,
+  extractHints,
+  fitToBytes,
+  fold,
+  htmlToText,
+  postedCutoff,
+  termMatcher,
+} from './jobtext';
+export type { Hints, PostedWithin } from './jobtext';

@@ -1,3 +1,4 @@
+import type { PostedWithin } from '@jobwatch/sdk';
 /**
  * Pure parsing and normalization for the LinkedIn adapter. The in-page script returns RAW text lines only; everything that
  * decides what a card or a job means lives here, where it is unit-tested without a browser.
@@ -28,9 +29,8 @@ export interface Card {
 export const GEO_PRESETS = { paris_idf: '104246759', france: '105015875' } as const;
 export const PAGE_SIZE = 25;
 
-/** How recent a posting must be. `any` sends no filter. The `f_TPR` values are LinkedIn's own ("Past 24 hours/week/month"). */
-export const POSTED_WITHIN = ['last_24_hours', 'past_week', 'past_month', 'any'] as const;
-export type PostedWithin = (typeof POSTED_WITHIN)[number];
+export { POSTED_WITHIN } from '@jobwatch/sdk';
+export type { PostedWithin } from '@jobwatch/sdk';
 const TPR: Record<Exclude<PostedWithin, 'any'>, string> = { last_24_hours: 'r86400', past_week: 'r604800', past_month: 'r2592000' };
 
 /** The `f_TPR=...` URL parameter for a date range, or null for any time. */
