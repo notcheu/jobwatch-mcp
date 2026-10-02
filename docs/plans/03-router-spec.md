@@ -40,7 +40,7 @@ jobwatch-mcp/
     mcp/                @jobwatch/mcp      composition root: reads config, asks @jobwatch/adapters for the ENABLED adapters,
                                            hands them to core, serves stateless Streamable HTTP, /healthz, /metrics.
                                            The router Dockerfile builds this app.
-    cli/                @jobwatch/cli      `jobwatch` binary: adapters list|enable|disable, login start|stop <platform>, catalog gen|check, doctor
+    cli/                @jobwatch/cli      `jobwatch` binary: adapters list|enable|disable, login start|stop <platform>, doctor
   tools/new-adapter/                       `npm run new:adapter -- <id> [--kind http|browser]`: scaffolds a new adapter package
                                            (a plain Node script, not an Nx plugin generator: no build pipeline for ten small files)
   images/browser/       Dockerfile, entrypoint.sh, chrome-seccomp.json (see 05)
@@ -185,11 +185,13 @@ Tools are built with `defineHttpTool` (handler context: `{ http, jobs, log, pace
 
 ### CLI (`jobwatch`, package `apps/cli`)
 ```
-jobwatch adapters list [--json]      all INSTALLED adapters: id, platform, kind, tools, allowed hosts, ENABLED / disabled
+jobwatch adapters list [--tools] [--json] [<id...>]
+                                     all INSTALLED adapters: id, platform, kind, tools, allowed hosts, ENABLED / disabled;
+                                     --tools adds every tool with its parameters (required starred, defaults, cost) = what
+                                     tools/list returns; --json gives the full catalog entries; ids narrow the list
 jobwatch adapters enable  <id...>    add to adapters.json (validates the id exists in `installed`)
 jobwatch adapters disable <id...>    remove from adapters.json
 jobwatch login start|stop <platform>  browser login mode (05); only for enabled browser adapters
-jobwatch catalog gen | check         regenerate / verify the committed per-adapter catalog snapshots
 jobwatch doctor                      config, Docker socket, image, data dir, enabled adapters, SDK version compatibility
 ```
 The CLI ships inside the router image too, so on the host: `docker compose exec router jobwatch adapters list`. Writing `adapters.json` is atomic (temp file + rename) and the file is the only state the CLI changes.

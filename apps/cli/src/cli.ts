@@ -8,8 +8,8 @@ import {
   adaptersFilePath,
 } from '@jobwatch/core';
 import { describeInstalled, type InstalledEntry } from '@jobwatch/adapters';
+import { buildCatalog, type CatalogEntry } from '@jobwatch/sdk';
 import type { DockerRunner, InstalledAdapters } from '@jobwatch/core';
-import { catalog } from './catalog';
 import { doctor } from './doctor';
 import { login } from './login';
 
@@ -32,12 +32,13 @@ export interface Deps {
 const USAGE = `jobwatch: manage which adapters the router plugs in
 
 Usage:
-  jobwatch adapters list [--json]      every installed adapter and whether it is enabled
+  jobwatch adapters list [--tools] [--json] [<id...>]
+                                       every installed adapter and whether it is enabled; --tools adds each tool with its
+                                       parameters (what Claude will see), --json prints it as JSON; ids narrow the list
   jobwatch adapters enable <id...>     enable adapters (written to adapters.json)
   jobwatch adapters disable <id...>    disable adapters
   jobwatch login start <platform>      start a visible browser to sign in by hand (noVNC on loopback)
   jobwatch login stop <platform>       stop it again
-  jobwatch catalog [--all]             print the static tool catalog of the enabled adapters (JSON lines)
   jobwatch doctor                      check configuration, data directory, Docker, image, network, profiles
   jobwatch --help | --version
 
@@ -59,22 +60,71 @@ function pad(rows: string[][]): string {
     .join('\n');
 }
 
+interface SchemaNode {
+  type?: string | string[];
+  enum?: unknown[];
+  default?: unknown;
+  description?: string;
+  properties?: Record<string, SchemaNode>;
+  required?: string[];
+  items?: SchemaNode;
+}
+
+/** `string`, `integer`, `a|b|c`, `string[]`: the shape of one parameter in a few words. */
+function typeOf(node: SchemaNode): string {
+  if (node.enum) return node.enum.map(String).join('|');
+  const type = Array.isArray(node.type) ? node.type.filter((t) => t !== 'null').join('|') : (node.type ?? 'any');
+  return type === 'array' ? `${node.items ? typeOf(node.items) : 'any'}[]` : type;
+}
+
+/** One tool for the human listing: its title, what a call can cost, then one line per parameter. */
+function describeTool(tool: CatalogEntry): string {
+  const schema = tool.inputSchema as SchemaNode;
+  const required = new Set(schema.required ?? []);
+  const lines = [`  ${tool.name}  ${tool.title}  (reserves up to ${tool.limits.rate.cost} unit(s))`];
+  const params = Object.entries(schema.properties ?? {});
+  if (params.length === 0) lines.push('      no parameters');
+  for (const [name, node] of params) {
+    const fallback = node.default === undefined ? '' : ` = ${JSON.stringify(node.default)}`;
+    lines.push(`      ${name}${required.has(name) ? '*' : ''}: ${typeOf(node)}${fallback}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 async function list(deps: Deps, args: string[]): Promise<number> {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean', default: false } } });
-  if (positionals.length > 0) {
-    deps.io.err(`adapters list takes no arguments, got: ${positionals.join(' ')}\n`);
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { json: { type: 'boolean', default: false }, tools: { type: 'boolean', default: false } },
+  });
+  const unknown = positionals.filter((id) => !(id in deps.installed));
+  if (unknown.length > 0) {
+    deps.io.err(`Unknown adapter: ${unknown.join(', ')}. Installed: ${Object.keys(deps.installed).sort().join(', ') || 'none'}\n`);
     return EXIT.usage;
   }
   const settings = loadStorageSettings(deps.env);
   const enabled = await resolveEnabledAdapters(settings);
-  const entries = await describeInstalled(deps.installed);
+  const all = await describeInstalled(deps.installed);
+  const entries = positionals.length === 0 ? all : all.filter((entry) => positionals.includes(entry.id));
   const strays = enabled.ids.filter((id) => !(id in deps.installed));
   const broken = entries.filter((entry) => entry.error !== undefined);
+
+  // the tools as the router lists them to Claude (static: nothing is started), only when asked
+  const catalogs = new Map<string, CatalogEntry[]>();
+  if (values.tools)
+    for (const entry of entries) {
+      const load = deps.installed[entry.id];
+      if (entry.summary && load) catalogs.set(entry.id, buildCatalog(await load()));
+    }
 
   if (values.json) {
     const adapters = entries.map((entry: InstalledEntry) =>
       entry.summary
-        ? { ...entry.summary, enabled: enabled.ids.includes(entry.id) }
+        ? {
+            ...entry.summary,
+            ...(catalogs.has(entry.id) ? { tools: catalogs.get(entry.id) } : {}),
+            enabled: enabled.ids.includes(entry.id),
+          }
         : { id: entry.id, enabled: enabled.ids.includes(entry.id), error: entry.error },
     );
     deps.io.out(
@@ -103,6 +153,13 @@ async function list(deps: Deps, args: string[]): Promise<number> {
     }
     deps.io.out(`${pad(rows)}\n`);
   }
+  if (values.tools)
+    for (const entry of entries) {
+      const tools = catalogs.get(entry.id);
+      if (tools === undefined) continue;
+      deps.io.out(`\n${entry.id} (${enabled.ids.includes(entry.id) ? 'enabled' : 'disabled'})\n`);
+      for (const tool of tools) deps.io.out(describeTool(tool));
+    }
   const where =
     enabled.source === 'env'
       ? 'JW_ADAPTERS (environment, overrides the file)'
@@ -154,11 +211,6 @@ export async function run(argv: readonly string[], deps: Deps): Promise<number> 
     }
     if (command === 'login')
       return await login(
-        deps,
-        [subcommand, ...rest].filter((part): part is string => part !== undefined),
-      );
-    if (command === 'catalog')
-      return await catalog(
         deps,
         [subcommand, ...rest].filter((part): part is string => part !== undefined),
       );

@@ -149,14 +149,3 @@ describe('doctor', () => {
     expect(out).toMatch(/FAIL\s+configuration/);
   });
 });
-
-describe('catalog', () => {
-  it('prints nothing for a disabled adapter unless --all, one JSON line per tool otherwise', async () => {
-    expect(await cli(['catalog'])).toBe(0);
-    expect(out).toBe('');
-    expect(await cli(['catalog', '--all'])).toBe(0);
-    const lines = out.trim().split('\n');
-    expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ name: 'linkedin_search' });
-  });
-});
