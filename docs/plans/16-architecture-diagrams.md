@@ -201,7 +201,6 @@ flowchart TB
     SS["session_status"]
     LS["linkedin_search"]
     LJ["linkedin_job"]
-    LSR["linkedin_search_and_read"]
     WM["wttj_matches<br/>Phase 3"]
     AS["apec_search, apec_job<br/>Phase 3"]
     AJ["ATS tools: teamtailor_jobs, greenhouse_jobs, ...<br/>Phase 3"]
@@ -211,14 +210,13 @@ flowchart TB
   Orch -- "1. connector availability" --> SS
   Prof -- "keywords, geo presets" --> LIs
   Mem -- "skip_ids" --> LIs
-  LIs --> LSR
   LIs --> LS
   LS -- "plausible cards" --> LJ
   Oth --> WM
   Oth --> AS
   Oth --> AJ
 
-  SS & LSR & LS & LJ & WM & AS & AJ --> RouterBox["Router, see diagram 2"]
+  SS & LS & LJ & WM & AS & AJ --> RouterBox["Router, see diagram 2"]
   RouterBox -- "normalized cards" --> Triage
   Prof -- "flags logic" --> Triage
   Triage --> Mail

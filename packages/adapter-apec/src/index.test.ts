@@ -78,11 +78,12 @@ function page(b: Behaviour = {}): FakePage {
 
 const context = (b: Behaviour = {}) =>
   createBrowserTestContext({ allowedHosts: adapter.allowedHosts, platform: 'apec', pages: { 'https://www.apec.fr/': page(b) } });
-const { search, job, searchAndRead } = tools;
+const { search, job } = tools;
 type Ctx = ReturnType<typeof context>['ctx'];
-const runSearch = (ctx: Ctx, over: object = {}) => search.handler(search.input.parse({ keywords: 'frontend', ...over }), ctx);
+/** A plain listing: max_jobs=0 reads no offer. */
+const runSearch = (ctx: Ctx, over: object = {}) => search.handler(search.input.parse({ keywords: 'frontend', max_jobs: 0, ...over }), ctx);
 const runJob = (ctx: Ctx, over: object = {}) => job.handler(job.input.parse({ ids: [O1], ...over }), ctx);
-const runRead = (ctx: Ctx, over: object = {}) => searchAndRead.handler(searchAndRead.input.parse({ keywords: 'frontend', ...over }), ctx);
+const runRead = (ctx: Ctx, over: object = {}) => search.handler(search.input.parse({ keywords: 'frontend', ...over }), ctx);
 interface Out {
   jobs: {
     id: string;
@@ -114,13 +115,12 @@ const ids = (list: { id: string }[]) => list.map((x) => x.id);
 describeAdapterContract(adapter, {
   snapshotDir: new URL('../catalog', import.meta.url).pathname,
   samples: {
-    apec_search: { args: { keywords: 'frontend' }, run: (args) => search.handler(args, context().ctx) },
     apec_job: { args: { ids: [O1] }, run: (args) => job.handler(args, context().ctx) },
-    apec_search_and_read: { args: { keywords: 'frontend' }, run: (args) => searchAndRead.handler(args, context().ctx) },
+    apec_search: { args: { keywords: 'frontend' }, run: (args) => search.handler(args, context().ctx) },
   },
 });
 
-describe('apec_search', () => {
+describe('apec_search with max_jobs=0 (listing)', () => {
   it('lists cards newest first with the card salary and date, flags stored ones, and reads no offer', async () => {
     const calls: Behaviour['calls'] = [];
     const c = context({ calls });
@@ -308,7 +308,13 @@ describe('apec_job', () => {
   });
 });
 
-describe('apec_search_and_read', () => {
+describe('apec_search (read)', () => {
+  it('returns no cards while it reads offers: the cards are for max_jobs=0', async () => {
+    const result = await runRead(context().ctx);
+    expect(result.data.cards).toEqual([]);
+    expect(result.data.jobs.length).toBeGreaterThan(0);
+  });
+
   it('scans, drops excluded titles without reading them, reads and stores the rest', async () => {
     const calls: Behaviour['calls'] = [];
     const c = context({ calls });
@@ -395,7 +401,7 @@ describe('apec_search_and_read', () => {
       { keywords: 'x', min_salary_k: -1 },
       { keywords: 'x', posted_within: '24h' },
     ]) {
-      expect(searchAndRead.input.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+      expect(search.input.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
     }
   });
 });
