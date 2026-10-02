@@ -84,3 +84,116 @@ export function extractHints(description: string): Hints {
     salary_text: SALARY_IN_TEXT.exec(text)?.[0]?.replace(/\s+/g, ' ').trim().slice(0, 80) ?? null,
   };
 }
+
+// ---------------------------------------------------------------------------------------------- HTML, folding, dates, size
+
+const ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+  rsquo: "'",
+  lsquo: "'",
+  ndash: '-',
+  mdash: '-',
+  hellip: '...',
+  euro: '€',
+  bull: '-',
+  times: 'x',
+  laquo: '«',
+  raquo: '»',
+  eacute: 'é',
+  egrave: 'è',
+  ecirc: 'ê',
+  euml: 'ë',
+  agrave: 'à',
+  acirc: 'â',
+  ccedil: 'ç',
+  ocirc: 'ô',
+  ucirc: 'û',
+  ugrave: 'ù',
+  icirc: 'î',
+  iuml: 'ï',
+  Eacute: 'É',
+  Egrave: 'È',
+  Agrave: 'À',
+  Ccedil: 'Ç',
+};
+
+/** Decode the HTML entities that matter in job texts. Unknown entities are left as they are. */
+export function decodeEntities(text: string): string {
+  return text.replace(
+    /&(?:#(\d{1,6})|#x([0-9a-fA-F]{1,5})|([a-zA-Z]{2,8}));/g,
+    (whole, dec: string | undefined, hex: string | undefined, name: string | undefined) => {
+      if (name !== undefined) return ENTITIES[name] ?? whole;
+      const code = dec !== undefined ? Number(dec) : parseInt(hex ?? '', 16);
+      return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    },
+  );
+}
+
+/**
+ * HTML to readable plain text: block ends become line breaks, list items become dashes, tags go, entities are decoded.
+ * Greenhouse sends its HTML entity-encoded (`&lt;p&gt;`), so entities are decoded first, then tags removed, then entities
+ * again for the text that was double-encoded. Linear time: no nested quantifiers.
+ */
+export function htmlToText(html: string): string {
+  const once = decodeEntities(html);
+  const withBreaks = once
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*li[^>]*>/gi, '\n- ')
+    .replace(/<\/\s*(p|div|h[1-6]|ul|ol|tr)\s*>/gi, '\n');
+  const stripped = withBreaks.replace(/<[^>]{0,500}>/g, '');
+  return decodeEntities(stripped)
+    .replace(/[ \t\r\f\v]+/g, ' ')
+    .replace(/ ?\n ?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Lower case without accents, for "contains" matching ("Île-de-France" matches "ile-de-france"). */
+export const fold = (text: string): string => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/** Substring match on any of `needles` (already folded); an empty list matches everything. Plain text, never a pattern. */
+export function containsAny(haystack: string, needles: readonly string[]): boolean {
+  if (needles.length === 0) return true;
+  const text = fold(haystack);
+  return needles.some((needle) => text.includes(needle));
+}
+
+/** How recent a posting must be. The same four values on every job tool. */
+export const POSTED_WITHIN = ['last_24_hours', 'past_week', 'past_month', 'any'] as const;
+export type PostedWithin = (typeof POSTED_WITHIN)[number];
+const RANGE_MS: Record<Exclude<PostedWithin, 'any'>, number> = {
+  last_24_hours: 24 * 3600 * 1000,
+  past_week: 7 * 24 * 3600 * 1000,
+  past_month: 30 * 24 * 3600 * 1000,
+};
+
+/** The earliest accepted time (ms since epoch) for a date range, or null for any time. */
+export function postedCutoff(range: PostedWithin, now: number): number | null {
+  return range === 'any' ? null : now - RANGE_MS[range];
+}
+
+/**
+ * Keep items, in order, while their JSON stays within `maxBytes` (the first item is always kept). The rest are returned by id:
+ * a result that is too big for one answer should hand back fewer items and name the others, not fail after the work is done.
+ */
+export function fitToBytes<T extends { id: string }>(items: readonly T[], maxBytes: number): { fit: T[]; rest: string[] } {
+  const encoder = new TextEncoder();
+  const fit: T[] = [];
+  const rest: string[] = [];
+  let bytes = 0;
+  for (const item of items) {
+    const size = encoder.encode(JSON.stringify(item)).length;
+    if (rest.length === 0 && (fit.length === 0 || bytes + size <= maxBytes)) {
+      fit.push(item);
+      bytes += size;
+    } else {
+      rest.push(item.id);
+    }
+  }
+  return { fit, rest };
+}

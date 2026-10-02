@@ -135,6 +135,7 @@ export class FakeHttpClient implements HttpClient {
   constructor(
     private readonly allowedHosts: readonly string[],
     private readonly routes: readonly FakeHttpRoute[] = [],
+    private readonly openHttps = false,
   ) {}
 
   get(url: string, _options?: HttpRequestOptions): Promise<HttpResponse> {
@@ -146,7 +147,7 @@ export class FakeHttpClient implements HttpClient {
   }
 
   private async send(method: 'GET' | 'POST', url: string, body: unknown): Promise<HttpResponse> {
-    assertUrlAllowed(url, this.allowedHosts);
+    assertUrlAllowed(url, this.allowedHosts, this.openHttps);
     this.requests.push({ method, url: redactUrl(url), ...(body === undefined ? {} : { body }) });
     const route = this.routes.find((r) => (r.method ?? method) === method && (typeof r.url === 'string' ? r.url === url : r.url.test(url)));
     if (!route) throw new Error(`FakeHttpClient: no route for ${method} ${redactUrl(url)}`);
@@ -182,6 +183,8 @@ export interface TestContextOptions {
   allowedHosts: readonly string[];
   /** The adapter's platform: what `ctx.jobs` reports as the `source` of stored jobs. Default `test`. */
   platform?: string;
+  /** Mirror the adapter's `openHttps`: any public https host is reachable (no DNS check in tests). */
+  openHttps?: boolean;
   pages?: Readonly<Record<string, FakePage>>;
   routes?: readonly FakeHttpRoute[];
 }
@@ -210,7 +213,7 @@ function baseParts(options: TestContextOptions): {
     logs.push({ level, message, ...(fields ? { fields } : {}) });
   };
   return {
-    http: new FakeHttpClient(options.allowedHosts, options.routes),
+    http: new FakeHttpClient(options.allowedHosts, options.routes, options.openHttps),
     jobs: new FakeJobStore(undefined, options.platform),
     log: { debug: push('debug'), info: push('info'), warn: push('warn'), error: push('error') },
     logs,
