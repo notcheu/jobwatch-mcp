@@ -336,6 +336,38 @@ export class Store {
     });
   }
 
+  /**
+   * Stored jobs whose `field` falls in [since, until), newest first, for the weekly summaries. `description` is only read when
+   * asked (the length is always known), so a listing without text does not pull every description out of SQLite.
+   */
+  listJobs(filter: JobListFilter): { rows: ListedJobRow[]; total: number } {
+    const column = JOB_DATE_COLUMNS[filter.field];
+    const where = [`${column} >= ?`, `${column} < ?`];
+    const params: (string | number)[] = [filter.since, filter.until];
+    if (filter.sources.length > 0) {
+      where.push(`platform IN (${filter.sources.map(() => '?').join(', ')})`);
+      params.push(...filter.sources);
+    }
+    if (filter.boards.length > 0) {
+      where.push(`board IN (${filter.boards.map(() => '?').join(', ')})`);
+      params.push(...filter.boards);
+    }
+    const condition = where.join(' AND ');
+    const total = Number(
+      (this.db.prepare(`SELECT count(*) AS n FROM jobs WHERE ${condition}`).get(...params) as Rows | undefined)?.['n'] ?? 0,
+    );
+    const columns = `platform, id, first_seen, fetched_at, last_seen, title, company, location, board, url, length(description) AS description_chars${
+      filter.withDescription ? ', description' : ", '' AS description"
+    }`;
+    const rows = this.db
+      .prepare(`SELECT ${columns} FROM jobs WHERE ${condition} ORDER BY ${column} DESC, platform, id LIMIT ?`)
+      .all(...params, filter.limit) as Rows[];
+    return {
+      rows: rows.map((row) => ({ ...toJob(row), platform: String(row['platform']), descriptionChars: Number(row['description_chars']) })),
+      total,
+    };
+  }
+
   countJobs(platform?: string): number {
     const row = (
       platform === undefined
@@ -369,6 +401,28 @@ export interface NewJobRow {
   location: string | null;
   url: string;
   description: string;
+}
+
+/** Which timestamp of a job a date range applies to. */
+export const JOB_DATE_COLUMNS = { first_seen: 'first_seen', fetched_at: 'fetched_at', last_seen: 'last_seen' } as const;
+
+export interface JobListFilter {
+  field: keyof typeof JOB_DATE_COLUMNS;
+  /** Milliseconds, inclusive. */
+  since: number;
+  /** Milliseconds, exclusive. */
+  until: number;
+  /** Empty = every source / board. */
+  sources: readonly string[];
+  boards: readonly string[];
+  /** Most rows returned; `total` still counts them all. */
+  limit: number;
+  withDescription: boolean;
+}
+
+export interface ListedJobRow extends StoredJobRow {
+  platform: string;
+  descriptionChars: number;
 }
 
 export interface StoredJobRow extends NewJobRow {

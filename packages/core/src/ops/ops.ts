@@ -17,6 +17,7 @@ import type { EngineLogger } from '../logging';
 import type { RuntimeManager } from '../runtime/manager';
 import type { Clock, Store } from '../store/store';
 import { createStoredJobTextsTool } from './jobTexts';
+import { createStoredJobsTool } from './storedJobs';
 
 export const OPS_ADAPTER_ID = 'ops';
 const MIB = 1024 * 1024;
@@ -286,12 +287,12 @@ export function createOpsAdapter(deps: OpsDeps): AdapterModule {
     id: OPS_ADAPTER_ID,
     displayName: 'Router operations',
     description:
-      'Built-in read-only tools about the router itself: session status, a memory and limits report, and the text of jobs already read.',
+      'Built-in read-only tools about the router itself: session status, a memory and limits report, and the jobs already stored (a list by date, and their text).',
     sdkApi: SDK_API_VERSION,
     platform: OPS_ADAPTER_ID,
     kind: 'http',
     allowedHosts: ['ops.invalid'],
-    tools: [sessionStatus, memoryReport, createStoredJobTextsTool(deps.store)],
+    tools: [sessionStatus, memoryReport, createStoredJobsTool(deps.store, deps.clock), createStoredJobTextsTool(deps.store)],
   });
 }
 
