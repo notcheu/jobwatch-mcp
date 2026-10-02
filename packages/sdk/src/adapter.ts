@@ -47,6 +47,12 @@ export interface BrowserAdapter extends AdapterBase {
   kind: 'browser';
   /** Reports whether the platform session is usable. Used by `session_status` and before the first call. */
   sessionCheck?: (session: BrowserSession) => Promise<SessionStatus>;
+  /**
+   * The site signs you in with session cookies (no expiry), which Chrome drops when it restarts. When set, the engine gives the
+   * site's session cookies a 30 day expiry as each call ends, so a login survives the idle stop of the browser. Only the cookies
+   * of this adapter's `allowedHosts` are touched; their values are never read by the engine's logs.
+   */
+  keepSessionCookies?: boolean;
   tools: readonly ErasedTool<BrowserAdapterContext>[];
 }
 

@@ -82,6 +82,7 @@ function connection(session: BrowserSession): BrowserConnection {
   return {
     session,
     park: async () => void steps.push('park'),
+    keepSessionCookies: async () => (steps.push('cookies'), 0),
     shedMemory: async () => undefined,
     quit: async () => undefined,
     disconnect: async () => void steps.push('disconnect'),
@@ -209,6 +210,21 @@ describe('browser adapters', () => {
     const t = await setup([browserAdapter(async () => undefined)]);
     await callTool(t.deps, 'web_open', {});
     expect(steps).toEqual(['park', 'disconnect']);
+    expect(t.runtime?.status().current?.state).toBe('idle_grace');
+  });
+
+  it('keeps the session cookies before parking, only for an adapter that asks', async () => {
+    const t = await setup([browserAdapter(async () => undefined, { keepSessionCookies: true })]);
+    await callTool(t.deps, 'web_open', {});
+    expect(steps).toEqual(['cookies', 'park', 'disconnect']);
+  });
+
+  it('a failing cookie step does not stop the release', async () => {
+    const t = await setup([browserAdapter(async () => undefined, { keepSessionCookies: true })], {
+      connect: async () => ({ ...connection(idleSession), keepSessionCookies: async () => Promise.reject(new Error('boom')) }),
+    });
+    await callTool(t.deps, 'web_open', {});
+    expect(logs).toContain('keep_session_cookies_failed');
     expect(t.runtime?.status().current?.state).toBe('idle_grace');
   });
 

@@ -15,6 +15,8 @@ export interface BrowserConnection {
   session: BrowserSession;
   /** Navigate the single tab to about:blank: releases the page's renderer memory and keeps the window open. */
   park(): Promise<void>;
+  /** Give the allowed hosts' session cookies an expiry so they outlive a browser restart; returns how many were changed. */
+  keepSessionCookies(): Promise<number>;
   /** Close stray tabs and collect garbage. Used when memory passes the warn mark. */
   shedMemory(): Promise<void>;
   /** Ask the browser to quit cleanly (Browser.close over CDP). */
@@ -25,6 +27,30 @@ export interface BrowserConnection {
 
 /** Opens a CDP connection. Injected, so everything above this file runs against fakes in tests. */
 export type ConnectBrowser = (address: string, allowedHosts: readonly string[]) => Promise<BrowserConnection>;
+
+export const SESSION_COOKIE_TTL_S = 30 * 24 * 3600;
+
+interface CookieLike {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires: number;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite?: 'Strict' | 'Lax' | 'None';
+}
+
+/** The session cookies (no expiry) that belong to one of the hosts, copied with an expiry `ttlS` seconds from `nowS`. */
+export function persistentCopies(cookies: readonly CookieLike[], hosts: readonly string[], nowS: number, ttlS = SESSION_COOKIE_TTL_S) {
+  const belongs = (cookie: CookieLike): boolean => {
+    const domain = cookie.domain.replace(/^\./, '').toLowerCase();
+    return hosts.some((host) => host === domain || host.endsWith(`.${domain}`));
+  };
+  return cookies
+    .filter((cookie) => cookie.expires === -1 && belongs(cookie))
+    .map((cookie) => ({ ...cookie, expires: Math.floor(nowS) + ttlS }));
+}
 
 /**
  * Connect to the browser container by IP (DevTools rejects other Host headers, G2). The playwright-core module is loaded
@@ -58,6 +84,11 @@ export const connectBrowser: ConnectBrowser = async (address, allowedHosts) => {
       session,
       park: async () => {
         await page.goto('about:blank', { timeout: 10_000, waitUntil: 'domcontentloaded' });
+      },
+      keepSessionCookies: async () => {
+        const copies = persistentCopies(await context.cookies(), allowedHosts, Date.now() / 1000);
+        if (copies.length > 0) await context.addCookies(copies);
+        return copies.length;
       },
       shedMemory: async () => {
         for (const other of context.pages()) if (other !== page) await other.close().catch(() => undefined);

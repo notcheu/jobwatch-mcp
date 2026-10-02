@@ -149,6 +149,12 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
         spent,
         signal: lease.signal,
         release: async () => {
+          if (adapter.keepSessionCookies === true) {
+            await connection
+              .keepSessionCookies()
+              .then((count) => deps.logger.debug({ platform: adapter.platform, count }, 'session_cookies_kept'))
+              .catch((error: unknown) => deps.logger.warn({ err: error }, 'keep_session_cookies_failed'));
+          }
           // Park first so the page's memory is freed even if the next call is a long way off; every step is best-effort.
           await connection.park().catch((error: unknown) => deps.logger.warn({ err: error }, 'park_failed'));
           await connection.disconnect().catch((error: unknown) => deps.logger.warn({ err: error }, 'disconnect_failed'));

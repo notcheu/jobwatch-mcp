@@ -125,6 +125,7 @@ describe('browser tools end to end through the real provider (fake CDP)', () => 
         url: () => 'about:blank',
       },
       park: async () => void steps.push('park'),
+      keepSessionCookies: async () => 0,
       shedMemory: async () => undefined,
       quit: async () => undefined,
       disconnect: async () => void steps.push('disconnect'),
