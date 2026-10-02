@@ -178,7 +178,7 @@ jobwatch dashboard status
 jobwatch dashboard stop
 ```
 
-Signing in uses Google, with the same OAuth client as the connector by default: add `https://<your domain>/dashboard/auth/callback` to that client's authorized redirect URIs in Google Cloud Console. The Google app decides who can sign in (keep it in Testing status with only your account as a test user); the dashboard has no allowlist of its own. Changes made from the dashboard need a sign-in within the last 10 minutes. When the router runs for local development (`JW_AUTH=none`, see `deploy/compose.dev.yml`) there is no sign-in and it is at `http://127.0.0.1:18933/dashboard/`. Behind Nginx, `deploy/nginx/mcp.example.com.conf` already maps `/dashboard`. The design is in [`docs/plans/17-dashboard.md`](docs/plans/17-dashboard.md).
+Signing in uses Google, with the same OAuth client as the connector by default: add `https://<your domain>/dashboard/auth/callback` to that client's authorized redirect URIs in Google Cloud Console. The Google app decides who can sign in (keep it in Testing status with only your account as a test user); the dashboard has no allowlist of its own. Changes made from the dashboard need a sign-in within the last 10 minutes. When the router runs for local development (`JW_AUTH=none`, see `deploy/compose.dev.yml`) there is no sign-in and it is at `http://127.0.0.1:18933/dashboard/`. Behind Nginx, `deploy/nginx/mcp.example.com.conf` already maps `/dashboard`. The interface is a React app in `apps/dashboard` (`npm run build` produces it; `npm run dev -w @jobwatch/dashboard` serves it with hot reload and proxies the API to a dashboard started on `127.0.0.1:18933`). The design is in [`docs/plans/17-dashboard.md`](docs/plans/17-dashboard.md).
 
 ## Commands
 
