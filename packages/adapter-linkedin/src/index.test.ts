@@ -205,6 +205,24 @@ describe('linkedin_job', () => {
 });
 
 describe('linkedin_search (read)', () => {
+  it('records the keywords and the ids the search listed, and which of them it returned', async () => {
+    const c = context();
+    const result = await tools.search.handler(read({ keywords: 'full stack', disallowed_terms: ['frontend'] }), c.ctx);
+    const [search] = c.jobs.searches;
+    expect(c.jobs.searches).toHaveLength(1);
+    expect(search?.query).toBe('full stack');
+    expect(search?.found.length).toBeGreaterThan(search?.returned.length ?? 0);
+    expect(search?.returned.sort()).toEqual(result.data.jobs.map((j) => j.id).sort());
+  });
+
+  it('with max_jobs=0 the returned ids are the cards the title filter kept', async () => {
+    const c = context();
+    await tools.search.handler(read({ max_jobs: 0, disallowed_terms: ['frontend'] }), c.ctx);
+    const [search] = c.jobs.searches;
+    expect(search?.returned.length).toBeGreaterThan(0);
+    expect(search?.returned.length).toBeLessThan(search?.found.length ?? 0);
+  });
+
   it('returns no cards while it reads jobs: the cards are for max_jobs=0', async () => {
     const result = await tools.search.handler(read(), context().ctx);
     expect(result.data.cards).toEqual([]);

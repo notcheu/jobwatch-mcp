@@ -20,6 +20,8 @@ import type {
 /** In-memory `JobStore` for adapter tests. `jobs` is inspectable; `now` can be moved to test retention-independent logic. */
 export class FakeJobStore implements JobStore {
   readonly jobs = new Map<string, StoredJob>();
+  /** Every search an adapter recorded, in order. */
+  readonly searches: { query: string; found: string[]; returned: string[] }[] = [];
   constructor(
     private readonly clock: () => Date = () => new Date(),
     private readonly source = 'test',
@@ -43,6 +45,11 @@ export class FakeJobStore implements JobStore {
       fetchedAt: now,
       lastSeen: now,
     });
+    return Promise.resolve();
+  }
+
+  recordSearch(search: { query: string; found: readonly string[]; returned: readonly string[] }): Promise<void> {
+    this.searches.push({ query: search.query, found: [...search.found], returned: [...search.returned] });
     return Promise.resolve();
   }
 

@@ -377,6 +377,12 @@ export async function runBoardTool<S extends string>(
     found.map((entry) => entry.posting),
     args,
   );
+  // what a search with these title words listed (empty words = the whole board), for the history of searches
+  await ctx.jobs.recordSearch({
+    query: args.title_any.join(' | '),
+    found: found.map((entry) => entry.posting.id),
+    returned: judged.jobs.map((job) => job.id),
+  });
   for (const report of reports) {
     if (report.status === 'ok')
       report.relevant = found.filter((entry) => entry.report === report && judged.relevantIds.has(entry.posting.id)).length;

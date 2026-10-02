@@ -267,3 +267,17 @@ export async function readByIds(jobs: JobStore, ids: readonly string[], plan: By
   }
   return outcome;
 }
+
+/**
+ * The ids a search handed back, for the history of searches: the accepted jobs, or with `listOnly` (max_jobs=0, the cards are
+ * the result) every listed id that the title filter did not drop.
+ */
+export function returnedIds(
+  listed: readonly string[],
+  outcome: { accepted: readonly { id: string }[]; excluded: readonly { id: string }[] },
+  listOnly: boolean,
+): string[] {
+  if (!listOnly) return outcome.accepted.map((job) => job.id);
+  const dropped = new Set(outcome.excluded.map((entry) => entry.id));
+  return listed.filter((id) => !dropped.has(id));
+}

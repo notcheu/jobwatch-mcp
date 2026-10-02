@@ -373,3 +373,84 @@ describe('jobs: source and board', () => {
     store.close();
   });
 });
+
+describe('search history', () => {
+  const DAY = 24 * 3600 * 1000;
+  const T0 = Date.UTC(2026, 9, 5);
+  const job = (id: string): NewJobRow => ({
+    id,
+    board: null,
+    title: `Job ${id}`,
+    company: 'Acme',
+    location: 'Paris',
+    url: `https://x/${id}`,
+    description: 'd',
+  });
+  let store: Store;
+  beforeEach(() => {
+    store = Store.open(':memory:');
+    store.putJob('linkedin', job('a1'), T0);
+    store.putJob('linkedin', job('a2'), T0 + DAY);
+  });
+  afterEach(() => store.close());
+
+  it('counts, per keyword, the runs and the distinct jobs listed, returned and first stored in the window', () => {
+    store.recordSearch('linkedin', { query: 'React  Engineer', found: ['a1', 'a2', 'a3'], returned: ['a1', 'a2'] }, T0);
+    store.recordSearch('linkedin', { query: 'react engineer', found: ['a1', 'a4'], returned: ['a1'] }, T0 + DAY);
+    store.recordSearch('linkedin', { query: 'vue', found: ['a9'], returned: [] }, T0 + DAY);
+    const stats = store.searchStats({ since: T0, until: T0 + 3 * DAY, limit: 10 });
+    expect(stats).toEqual([
+      { platform: 'linkedin', query: 'react engineer', runs: 2, lastRun: T0 + DAY, jobsFound: 4, jobsReturned: 2, jobsNew: 2 },
+      { platform: 'linkedin', query: 'vue', runs: 1, lastRun: T0 + DAY, jobsFound: 1, jobsReturned: 0, jobsNew: 0 },
+    ]);
+  });
+
+  it('leaves runs outside the window and other platforms out, and a new job is one first stored inside the window', () => {
+    store.recordSearch('linkedin', { query: 'x', found: ['a1'], returned: ['a1'] }, T0 - DAY);
+    store.recordSearch('apec', { query: 'x', found: ['a1'], returned: ['a1'] }, T0);
+    expect(store.searchStats({ since: T0, until: T0 + DAY, limit: 10 }).map((s) => s.platform)).toEqual(['apec']);
+    expect(store.searchStats({ since: T0, until: T0 + DAY, platform: 'linkedin', limit: 10 })).toEqual([]);
+    store.recordSearch('linkedin', { query: 'x', found: ['a2'], returned: ['a2'] }, T0 + 2 * DAY);
+    expect(store.searchStats({ since: T0 + 2 * DAY, until: T0 + 3 * DAY, limit: 10 })[0]?.jobsNew).toBe(0); // a2 was first stored a day earlier
+  });
+
+  it('keeps at most 1000 ids per run, the returned ones first', () => {
+    const ids = Array.from({ length: 1500 }, (_, i) => `j${i}`);
+    store.recordSearch('teamtailor', { query: '', found: ids, returned: ['j1400'] }, T0);
+    const [stat] = store.searchStats({ since: T0, until: T0 + DAY, limit: 5 });
+    expect(stat).toMatchObject({ runs: 1, jobsFound: 1000, jobsReturned: 1 });
+    expect(store.foundBy('teamtailor', ['j1400'])).toEqual(new Map()); // empty keywords are not reported
+  });
+
+  it('says which keywords listed a job, and lists the jobs of a keyword', () => {
+    store.recordSearch('linkedin', { query: 'react', found: ['a1', 'a2'], returned: ['a1'] }, T0);
+    store.recordSearch('linkedin', { query: 'REACT', found: ['a1'], returned: ['a1'] }, T0 + DAY);
+    store.recordSearch('linkedin', { query: 'vue', found: ['a1'], returned: [] }, T0 + DAY);
+    expect(store.foundBy('linkedin', ['a1', 'a2', 'zz'])).toEqual(
+      new Map([
+        ['a1', ['react', 'vue']],
+        ['a2', ['react']],
+      ]),
+    );
+    const listed = store.listJobs({
+      field: 'first_seen',
+      since: 0,
+      until: T0 + 10 * DAY,
+      sources: [],
+      boards: [],
+      search: 'Vue',
+      limit: 10,
+      withDescription: false,
+    });
+    expect(listed.rows.map((r) => r.id)).toEqual(['a1']);
+  });
+
+  it('is evicted with the jobs after the retention', () => {
+    const short = Store.open(':memory:', { jobRetentionDays: 1 });
+    short.recordSearch('linkedin', { query: 'old', found: ['a1'], returned: ['a1'] }, T0);
+    short.recordSearch('linkedin', { query: 'new', found: ['a1'], returned: ['a1'] }, T0 + 5 * DAY);
+    short.prune(T0 + 5 * DAY + 1000);
+    expect(short.searchStats({ since: 0, until: T0 + 10 * DAY, limit: 10 }).map((s) => s.query)).toEqual(['new']);
+    short.close();
+  });
+});

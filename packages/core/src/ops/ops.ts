@@ -18,6 +18,7 @@ import type { RuntimeManager } from '../runtime/manager';
 import type { Clock, Store } from '../store/store';
 import { createStoredJobTextsTool } from './jobTexts';
 import { createStoredJobsTool } from './storedJobs';
+import { createStoredSearchesTool } from './storedSearches';
 
 export const OPS_ADAPTER_ID = 'ops';
 const MIB = 1024 * 1024;
@@ -292,7 +293,13 @@ export function createOpsAdapter(deps: OpsDeps): AdapterModule {
     platform: OPS_ADAPTER_ID,
     kind: 'http',
     allowedHosts: ['ops.invalid'],
-    tools: [sessionStatus, memoryReport, createStoredJobsTool(deps.store, deps.clock), createStoredJobTextsTool(deps.store)],
+    tools: [
+      sessionStatus,
+      memoryReport,
+      createStoredJobsTool(deps.store, deps.clock),
+      createStoredSearchesTool(deps.store, deps.clock),
+      createStoredJobTextsTool(deps.store),
+    ],
   });
 }
 

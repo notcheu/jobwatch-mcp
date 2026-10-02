@@ -1,4 +1,4 @@
-import { SDK_API_VERSION, defineAdapter, defineBrowserTool, describeJob, detailFields, z } from '@jobwatch/sdk';
+import { SDK_API_VERSION, defineAdapter, defineBrowserTool, describeJob, detailFields, returnedIds, z } from '@jobwatch/sdk';
 import type { BrowserAdapterContext, BrowserSession, Detail, SessionStatus } from '@jobwatch/sdk';
 import { EXTRACT_PAGE_STATE, type ExtractedPageState } from './extract';
 import { aiSearchResultsLayout } from './layouts/aiSearchResults';
@@ -300,6 +300,15 @@ export function createLinkedinTools(layout: SearchLayout) {
         matchTitle: matchTerm,
         matchDescription: args.disallowed_scope === 'title_then_description' ? matchTerm : null,
         deadline,
+      });
+      await ctx.jobs.recordSearch({
+        query: args.keywords,
+        found: found.cards.map((card) => card.id),
+        returned: returnedIds(
+          found.cards.map((card) => card.id),
+          outcome,
+          args.max_jobs === 0,
+        ),
       });
       const warnings = [...found.warnings, ...outcome.failed.map((f) => `job ${f.id}: ${f.status}`)];
       if (outcome.remaining.length > 0)
