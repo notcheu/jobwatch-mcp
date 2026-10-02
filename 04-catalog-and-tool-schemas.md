@@ -55,6 +55,10 @@ Input: `{ "ids": ["<id>", ...] (maxItems 25), "refresh": false, "detail": "full"
 Output: `{ jobs: [{ id, title, company, location, description (untrusted text, cut to N chars), description_truncated, url, source: "linkedin", board: null, read_from: "fetched"|"stored", new, first_seen, fetched_at, last_seen, stack_hints, years_hints, remote_hints, salary_text }], not_returned_ids, excluded: [{ id, title, reason, term }], failed: [{ id, status: "not_loaded"|"closed" }] }`.
 Behaviour: see `07-adapter-linkedin.md`. Stored jobs are answered without a visit; opened jobs are opened **by navigation** with human-like pacing and stored as soon as their title passes.
 
+### `stored_job_texts` (built in, always available)
+Input: `{ "jobs": [{ "source": "linkedin", "id": "4000000001" }, ...] (1-25, as returned by the search and job tools), "part": "full" (default) | "summary" | "outline" | "role" | "requirements" | "nice_to_have" | "offer" | "about" | "process" | "legal" | "intro", "max_chars": 3000 (200-6000) }`.
+Output: `{ jobs: [{ source, id, board, company, title, location, url, first_seen, fetched_at, last_seen, description_chars, part, part_found, text, text_truncated, summary_kind, outline }], missing: [{ source, id }], not_returned: [{ source, id }] }`. Reads the router database only: no site is visited, no browser is started, no platform budget is spent (the call settles its cost to 0). Jobs never read, or evicted after `JW_JOB_RETENTION_DAYS`, are in `missing`; what does not fit one answer is in `not_returned`.
+
 ### Returned text: `summary`, `description`, `detail` (all job tools)
 Every returned job has `summary`, `summary_kind` (`sections` | `excerpt` | null), `description`, `description_truncated` and `description_chars`. `detail: "summary"` (default of the search-and-read and board tools) fills `summary`; `detail: "full"` (default of the `*_job` tools) fills `description`; `none` fills neither. `max_results` is the most jobs returned (and examined); there is no `max_returned`. Details in `07`.
 

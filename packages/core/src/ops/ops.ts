@@ -16,6 +16,7 @@ import type { RateLimiter } from '../limits/ratelimit';
 import type { EngineLogger } from '../logging';
 import type { RuntimeManager } from '../runtime/manager';
 import type { Clock, Store } from '../store/store';
+import { createStoredJobTextsTool } from './jobTexts';
 
 export const OPS_ADAPTER_ID = 'ops';
 const MIB = 1024 * 1024;
@@ -261,12 +262,13 @@ export function createOpsAdapter(deps: OpsDeps): AdapterModule {
   return defineAdapter({
     id: OPS_ADAPTER_ID,
     displayName: 'Router operations',
-    description: 'Built-in read-only tools about the router itself: session status and a memory and limits report.',
+    description:
+      'Built-in read-only tools about the router itself: session status, a memory and limits report, and the text of jobs already read.',
     sdkApi: SDK_API_VERSION,
     platform: OPS_ADAPTER_ID,
     kind: 'http',
     allowedHosts: ['ops.invalid'],
-    tools: [sessionStatus, memoryReport],
+    tools: [sessionStatus, memoryReport, createStoredJobTextsTool(deps.store)],
   });
 }
 
