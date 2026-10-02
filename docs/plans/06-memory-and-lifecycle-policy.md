@@ -19,7 +19,7 @@ BUSY/IDLE_GRACE ──watchdog >90%──▶ STOPPING(kill) ; max_lifetime reach
 - **Preemption**: if a call for platform B arrives while platform A is IDLE_GRACE, stop A immediately (do not wait for the TTL), then start B. If A is BUSY, B queues (FIFO) up to `queue_timeout` (default 60 s), else `busy`.
 - **Max lifetime**: a runtime older than `max_lifetime` (default 30 min) is recycled at the next IDLE_GRACE/lease boundary, never mid-call.
 
-## Tab policy (decided by Matthieu, 2026-10-01): exactly one tab, always
+## Tab policy (decided by the owner, 2026-10-01): exactly one tab, always
 - The browser always has **exactly one tab**. The router never opens a second one (no `newPage`, no `window.open`, no `target=_blank`) and never closes the last one (closing it would close Chrome).
 - The single tab is the one Chrome starts with. At lease start the router takes `context.pages()[0]`; the adapter navigates it with `goto`. At lease end it **navigates the tab to `about:blank`** (not `close()`), which releases the page's renderer memory.
 - Between steps of one call (for example the search page, then each job page) the adapter just navigates the same tab; it may park on `about:blank` between phases to drop memory (measured: the job page after a search used 640 MB vs 1040 MB for the search page).

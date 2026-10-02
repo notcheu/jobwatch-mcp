@@ -16,8 +16,8 @@ const envSchema = z.object({
     protocol: /^https?$/,
     error: (issue) =>
       issue.input === undefined
-        ? 'is required: the public URL, e.g. https://mcp.noguetith.fr'
-        : 'must be an http(s) URL, e.g. https://mcp.noguetith.fr',
+        ? 'is required: the public URL, e.g. https://mcp.example.com'
+        : 'must be an http(s) URL, e.g. https://mcp.example.com',
   }),
   JW_AUTH: z.enum(['front', 'none']).default('front'),
   JW_FRONT_SHARED_SECRET: z.string().min(16).optional(),

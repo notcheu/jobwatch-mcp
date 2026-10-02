@@ -3,7 +3,7 @@
 > **Related docs:** Load for orientation. Also load: `16-architecture-diagrams.md` (visuals); `01` if you need a decision's rationale; `09` for security questions; `07` for LinkedIn lessons. Not needed for coding a single module. Follow a link only if the task needs it.
 
 ## Why this exists
-The daily job-search routine (see `../00-orchestrator.md`) currently reads LinkedIn, WTTJ and APEC through the **Claude in Chrome extension on Matthieu's MacBook**. That makes every run depend on the laptop being awake, Chrome open and logged in, the extension connected, and a long multi-step browser conversation that burns tokens and breaks often (lessons in `07-adapter-linkedin.md`).
+The daily job-search routine (see `../00-orchestrator.md`) currently reads LinkedIn, WTTJ and APEC through the **Claude in Chrome extension on the owner's laptop**. That makes every run depend on the laptop being awake, Chrome open and logged in, the extension connected, and a long multi-step browser conversation that burns tokens and breaks often (lessons in `07-adapter-linkedin.md`).
 
 The orchestrator moves that work to an always-on home Ubuntu machine, behind a small number of **task-level MCP tools**. Claude (including scheduled routines) calls them over the internet through a custom connector.
 
@@ -22,10 +22,10 @@ The orchestrator moves that work to an always-on home Ubuntu machine, behind a s
 - No attempt to defeat site protections beyond behaving like a normal, low-volume, logged-in user (see `09-security.md` for the terms-of-service caveat).
 
 ## Constraints
-- Host: real Ubuntu machine at Matthieu's home (trusted residential IP — important for LinkedIn), **limited RAM** (exact figure unknown: measure in Phase 0), always on.
+- Host: real Ubuntu machine at a home (trusted residential IP — important for LinkedIn), **limited RAM** (exact figure unknown: measure in Phase 0), always on.
 - Claude connects from Anthropic's cloud: the endpoint must be public HTTPS with OAuth or a supported static header (see `02-…`).
 - Must work from **scheduled routines** (unattended). VERIFY: custom connectors are usable from scheduled tasks (Phase 0 spike S1).
-- Only one LinkedIn account, Matthieu's own; keep volume human-scale.
+- Only one LinkedIn account, the owner's own; keep volume human-scale.
 
 ## Architecture (logical)
 

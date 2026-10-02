@@ -18,7 +18,7 @@
 - **Watchdog**: fake adapter that allocates memory → `budget_exceeded`, container stopped, router healthy.
 - **OOM**: container limit below need → `oom_killed` error, one retry policy respected.
 - **Crash recovery**: kill the router mid-call → on restart orphan containers with the label are removed.
-- **Soak**: 6 h of periodic calls (every 5–20 min) → no growth in router RSS; no leaked tabs/containers; logs clean. Runner: `tests/soak/soak.ts` (plain Node 26, no dependencies, read-only). On the NUC, from the repo root:
+- **Soak**: 6 h of periodic calls (every 5–20 min) → no growth in router RSS; no leaked tabs/containers; logs clean. Runner: `tests/soak/soak.ts` (plain Node 26, no dependencies, read-only). On the reference host, from the repo root:
   `docker run --rm --network jobwatch_jobwatch-core -e SOAK_SECRET=<JW_FRONT_SHARED_SECRET> -v "$PWD/tests/soak:/soak:ro" node:26-bookworm-slim node /soak/soak.ts`
   It calls `memory_report` every 5–20 min (add real tools with `SOAK_CALLS`, only once the platform budget is approved), fails on any failing call, on router RSS growth above `SOAK_RSS_MB` (40) between the first and last three samples, and, with `SOAK_DOCKER=1` and the socket mounted, on more than one managed browser container. Exit 0 green, 1 red. Check the router logs for errors afterwards: `docker compose logs router | grep '"level":"error"'`. Result of the 6 h run: **not yet recorded**.
 - **Profile persistence**: stop/start the runtime ≥ 3 times → still logged in (G4).
@@ -35,4 +35,4 @@ See `12-roadmap.md` (exit criteria). Global acceptance for go-live:
 - [ ] Security checklist in `09-…` fully ticked.
 
 ## Tooling
-`nx` (`nx affected -t lint typecheck test` in CI), `vitest`, `@jobwatch/sdk/testkit` (fakes + `describeAdapterContract` in every adapter package), `msw` (or undici `MockAgent`) to mock HTTP adapters, `eslint` + `prettier`, `tsc --noEmit` with `strict`, `husky`/`pre-commit` (eslint, secret scan), GitHub Actions or a local `npm run ci` (Matthieu's choice) running unit+contract+integration on the Ubuntu machine (integration needs the runtime; separate vitest project/tag, e.g. `npm run test:integration`).
+`nx` (`nx affected -t lint typecheck test` in CI), `vitest`, `@jobwatch/sdk/testkit` (fakes + `describeAdapterContract` in every adapter package), `msw` (or undici `MockAgent`) to mock HTTP adapters, `eslint` + `prettier`, `tsc --noEmit` with `strict`, `husky`/`pre-commit` (eslint, secret scan), GitHub Actions or a local `npm run ci` (the owner's choice) running unit+contract+integration on the Ubuntu machine (integration needs the runtime; separate vitest project/tag, e.g. `npm run test:integration`).

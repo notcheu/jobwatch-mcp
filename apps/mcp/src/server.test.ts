@@ -236,7 +236,7 @@ describe('tools/call over HTTP', () => {
 
 describe('authentication: JW_AUTH=front with a shared secret', () => {
   const SHARED = 'front-shared-secret-0123456789';
-  const front = { JW_AUTH: 'front', JW_BASE_URL: 'https://mcp.noguetith.fr', JW_FRONT_SHARED_SECRET: SHARED };
+  const front = { JW_AUTH: 'front', JW_BASE_URL: 'https://mcp.example.com', JW_FRONT_SHARED_SECRET: SHARED };
 
   it('refuses a missing, malformed or wrong credential with 401', async () => {
     server = await startTestServer(front);
@@ -278,7 +278,7 @@ describe('authentication: JW_AUTH=front with a shared secret', () => {
   });
 
   it('starts in front mode WITHOUT a shared secret (network isolation) and warns about it', async () => {
-    server = await startTestServer({ JW_AUTH: 'front', JW_BASE_URL: 'https://mcp.noguetith.fr' });
+    server = await startTestServer({ JW_AUTH: 'front', JW_BASE_URL: 'https://mcp.example.com' });
     expect(server.logs()).toContain('JW_FRONT_SHARED_SECRET is not set');
     expect((await post(server.url, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).status).toBe(200);
   });

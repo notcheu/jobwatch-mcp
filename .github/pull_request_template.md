@@ -11,7 +11,7 @@ Not a list of files. Title: semantic, "<type>(<optional scope>): <summary>" with
 ## Verification
 
 - [ ] `npm run ci` passes (format, lint including the architecture rules, typecheck, tests)
-- Also run: <!-- e.g. real run on the NUC, manual test in Claude. Or "nothing beyond CI". -->
+- Also run: <!-- e.g. real run on the reference host, manual test in Claude. Or "nothing beyond CI". -->
 - Not tested: <!-- say plainly what this PR does not prove -->
 
 ## Project rules
