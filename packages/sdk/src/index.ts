@@ -81,3 +81,6 @@ export {
   slugify,
 } from './boards';
 export type { BoardAddress, BoardExcluded, BoardFilters, BoardJob, BoardPosting, BoardReport, BoardSource, Judged } from './boards';
+
+export { readByIds, readNew } from './visit';
+export type { AcceptedJob, ByIdOutcome, ByIdPlan, Excluded, Failed, JobCard, ReadOutcome, ReadPlan, Terms, VisitedPage } from './visit';
