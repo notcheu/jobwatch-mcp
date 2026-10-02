@@ -196,18 +196,17 @@ describe('loadStorageSettings (what the CLI needs)', () => {
 });
 
 describe('multi-tab', () => {
-  it('is off by default: one tab', () => {
-    expect(loadConfig(base).config.maxTabs).toBe(1);
+  it('allows 3 tabs by default', () => {
+    expect(loadConfig(base).config.maxTabs).toBe(3);
   });
 
-  it('JW_BROWSER_MULTITAB=true allows 3 tabs, or JW_BROWSER_MAX_TABS', () => {
-    expect(loadConfig({ ...base, JW_BROWSER_MULTITAB: 'true' }).config.maxTabs).toBe(3);
-    expect(loadConfig({ ...base, JW_BROWSER_MULTITAB: 'true', JW_BROWSER_MAX_TABS: '2' }).config.maxTabs).toBe(2);
+  it('JW_BROWSER_MAX_TABS sets the limit: 1 is a single tab, more than 1 is multi-tab, no upper limit', () => {
+    expect(loadConfig({ ...base, JW_BROWSER_MAX_TABS: '1' }).config.maxTabs).toBe(1);
+    expect(loadConfig({ ...base, JW_BROWSER_MAX_TABS: '8' }).config.maxTabs).toBe(8);
+    expect(loadConfig({ ...base, JW_BROWSER_MAX_TABS: '500' }).config.maxTabs).toBe(500);
   });
 
-  it('JW_BROWSER_MAX_TABS alone changes nothing, and it stays between 2 and 4', () => {
-    expect(loadConfig({ ...base, JW_BROWSER_MAX_TABS: '4' }).config.maxTabs).toBe(1);
-    expect(problemsOf({ ...base, JW_BROWSER_MULTITAB: 'true', JW_BROWSER_MAX_TABS: '9' })).toHaveLength(1);
-    expect(problemsOf({ ...base, JW_BROWSER_MULTITAB: 'true', JW_BROWSER_MAX_TABS: '1' })).toHaveLength(1);
+  it('refuses 0, a negative number and a non-integer', () => {
+    for (const value of ['0', '-2', '2.5', 'many']) expect(problemsOf({ ...base, JW_BROWSER_MAX_TABS: value }), value).toHaveLength(1);
   });
 });

@@ -17,7 +17,7 @@ export interface GotoOptions {
  * The ONLY browser surface adapters see. Implemented once over Playwright/CDP in `@jobwatch/core`
  * (the single file importing playwright-core), so swapping Playwright for Patchright or raw CDP never touches an adapter.
  * There is exactly one tab by default (docs/plans/06-memory-and-lifecycle-policy.md): `goto` navigates it and nothing can open
- * another. Only when the operator sets `JW_BROWSER_MULTITAB=true` may `openTab()` add tabs, up to `maxTabs`.
+ * another. `openTab()` adds tabs only when the operator allows more than one (`JW_BROWSER_MAX_TABS`, default 3), up to `maxTabs`.
  */
 export interface BrowserSession {
   /** Navigate the single tab. Throws `HostNotAllowedError` unless the URL passes `isUrlAllowed` for the adapter. */
