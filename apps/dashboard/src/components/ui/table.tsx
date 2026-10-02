@@ -1,4 +1,4 @@
-import type { HTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
+import type { ComponentProps, HTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
 
 export const Table = ({ className, ...props }: HTMLAttributes<HTMLTableElement>) => (
@@ -9,7 +9,7 @@ export const Table = ({ className, ...props }: HTMLAttributes<HTMLTableElement>)
 export const TableHeader = ({ className, ...props }: HTMLAttributes<HTMLTableSectionElement>) => (
   <thead className={cn('[&_tr]:border-b', className)} {...props} />
 );
-export const TableBody = ({ className, ...props }: HTMLAttributes<HTMLTableSectionElement>) => (
+export const TableBody = ({ className, ...props }: ComponentProps<'tbody'>) => (
   <tbody className={cn('[&_tr:last-child]:border-0', className)} {...props} />
 );
 export const TableRow = ({ className, ...props }: HTMLAttributes<HTMLTableRowElement>) => (
