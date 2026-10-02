@@ -336,9 +336,84 @@ export function getOverview(data: DashboardData): Overview {
 const percentile = (sorted: number[], p: number): number | null =>
   sorted.length === 0 ? null : (sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)] ?? null);
 
-/** The analytics of the calls in memory (this router's session). Lifetime and historical views come with the persisted aggregates. */
+const usageQuery = z.object({
+  scope: z.enum(['session', 'lifetime', 'historical']).default('session'),
+  from: z.string().max(32).optional(),
+  to: z.string().max(32).optional(),
+  tool: z.string().max(64).optional(),
+  platform: z.string().max(32).optional(),
+});
+
+const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
+/**
+ * The analytics. `session` reads the calls in memory (hourly buckets, with percentiles); `lifetime` and `historical` read the persisted
+ * daily totals, which survive a restart (daily buckets; durations are averages and a maximum, since percentiles need every call).
+ */
 export function getUsage(data: DashboardData, query: unknown): Usage {
-  const q = z.object({ tool: z.string().max(64).optional(), platform: z.string().max(32).optional() }).parse(query);
+  const q = usageQuery.parse(query);
+  if (q.scope !== 'session') return getPersistedUsage(data, q);
+  return getSessionUsage(data, q);
+}
+
+function getPersistedUsage(data: DashboardData, q: z.infer<typeof usageQuery>): Usage {
+  const now = data.clock();
+  const to = q.scope === 'historical' && q.to !== undefined && q.to !== '' ? day(parseDate('to', q.to, now)) : day(now);
+  const from = q.scope === 'historical' && q.from !== undefined && q.from !== '' ? day(parseDate('from', q.from, now)) : '0000-01-01';
+  const rows = data.store
+    .dailyUsage(from, to)
+    .filter((row) => (q.tool === undefined || row.tool === q.tool) && (q.platform === undefined || row.platform === q.platform));
+  const sum = (pick: (row: (typeof rows)[number]) => number, list = rows): number => list.reduce((total, row) => total + pick(row), 0);
+  const calls = sum((row) => row.calls);
+  const byTool = new Map<string, typeof rows>();
+  for (const row of rows) byTool.set(row.tool, [...(byTool.get(row.tool) ?? []), row]);
+  const byDay = new Map<string, typeof rows>();
+  for (const row of rows) byDay.set(row.day, [...(byDay.get(row.day) ?? []), row]);
+  return checked(usageSchemaResponse, {
+    scope: q.scope,
+    granularity: 'day',
+    since: rows[0] === undefined ? null : `${rows[0].day}T00:00:00.000Z`,
+    totals: {
+      calls,
+      errors: sum((row) => row.errors),
+      responseBytes: sum((row) => row.responseBytes),
+      estimatedTokens: sum((row) => row.tokens),
+      unitsSpent: sum((row) => row.units),
+      textAvailableChars: sum((row) => row.textAvailable),
+      textReturnedChars: sum((row) => row.textReturned),
+      durationP50Ms: null,
+      durationP95Ms: null,
+      durationMaxMs: rows.length === 0 ? null : Math.max(...rows.map((row) => row.maxDurationMs)),
+    },
+    byTool: [...byTool.entries()]
+      .map(([tool, list]) => {
+        const n = sum((row) => row.calls, list);
+        return {
+          tool,
+          platform: list[0]?.platform ?? '',
+          calls: n,
+          errors: sum((row) => row.errors, list),
+          estimatedTokens: sum((row) => row.tokens, list),
+          avgTokens: n === 0 ? 0 : Math.round(sum((row) => row.tokens, list) / n),
+          avgDurationMs: n === 0 ? null : Math.round(sum((row) => row.durationMs, list) / n),
+          maxDurationMs: Math.max(...list.map((row) => row.maxDurationMs)),
+          avgUnitsSpent: n === 0 ? 0 : Math.round((sum((row) => row.units, list) / n) * 10) / 10,
+        };
+      })
+      .sort((a, b) => b.estimatedTokens - a.estimatedTokens),
+    series: [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, list]) => ({
+        bucket: `${date}T00:00:00.000Z`,
+        calls: sum((row) => row.calls, list),
+        errors: sum((row) => row.errors, list),
+        estimatedTokens: sum((row) => row.tokens, list),
+      })),
+  });
+}
+
+/** The analytics of the calls in memory (this router's session). */
+function getSessionUsage(data: DashboardData, q: z.infer<typeof usageQuery>): Usage {
   const calls = data.callLog
     .all()
     .filter(
@@ -363,6 +438,7 @@ export function getUsage(data: DashboardData, query: unknown): Usage {
   const first = data.callLog.all()[0];
   return checked(usageSchemaResponse, {
     scope: 'session',
+    granularity: 'hour',
     since: first === undefined ? null : iso(first.startedAt),
     totals: {
       calls: calls.length,

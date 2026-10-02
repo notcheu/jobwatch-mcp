@@ -251,6 +251,22 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     tokenCharsPerToken: config.charsPerToken,
     record: (outcome) => {
       callLog.finish(outcome);
+      try {
+        store.recordDailyUsage({
+          ts: clock(),
+          tool: outcome.tool,
+          platform: outcome.platform,
+          error: outcome.code !== 'ok',
+          responseBytes: outcome.detail?.responseBytes ?? 0,
+          tokens: outcome.detail?.estimatedTokens ?? 0,
+          units: outcome.detail?.unitsSpent ?? 0,
+          durationMs: outcome.durationMs,
+          textAvailable: outcome.detail?.jobText?.available ?? 0,
+          textReturned: outcome.detail?.jobText?.returned ?? 0,
+        });
+      } catch (error) {
+        logger.warn({ err: error }, 'daily_usage_failed'); // a lost total never fails a call
+      }
       store.recordCall({
         ts: clock(),
         requestId: outcome.requestId,

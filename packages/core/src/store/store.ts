@@ -48,7 +48,8 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Each entry upgrades the schema by one version (`PRAGMA user_version`). Never edit a released migration: add a new one.
- * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`).
+ * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
+ * 6 the per-tool daily totals (`tool_usage_daily`).
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -128,7 +129,29 @@ const MIGRATIONS: readonly string[] = [
   ) WITHOUT ROWID;
   CREATE INDEX search_hits_job ON search_hits (job_id);
   `,
+  // 6: what each tool did per UTC day, for the dashboard's lifetime and historical analytics: counts, bytes and durations only, never
+  // parameters. Kept DAILY_USAGE_RETENTION_DAYS days.
+  `
+  CREATE TABLE tool_usage_daily (
+    day              TEXT    NOT NULL,
+    tool             TEXT    NOT NULL,
+    platform         TEXT    NOT NULL,
+    calls            INTEGER NOT NULL DEFAULT 0,
+    errors           INTEGER NOT NULL DEFAULT 0,
+    response_bytes   INTEGER NOT NULL DEFAULT 0,
+    tokens           INTEGER NOT NULL DEFAULT 0,
+    units            INTEGER NOT NULL DEFAULT 0,
+    duration_ms      INTEGER NOT NULL DEFAULT 0,
+    max_duration_ms  INTEGER NOT NULL DEFAULT 0,
+    text_available   INTEGER NOT NULL DEFAULT 0,
+    text_returned    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, tool)
+  ) WITHOUT ROWID;
+  `,
 ];
+
+/** Days of per-tool daily totals kept (docs/plans/17-dashboard.md, D8). */
+export const DAILY_USAGE_RETENTION_DAYS = 400;
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
@@ -278,6 +301,54 @@ export class Store {
   }
 
   // ---- call log
+
+  /** Add one finished call to the totals of its UTC day. Counts, bytes and durations only. */
+  recordDailyUsage(call: DailyUsageDelta): void {
+    this.db
+      .prepare(
+        `INSERT INTO tool_usage_daily (day, tool, platform, calls, errors, response_bytes, tokens, units, duration_ms, max_duration_ms, text_available, text_returned)
+         VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (day, tool) DO UPDATE SET
+           calls = calls + 1, errors = errors + excluded.errors, response_bytes = response_bytes + excluded.response_bytes,
+           tokens = tokens + excluded.tokens, units = units + excluded.units, duration_ms = duration_ms + excluded.duration_ms,
+           max_duration_ms = max(max_duration_ms, excluded.max_duration_ms),
+           text_available = text_available + excluded.text_available, text_returned = text_returned + excluded.text_returned`,
+      )
+      .run(
+        new Date(call.ts).toISOString().slice(0, 10),
+        call.tool,
+        call.platform,
+        call.error ? 1 : 0,
+        call.responseBytes,
+        call.tokens,
+        call.units,
+        call.durationMs,
+        call.durationMs,
+        call.textAvailable,
+        call.textReturned,
+      );
+  }
+
+  /** The daily totals from `fromDay` to `toDay` inclusive (YYYY-MM-DD), oldest day first. */
+  dailyUsage(fromDay: string, toDay: string): DailyUsageRow[] {
+    const rows = this.db
+      .prepare('SELECT * FROM tool_usage_daily WHERE day >= ? AND day <= ? ORDER BY day, tool')
+      .all(fromDay, toDay) as unknown as Rows[];
+    return rows.map((row) => ({
+      day: String(row['day']),
+      tool: String(row['tool']),
+      platform: String(row['platform']),
+      calls: Number(row['calls']),
+      errors: Number(row['errors']),
+      responseBytes: Number(row['response_bytes']),
+      tokens: Number(row['tokens']),
+      units: Number(row['units']),
+      durationMs: Number(row['duration_ms']),
+      maxDurationMs: Number(row['max_duration_ms']),
+      textAvailable: Number(row['text_available']),
+      textReturned: Number(row['text_returned']),
+    }));
+  }
 
   recordCall(call: CallRecord): void {
     this.db
@@ -481,6 +552,9 @@ export class Store {
     this.db.prepare('DELETE FROM search_hits WHERE run_id IN (SELECT id FROM search_runs WHERE ts < ?)').run(oldRuns);
     this.db.prepare('DELETE FROM search_runs WHERE ts < ?').run(oldRuns);
     const jobs = Number(this.db.prepare('DELETE FROM jobs WHERE last_seen < ?').run(now - this.jobRetentionMs).changes);
+    this.db
+      .prepare('DELETE FROM tool_usage_daily WHERE day < ?')
+      .run(new Date(now - DAILY_USAGE_RETENTION_DAYS * 24 * 3600 * 1000).toISOString().slice(0, 10));
     const calls = Number(this.db.prepare('DELETE FROM call_log WHERE ts < ?').run(now - CALL_LOG_RETENTION_MS).changes);
     const usage = Number(this.db.prepare('DELETE FROM usage WHERE ts < ?').run(now - USAGE_RETENTION_MS).changes);
     return { calls, usage, jobs };
@@ -492,6 +566,34 @@ export class Store {
     this.closed = true;
     this.db.close();
   }
+}
+
+export interface DailyUsageDelta {
+  ts: number;
+  tool: string;
+  platform: string;
+  error: boolean;
+  responseBytes: number;
+  tokens: number;
+  units: number;
+  durationMs: number;
+  textAvailable: number;
+  textReturned: number;
+}
+
+export interface DailyUsageRow {
+  day: string;
+  tool: string;
+  platform: string;
+  calls: number;
+  errors: number;
+  responseBytes: number;
+  tokens: number;
+  units: number;
+  durationMs: number;
+  maxDurationMs: number;
+  textAvailable: number;
+  textReturned: number;
 }
 
 const MAX_QUERY_CHARS = 200;

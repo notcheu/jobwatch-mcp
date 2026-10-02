@@ -208,7 +208,9 @@ export type Overview = z.infer<typeof overviewSchema>;
 
 export const usageSchemaResponse = z
   .object({
-    scope: z.literal('session'),
+    /** session: the calls in memory; lifetime and historical: the persisted daily totals (no percentiles, no per-call data). */
+    scope: z.enum(['session', 'lifetime', 'historical']),
+    granularity: z.enum(['hour', 'day']),
     since: iso.nullable(),
     totals: z
       .object({

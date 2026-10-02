@@ -609,3 +609,79 @@ describe('the Origin of a change in local development', () => {
     expect((await send(`http://${new URL(ORIGIN).host}`)).status).toBe(403); // same host, other scheme
   });
 });
+
+describe('usage over time', () => {
+  const addDays = (store: Store) => {
+    const row = (day: number, tool: string, platform: string, over: object = {}) =>
+      store.recordDailyUsage({
+        ts: Date.UTC(2026, 9, day, 10),
+        tool,
+        platform,
+        error: false,
+        responseBytes: 1000,
+        tokens: 300,
+        units: 2,
+        durationMs: 500,
+        textAvailable: 4000,
+        textReturned: 400,
+        ...over,
+      });
+    row(5, 'linkedin_search', 'linkedin');
+    row(5, 'linkedin_search', 'linkedin', { error: true, durationMs: 1500, tokens: 100 });
+    row(6, 'linkedin_search', 'linkedin');
+    row(6, 'apec_search', 'apec', { tokens: 900, durationMs: 200 });
+    row(8, 'apec_search', 'apec');
+  };
+
+  it('lifetime reads the persisted totals: per tool and per day, with averages and no percentiles', async () => {
+    const t = await build();
+    addDays(t.store);
+    const usage = await json(await t.call('/dashboard/api/v1/usage?scope=lifetime'));
+    expect(usage).toMatchObject({ scope: 'lifetime', granularity: 'day' });
+    expect(usage.totals).toMatchObject({
+      calls: 5,
+      errors: 1,
+      estimatedTokens: 1900,
+      unitsSpent: 10,
+      textAvailableChars: 20_000,
+      textReturnedChars: 2000,
+      durationP50Ms: null,
+      durationP95Ms: null,
+      durationMaxMs: 1500,
+    });
+    expect(usage.byTool.map((x: any) => [x.tool, x.calls, x.estimatedTokens, x.avgTokens])).toEqual([
+      ['apec_search', 2, 1200, 600],
+      ['linkedin_search', 3, 700, 233],
+    ]);
+    expect(usage.byTool.find((x: any) => x.tool === 'linkedin_search')).toMatchObject({ avgDurationMs: 833, maxDurationMs: 1500 });
+    expect(usage.series.map((x: any) => [x.bucket.slice(0, 10), x.calls, x.errors])).toEqual([
+      ['2026-10-05', 2, 1],
+      ['2026-10-06', 2, 0],
+      ['2026-10-08', 1, 0],
+    ]);
+  });
+
+  it('historical reads a range of days and can be narrowed to one tool or platform', async () => {
+    const t = await build();
+    addDays(t.store);
+    const range = await json(await t.call('/dashboard/api/v1/usage?scope=historical&from=2026-10-06&to=2026-10-07'));
+    expect(range.totals.calls).toBe(2);
+    expect(range.series.map((x: any) => x.bucket.slice(0, 10))).toEqual(['2026-10-06']);
+    expect((await json(await t.call('/dashboard/api/v1/usage?scope=lifetime&platform=apec'))).totals.calls).toBe(2);
+    expect((await json(await t.call('/dashboard/api/v1/usage?scope=lifetime&tool=linkedin_search'))).byTool).toHaveLength(1);
+    expect((await json(await t.call('/dashboard/api/v1/usage?scope=lifetime&tool=nothing'))).totals.calls).toBe(0);
+  });
+
+  it('is the calls in memory, by the hour, with percentiles, when no scope is given', async () => {
+    const t = await build();
+    const usage = await json(await t.call('/dashboard/api/v1/usage'));
+    expect(usage).toMatchObject({ scope: 'session', granularity: 'hour' });
+    expect(usage.totals.durationP50Ms).toBe(400);
+  });
+
+  it('refuses a scope it does not know and a date it cannot read', async () => {
+    const t = await build();
+    expect((await t.call('/dashboard/api/v1/usage?scope=forever')).status).toBe(400);
+    expect((await t.call('/dashboard/api/v1/usage?scope=historical&from=yesterday')).status).toBe(400);
+  });
+});
