@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { containsAny, extractHints, fitToBytes, fold, htmlToText, postedCutoff, termMatcher } from './jobtext';
+import { containsAny, extractHints, fitToBytes, fold, htmlToText, matchedTerms, postedCutoff, termMatcher } from './jobtext';
 
 describe('termMatcher', () => {
   it('matches whole words case-insensitively, returns the term as written, and never treats terms as a pattern', () => {
@@ -32,16 +32,40 @@ describe('termMatcher', () => {
 });
 
 describe('extractHints', () => {
-  it('finds stack, years, remote and salary hints', () => {
+  it('finds years, remote and salary hints, and names no technology', () => {
     const hints = extractHints('We use React, TypeScript and Vue. 5+ years of experience. 2 jours de télétravail. 60-70 k€ per year.');
-    expect(hints.stack_hints).toEqual(expect.arrayContaining(['react', 'typescript', 'vue']));
     expect(hints.years_hints).toContain(5);
     expect(hints.remote_hints.length).toBeGreaterThan(0);
     expect(hints.salary_text).toMatch(/60/);
+    expect('stack_hints' in hints).toBe(false);
   });
 
-  it('does not read "vue" the French word as the framework', () => {
-    expect(extractHints('Une vue d’ensemble du produit').stack_hints).not.toContain('vue');
+  it('reads the home-working words of other languages', () => {
+    for (const text of ['Homeoffice möglich', 'lavoro da remoto', 'trabalho remoto', 'thuiswerken is mogelijk', 'smart working']) {
+      expect(extractHints(text).remote_hints, text).not.toEqual([]);
+    }
+  });
+
+  it('reads years of experience in German, Italian, Portuguese and Dutch', () => {
+    expect(extractHints('Mindestens 5 Jahre Berufserfahrung').years_hints).toEqual([5]);
+    expect(extractHints('almeno 3 anni di esperienza').years_hints).toEqual([3]);
+    expect(extractHints('mais de 4 anos de experiência').years_hints).toEqual([4]);
+    expect(extractHints('minimaal 6 jaar ervaring').years_hints).toEqual([6]);
+  });
+});
+
+describe('matchedTerms', () => {
+  it("lists the caller's terms the text contains, as the caller wrote them, whatever the job family", () => {
+    expect(matchedTerms('We use React and a lot of Python.', ['react', 'Rust', 'Python'])).toEqual(['react', 'Python']);
+    expect(matchedTerms('Roadmap ownership and OKRs; SQL a plus', ['OKRs', 'roadmap', 'Figma'])).toEqual(['OKRs', 'roadmap']);
+    expect(matchedTerms('CPA required; Excel and SAP', ['CPA', 'SAP', 'CFA'])).toEqual(['CPA', 'SAP']);
+  });
+
+  it('is whole words only, ignores duplicates and blanks, and finds nothing without terms', () => {
+    expect(matchedTerms('Internal tools', ['intern'])).toEqual([]);
+    expect(matchedTerms('Java and JAVA', ['java', 'Java', ' '])).toEqual(['java']);
+    expect(matchedTerms('anything', [])).toEqual([]);
+    expect(matchedTerms('.NET and C++', ['.NET', 'C++'])).toEqual(['.NET', 'C++']);
   });
 });
 

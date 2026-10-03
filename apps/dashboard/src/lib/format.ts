@@ -30,3 +30,19 @@ export function ago(iso: string, now: number = Date.now()): string {
 
 export const clock = (iso: string): string =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+/**
+ * A yearly salary for a cell, in the browser's own locale: one value for a fixed amount, `72 000 – 115 000 €` for a range, and
+ * `+ 12 500 € variable` when the text states a variable part. The currency is written the way the locale writes it.
+ */
+export function formatSalary(salary: { min: number; max: number; currency: string; variable: number | null }, locale?: string): string {
+  const money = (value: number): string => {
+    try {
+      return new Intl.NumberFormat(locale, { style: 'currency', currency: salary.currency, maximumFractionDigits: 0 }).format(value);
+    } catch {
+      return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value)} ${salary.currency}`;
+    }
+  };
+  const fixed = salary.min === salary.max ? money(salary.max) : `${money(salary.min)} – ${money(salary.max)}`;
+  return salary.variable === null ? fixed : `${fixed} + ${money(salary.variable)} variable`;
+}

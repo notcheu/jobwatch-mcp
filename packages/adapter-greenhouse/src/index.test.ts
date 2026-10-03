@@ -56,7 +56,7 @@ const data = (result: Awaited<ReturnType<typeof run>>) =>
       summary: string;
       source: string;
       new: boolean;
-      stack_hints: string[];
+      matched_terms: string[];
     }[];
     excluded: { id: string; reason: string; term: string }[];
     boards: { board: string; status: string; jobs_total: number | null; relevant: number | null }[];
@@ -114,7 +114,7 @@ describe('resolving a board', () => {
 describe('greenhouse_jobs', () => {
   it('reads a board, decodes the HTML, stores the jobs with source and board, and reports the board', async () => {
     const c = context();
-    const result = await run(c.ctx);
+    const result = await run(c.ctx, { hint_terms: ['React', 'TypeScript', 'Rust'] });
     expect(ids(result)).toEqual(['4001', '4004', '4002', '4003']);
     expect(data(result).jobs[0]).toMatchObject({
       source: 'greenhouse',
@@ -126,7 +126,7 @@ describe('greenhouse_jobs', () => {
     expect(data(result).jobs[0]?.summary).toContain('React & TypeScript');
     expect(data(result).jobs[0]?.summary).not.toMatch(/[<>]|&amp;|&lt;/);
     expect(data(result).jobs[0]?.description).toBe('');
-    expect(data(result).jobs[0]?.stack_hints).toEqual(expect.arrayContaining(['react', 'typescript']));
+    expect(data(result).jobs[0]?.matched_terms).toEqual(['React', 'TypeScript']); // the caller's words, as written, and only the ones in the text
     expect(data(result).boards).toEqual([{ board: 'acme', feed_url: ACME, status: 'ok', jobs_total: 4, relevant: 4 }]);
     expect([...c.jobs.jobs.values()].every((j) => j.source === 'greenhouse' && j.board === 'acme')).toBe(true);
     expect(c.spent()).toBe(1);

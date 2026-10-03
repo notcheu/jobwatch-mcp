@@ -51,6 +51,17 @@
         "maxItems": 60,
         "type": "array"
       },
+      "hint_terms": {
+        "default": [],
+        "description": "Words or phrases you care about for this search (a technology, a tool, a skill, a certification...). Each job lists the ones its text contains in matched_terms. There is no built-in list: it depends on the job you look for.",
+        "items": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string"
+        },
+        "maxItems": 30,
+        "type": "array"
+      },
       "ids": {
         "items": {
           "maxLength": 15,
@@ -179,6 +190,13 @@
                 "null"
               ]
             },
+            "matched_terms": {
+              "description": "The hint_terms found in the job text.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "new": {
               "description": "true when this call stored the job for the first time.",
               "type": "boolean"
@@ -207,12 +225,6 @@
               "const": "linkedin",
               "description": "The platform the job comes from.",
               "type": "string"
-            },
-            "stack_hints": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
             },
             "summary": {
               "description": "With detail=summary: the start of the role and of the requirements. Empty otherwise.",
@@ -267,7 +279,7 @@
             "first_seen",
             "fetched_at",
             "last_seen",
-            "stack_hints",
+            "matched_terms",
             "years_hints",
             "remote_hints",
             "salary_text"

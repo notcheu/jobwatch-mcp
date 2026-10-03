@@ -208,7 +208,7 @@ flowchart TB
   end
 
   Orch -- "1. connector availability" --> SS
-  Prof -- "keywords, geo presets" --> LIs
+  Prof -- "keywords, locations" --> LIs
   Mem -- "skip_ids" --> LIs
   LIs --> LS
   LS -- "plausible cards" --> LJ

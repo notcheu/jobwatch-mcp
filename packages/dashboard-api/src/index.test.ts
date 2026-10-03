@@ -58,7 +58,7 @@ describe('the response types', () => {
   });
 
   it('carry the salary as numbers and a label, and nothing else', () => {
-    const salary = { min: 65_000, max: 90_000, currency: 'EUR', variable: null, label: '65 000 – 90 000 €' };
+    const salary = { min: 65_000, max: 90_000, currency: 'EUR', variable: null };
     expect(jobRowSchema.safeParse({ ...job, salary }).success).toBe(true);
     expect(jobRowSchema.safeParse({ ...job, salary: { ...salary, extra: 1 } }).success).toBe(false);
   });
@@ -82,7 +82,7 @@ describe('the response types', () => {
         summary: 's',
         summaryKind: null,
         outline: [],
-        hints: { stack: [], years: [], remote: [], salary: null },
+        hints: { years: [], remote: [], salary: null },
       }).success,
     ).toBe(true);
   });

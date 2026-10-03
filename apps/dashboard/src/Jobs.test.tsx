@@ -17,7 +17,7 @@ const job = (over: Record<string, unknown> = {}) => ({
   fetchedAt: NOW,
   lastSeen: NOW,
   descriptionChars: 4200,
-  salary: { min: 72_000, max: 115_000, currency: 'EUR', variable: null, label: '72 000 – 115 000 €' },
+  salary: { min: 72_000, max: 115_000, currency: 'EUR', variable: null },
   foundBy: ['react', 'frontend'],
   ...over,
 });
@@ -28,7 +28,7 @@ const detail = (over: Record<string, unknown> = {}) => ({
   summary: 'Build things with React.',
   summaryKind: 'sections',
   outline: [{ part: 'role', chars: 120 }],
-  hints: { stack: ['react'], years: [5], remote: ['hybrid'], salary: '60-70k€' },
+  hints: { years: [5], remote: ['hybrid'], salary: '60-70k€' },
   ...over,
 });
 
@@ -179,7 +179,7 @@ describe('job detail', () => {
     const panel = await screen.findByRole('complementary', { name: 'Senior Frontend Engineer' });
     expect(within(panel).getByLabelText('Description').textContent).toContain('Build things with React');
     expect(within(panel).getByText('Build things with React.')).toBeInTheDocument();
-    expect(within(panel).getAllByText('react')).toHaveLength(2); // as a stack hint and as the keyword that found it
+    expect(within(panel).getByText('react')).toBeInTheDocument(); // the keyword that found it
     expect(within(panel).getByText('5+ years')).toBeInTheDocument();
     expect(within(panel).getByText('60-70k€')).toBeInTheDocument();
     expect(within(panel).getByRole('link', { name: /Open on the site/ })).toHaveAttribute('href', 'https://example.com/jobs/1000001');
@@ -251,7 +251,7 @@ describe('searches', () => {
 });
 
 describe('salary column', () => {
-  const fixed = { min: 65_000, max: 65_000, currency: 'EUR', variable: null, label: '65 000 €' };
+  const fixed = { min: 65_000, max: 65_000, currency: 'EUR', variable: null };
 
   it('shows a range as a range, a fixed amount as one value, and a dash when the text states none', async () => {
     mockApi({
@@ -260,9 +260,9 @@ describe('salary column', () => {
     });
     renderApp('/jobs');
     const rows = await rowsLoaded(4);
-    expect(within(at(rows, 1)).getByText('72 000 – 115 000 €')).toBeInTheDocument();
-    expect(within(at(rows, 2)).getByText('65 000 €')).toBeInTheDocument();
-    expect(within(at(rows, 3)).queryByText(/€/)).not.toBeInTheDocument();
+    expect(within(at(rows, 1)).getByText(/72\D?000.*115\D?000/)).toBeInTheDocument(); // the browser's own number format
+    expect(within(at(rows, 2)).getByText(/65\D?000/)).toBeInTheDocument();
+    expect(within(at(rows, 3)).queryByText(/€|EUR/)).not.toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /Salary/ })).toBeInTheDocument();
   });
 

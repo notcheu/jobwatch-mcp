@@ -29,6 +29,8 @@ const envSchema = z.object({
     .string()
     .regex(/^[a-z0-9][a-z0-9_.-]*$/)
     .default('jobwatch-browsers'),
+  JW_DEFAULT_LOCATION: z.string().trim().max(100).optional(),
+  JW_LINKEDIN_GEO_ALIASES: z.string().max(2000).optional(),
   JW_BROWSER_SECCOMP: z.string().startsWith('/').optional(),
   JW_BROWSER_LANG: z
     .string()

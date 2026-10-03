@@ -42,12 +42,12 @@ function context(descriptions: Record<string, FakePage | string> = {}) {
 
 const visitedJobs = (visited: string[]): string[] =>
   visited.filter((url) => url.includes('/jobs/view/')).map((url) => url.split('/')[5] ?? '');
-const read = (over: object = {}) => tools.search.input.parse({ keywords: 'full stack', ...over });
+const read = (over: object = {}) => tools.search.input.parse({ keywords: 'full stack', geo: 'Berlin, Germany', ...over });
 /** The search as a plain listing: max_jobs=0 opens no job page and returns the cards. */
 const LIST = {
   input: {
-    parse: (args: object) => tools.search.input.parse({ max_jobs: 0, ...args }),
-    safeParse: (args: object) => tools.search.input.safeParse({ max_jobs: 0, ...args }),
+    parse: (args: object) => tools.search.input.parse({ max_jobs: 0, geo: 'Berlin, Germany', ...args }),
+    safeParse: (args: object) => tools.search.input.safeParse({ max_jobs: 0, geo: 'Berlin, Germany', ...args }),
   },
   handler: tools.search.handler,
 };
@@ -60,7 +60,7 @@ describeAdapterContract(adapter, {
       run: (args) => tools.job.handler(tools.job.input.parse(args), context().ctx),
     },
     linkedin_search: {
-      args: { keywords: 'frontend' },
+      args: { keywords: 'frontend', geo: 'Berlin, Germany' },
       run: (args) => tools.search.handler(tools.search.input.parse(args), context().ctx),
     },
   },
@@ -130,8 +130,14 @@ describe('linkedin_search with max_jobs=0 (listing)', () => {
 
   it('rejects arguments that could change the url', () => {
     const input = LIST.input;
-    expect(input.safeParse({ keywords: 'x', geo: 'x&f_AL=true' }).success).toBe(false);
     expect(input.safeParse({ keywords: 'x', extra: 1 }).success).toBe(false);
+    // a place name is free text, so it is encoded: it cannot add a parameter to the address
+    const url = classicLayout.searchUrl({
+      ...tools.search.input.parse({ keywords: 'x', geo: 'x&f_AL=true' }),
+      geo: 'x&f_AL=true',
+    } as never);
+    expect(url).toContain('location=x%26f_AL%3Dtrue');
+    expect(url).not.toContain('&f_AL=true');
   });
 });
 
@@ -470,7 +476,7 @@ describe('max_results and several pages', () => {
       url: jobUrl('5000000002'),
       description: 'stored',
     });
-    const input = tools.search.input.parse({ keywords: 'x', max_results: 50, disallowed_terms: ['Engineer 1'] });
+    const input = tools.search.input.parse({ keywords: 'x', geo: 'Berlin, Germany', max_results: 50, disallowed_terms: ['Engineer 1'] });
     const result = await tools.search.handler(input, c.ctx);
     expect(result.data).toMatchObject({ pages_loaded: 2, scanned: 50 });
     expect(result.data.excluded.map((e) => e.id)).toEqual(['5000000001']);
@@ -579,5 +585,46 @@ describe('cost reporting', () => {
   it('the adapter declares the approved budget and every tool fits in it', () => {
     expect(adapter.rate).toEqual({ perHour: 200, perDay: 400 });
     for (const tool of adapter.tools) expect(tool.limits.cost).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('the place of a search is never built in', () => {
+  const searchOnce = (args: object) => {
+    const c = context();
+    return tools.search.handler(tools.search.input.parse({ keywords: 'x', max_jobs: 0, ...args }), c.ctx);
+  };
+
+  it('is refused without a place, with a message that says what to give or set', async () => {
+    const saved = process.env['JW_DEFAULT_LOCATION'];
+    delete process.env['JW_DEFAULT_LOCATION'];
+    try {
+      await expect(searchOnce({})).rejects.toThrow(/geo is required.*JW_DEFAULT_LOCATION/);
+    } finally {
+      if (saved !== undefined) process.env['JW_DEFAULT_LOCATION'] = saved;
+    }
+  });
+
+  it("uses the operator's default location when the call gives none, and the call's own when it does", async () => {
+    const saved = process.env['JW_DEFAULT_LOCATION'];
+    process.env['JW_DEFAULT_LOCATION'] = 'Lisbon, Portugal';
+    try {
+      const urls: string[] = [];
+      const spy = {
+        ...classicLayout,
+        searchUrl: (args: Parameters<typeof classicLayout.searchUrl>[0]) => (
+          urls.push(classicLayout.searchUrl(args)),
+          classicLayout.searchUrl(args)
+        ),
+      };
+      const spied = createLinkedinTools(spy);
+      const c = context();
+      await spied.search.handler(spied.search.input.parse({ keywords: 'x', max_jobs: 0 }), c.ctx);
+      await spied.search.handler(spied.search.input.parse({ keywords: 'x', max_jobs: 0, geo: 'Madrid, Spain' }), c.ctx);
+      expect(urls[0]).toContain('location=Lisbon%2C%20Portugal');
+      expect(urls[1]).toContain('location=Madrid%2C%20Spain');
+    } finally {
+      if (saved === undefined) delete process.env['JW_DEFAULT_LOCATION'];
+      else process.env['JW_DEFAULT_LOCATION'] = saved;
+    }
   });
 });

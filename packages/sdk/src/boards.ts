@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { HttpClient, JobStore } from './context';
 import { AdapterBroken, HostNotAllowedError, JobwatchError } from './errors';
-import { POSTED_WITHIN, containsAny, extractHints, fitToBytes, fold, postedCutoff, termMatcher } from './jobtext';
+import { POSTED_WITHIN, containsAny, extractHints, fitToBytes, fold, matchedTerms, postedCutoff, termMatcher } from './jobtext';
 import { DETAILS, describeJob } from './summary';
 
 /**
@@ -18,7 +18,7 @@ export interface BoardPosting {
   board: string;
   company: string | null;
   title: string;
-  /** One entry per office, `Paris, FR` style. */
+  /** One entry per office, `Berlin, DE` style. */
   locations: string[];
   /** Everything location-like, for matching (city, region, postal code, country). Falls back to `locations`. */
   locationText?: string;
@@ -47,6 +47,13 @@ export function detailFields(defaultDetail: (typeof DETAILS)[number]) {
       .max(6000)
       .default(3000)
       .describe('With detail=full: characters of description returned per job. The full text is stored.'),
+    hint_terms: z
+      .array(z.string().trim().min(1).max(60))
+      .max(30)
+      .default([])
+      .describe(
+        'Words or phrases you care about for this search (a technology, a tool, a skill, a certification...). Each job lists the ones its text contains in matched_terms. There is no built-in list: it depends on the job you look for.',
+      ),
   } as const;
 }
 
@@ -62,7 +69,7 @@ export const boardFilters = {
     .max(20)
     .default([])
     .describe(
-      'Keep jobs with an office matching any of these: a city, country code or postal code ("Paris", "FR", "75"). Empty keeps all.',
+      'Keep jobs with an office matching any of these: a city, country code or postal code ("Berlin", "DE", "10115"). Empty keeps all.',
     ),
   posted_within: z
     .enum(POSTED_WITHIN)
@@ -130,7 +137,7 @@ export function boardJobSchema<S extends string>(source: S) {
     first_seen: z.string(),
     fetched_at: z.string(),
     last_seen: z.string(),
-    stack_hints: z.array(z.string()),
+    matched_terms: z.array(z.string()).describe('The hint_terms found in the job text.'),
     years_hints: z.array(z.number()),
     remote_hints: z.array(z.string()),
     salary_text: z.string().nullable(),
@@ -221,6 +228,7 @@ export async function judgeBoardPostings<S extends string>(
       first_seen: row?.firstSeen ?? stamp,
       fetched_at: row?.fetchedAt ?? stamp,
       last_seen: row?.lastSeen ?? stamp,
+      matched_terms: matchedTerms(posting.description, filters.hint_terms),
       ...extractHints(posting.description),
     });
   }

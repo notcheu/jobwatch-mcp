@@ -1,4 +1,4 @@
-import { PAGE_SIZE, geoId, postedParam } from '../parse';
+import { PAGE_SIZE, geoParam, postedParam } from '../parse';
 import type { SearchArgs } from '../search';
 import type { SearchLayout } from './layout';
 
@@ -9,7 +9,7 @@ import type { SearchLayout } from './layout';
 export const aiSearchResultsLayout: SearchLayout = {
   id: 'ai',
   searchUrl(args: SearchArgs): string {
-    const params = [`keywords=${encodeURIComponent(args.keywords)}`, `geoId=${geoId(args.geo)}`, 'distance=0.0'];
+    const params = [`keywords=${encodeURIComponent(args.keywords)}`, geoParam(args.geo), 'distance=0.0'];
     const posted = postedParam(args.posted_within);
     if (posted !== null) params.push(posted);
     if (args.page > 1) params.push(`start=${(args.page - 1) * PAGE_SIZE}`);

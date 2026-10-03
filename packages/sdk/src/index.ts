@@ -62,6 +62,7 @@ export {
   containsAny,
   decodeEntities,
   extractHints,
+  matchedTerms,
   fitToBytes,
   fold,
   htmlToText,
@@ -69,7 +70,7 @@ export {
   termMatcher,
 } from './jobtext';
 export type { Hints, PostedWithin } from './jobtext';
-export { findSalary, findSalaryRange, formatSalary } from './salary';
+export { findSalary, findSalaryRange } from './salary';
 export type { Salary } from './salary';
 
 export {

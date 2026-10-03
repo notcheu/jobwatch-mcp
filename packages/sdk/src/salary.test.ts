@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { extractHints } from './jobtext';
-import { findSalary, findSalaryRange, formatSalary } from './salary';
+import { findSalary, findSalaryRange } from './salary';
 
 describe('findSalary', () => {
   it('reads a labelled range with the currency in front of each end', () => {
@@ -171,17 +171,6 @@ describe('findSalaryRange', () => {
   });
 });
 
-describe('formatSalary', () => {
-  it('shows one value for a fixed amount and a range for a range', () => {
-    const text = (s: Parameters<typeof formatSalary>[0]) => formatSalary(s).replace(/\s/g, ' ');
-    expect(text({ min: 65_000, max: 65_000, currency: 'EUR', variable: null })).toBe('65 000 €');
-    expect(text({ min: 72_000, max: 115_000, currency: 'EUR', variable: null })).toBe('72 000 – 115 000 €');
-    expect(text({ min: 26_400, max: 26_400, currency: 'EUR', variable: 12_500 })).toBe('26 400 € + 12 500 € variable');
-    expect(text({ min: 85_000, max: 95_000, currency: 'CHF', variable: null })).toBe('85 000 – 95 000 CHF');
-    expect(text({ min: 120_000, max: 120_000, currency: 'USD', variable: null })).toBe('120 000 $');
-  });
-});
-
 describe('a salary next to a salary word beats an amount that only has the shape', () => {
   it('whatever the order in the text', () => {
     expect(findSalary('Our clients pay 120k€ for the platform.\nThe salary is 78.000€ per year.')).toBe('78.000€');
@@ -209,5 +198,34 @@ describe('a salary next to a salary word beats an amount that only has the shape
 
   it('keeps the first of two named salaries', () => {
     expect(findSalary('Salary: €50.000\nSalary: €90.000')).toBe('€50.000');
+  });
+});
+
+describe('no market is assumed', () => {
+  it('the plausible size of a yearly salary follows the currency', () => {
+    expect(findSalaryRange('¥6,000,000')).toMatchObject({ min: 6_000_000, currency: 'JPY' });
+    expect(findSalaryRange('Salary: ₹1,800,000 per annum')).toMatchObject({ max: 1_800_000, currency: 'INR' });
+    expect(findSalaryRange('Salary: 14 400 000 HUF')).toMatchObject({ max: 14_400_000, currency: 'HUF' });
+    expect(findSalaryRange('Salary: 90.000.000 €')).toBeNull(); // absurd in euros
+    expect(findSalaryRange('Salary: €12.000 (apprenticeship)')).toMatchObject({ max: 12_000 });
+  });
+
+  it('knows the salary words of more languages', () => {
+    expect(findSalaryRange('Gehalt: 62.000 € brutto pro Jahr')).toMatchObject({ max: 62_000 });
+    expect(findSalaryRange('Retribuzione annua lorda: 38.000 €')).toMatchObject({ max: 38_000 });
+    expect(findSalaryRange('Salário: R$ 120.000 por ano')).toMatchObject({ max: 120_000 });
+    expect(findSalaryRange('Salaris: € 55.000 per jaar')).toMatchObject({ max: 55_000 });
+  });
+
+  it('does not read a monthly or hourly figure in another language as a yearly one', () => {
+    expect(findSalary('Gehalt: 5.200 € pro Monat')).toBeNull();
+    expect(findSalary('Stipendio: 3.000 € al mese')).toBeNull();
+    expect(findSalary('Salário: 4.000 € por mês')).toBeNull();
+  });
+
+  it('does not mistake a meal allowance or a turnover in another language for pay', () => {
+    expect(findSalary('Essensgutschein 120.000 €')).toBeNull();
+    expect(findSalary('Buono pasto da 150.000 €')).toBeNull();
+    expect(findSalary('Umsatz: 500k€')).toBeNull();
   });
 });

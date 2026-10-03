@@ -70,10 +70,8 @@ export type CallDetail = z.infer<typeof callDetailSchema>;
 
 // ------------------------------------------------------------------------------------------------------ jobs
 
-/** The yearly salary read from the job text: a fixed amount (`min` equals `max`) or a range, ready to show in `label`. */
-export const salarySchema = z
-  .object({ min: z.number(), max: z.number(), currency: z.string(), variable: z.number().nullable(), label: z.string() })
-  .strict();
+/** The yearly salary read from the job text: a fixed amount (`min` equals `max`) or a range. The browser formats it in its own locale. */
+export const salarySchema = z.object({ min: z.number(), max: z.number(), currency: z.string(), variable: z.number().nullable() }).strict();
 export type SalaryInfo = z.infer<typeof salarySchema>;
 
 export const jobRowSchema = z
@@ -106,7 +104,6 @@ export const jobDetailSchema = jobRowSchema
     outline: z.array(z.object({ part: z.string(), chars: z.number() }).strict()),
     hints: z
       .object({
-        stack: z.array(z.string()),
         years: z.array(z.number()),
         remote: z.array(z.string()),
         salary: z.string().nullable(),

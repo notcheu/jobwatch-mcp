@@ -14,7 +14,7 @@ The adapter implements a `SearchLayout` per variant (`packages/adapter-linkedin/
 
 ### Layout A: classic `/jobs/search/` (primary)
 Observed 2026-10-01 in the owner's Chrome (markers and counts only):
-- URL: `https://www.linkedin.com/jobs/search/?keywords=<urlencoded>&geoId=<id>&distance=0[&f_TPR=r86400][&start=<N>]`. LinkedIn adds `currentJobId=<first id>` to the URL on load. **Confirmed (S5, container, 2026-10-01): the routine's boolean `OR` keywords work** ("Staff Frontend Engineer OR Lead Frontend OR Frontend Tech Lead", Paris, no time filter): 25 cards on load, `STATE: ok`. `f_TPR` and `start=` paging are still to verify on layout A.
+- URL: `https://www.linkedin.com/jobs/search/?keywords=<urlencoded>&geoId=<id>|location=<name>&distance=0[&f_TPR=r86400][&start=<N>]`. LinkedIn adds `currentJobId=<first id>` to the URL on load. **Confirmed (S5, container, 2026-10-01): the routine's boolean `OR` keywords work** ("Staff Frontend Engineer OR Lead Frontend OR Frontend Tech Lead", Paris, no time filter): 25 cards on load, `STATE: ok`. `f_TPR` and `start=` paging are still to verify on layout A.
 - Cards: `li[data-occludable-job-id]` (id = that attribute; 7 initially, more after scrolling; each has an `a[href*="/jobs/view/"]`); first three text lines are title / company / location (e.g. `European Union (Remote)`), as in layout B. Container `.scaffold-layout__list`; pagination `.jobs-search-pagination`; a promoted label appears in the list.
 - Details pane (split view, `currentJobId` in the URL): description in `#job-details` = `.jobs-box__html-content` = `.jobs-description__content` (same text, about 1.9 KB for the pane's default job); an "About the job" `h2` and the `job-details-jobs-unified-top-card` header exist; `h1` present. **Confirmed (S5).**
 - **`/jobs/view/<id>/` (logged in) serves the NEW markup, not the classic one, and does not redirect**: description in `[componentKey^=JobDetails_AboutTheJob_] [data-testid=expandable-text-box]` (1.8 KB and 5.6 KB for two jobs), "About the job" heading present, no `h1`, no `.jobs-description__content`. **Confirmed (S5).** So layout B's detail reader keeps working for single-job pages even while the search list is classic.
@@ -72,7 +72,7 @@ Passing jobs are returned newly read first (`new: true`), then stored ones, **at
 
 Typical run, two searches over 50 results each (2 calls):
 ```
-linkedin_search { keywords: "full stack engineer", geo: "paris_idf", max_results: 50,
+linkedin_search { keywords: "full stack engineer", geo: "Paris, France", max_results: 50,
                            disallowed_terms: ["frontend", "front-end", "Angular"], disallowed_scope: "title_then_description" }
 linkedin_search { keywords: "backend engineer", max_results: 50, disallowed_terms: ["fullstack", "full-stack", "full stack"] }
 ```

@@ -1,4 +1,4 @@
-import type { PostedWithin } from '@jobwatch/sdk';
+import { JobwatchError, type PostedWithin } from '@jobwatch/sdk';
 /**
  * Pure parsing and normalization for the LinkedIn adapter. The in-page script returns RAW text lines only; everything that
  * decides what a card or a job means lives here, where it is unit-tested without a browser.
@@ -26,7 +26,6 @@ export interface Card {
   url: string;
 }
 
-export const GEO_PRESETS = { paris_idf: '104246759', france: '105015875' } as const;
 export const PAGE_SIZE = 25;
 
 export { POSTED_WITHIN } from '@jobwatch/sdk';
@@ -47,10 +46,39 @@ export function jobUrl(id: string): string {
   return `https://www.linkedin.com/jobs/view/${id}/`;
 }
 
-export function geoId(geo: string): string {
-  if (Object.hasOwn(GEO_PRESETS, geo)) return GEO_PRESETS[geo as keyof typeof GEO_PRESETS];
-  if (/^\d{3,12}$/.test(geo)) return geo;
-  throw new RangeError('unknown geo preset or id');
+/**
+ * Names you choose for a LinkedIn geoId, from `JW_LINKEDIN_GEO_ALIASES` (`home=104246759,europe=91000000`): a shortcut for a
+ * location you use often. The adapter ships none; a market's places are the operator's to name.
+ */
+export function parseGeoAliases(raw: string | undefined): Map<string, string> {
+  const aliases = new Map<string, string>();
+  for (const pair of (raw ?? '').split(',')) {
+    const [name, id] = pair.split('=').map((part) => part.trim());
+    if (name !== undefined && name !== '' && id !== undefined && /^\d{3,12}$/.test(id)) aliases.set(name.toLowerCase(), id);
+  }
+  return aliases;
+}
+
+/**
+ * The location of a search: the `geo` argument, else `JW_DEFAULT_LOCATION`. A numeric value is a LinkedIn geoId, an alias is looked up
+ * (`JW_LINKEDIN_GEO_ALIASES`), anything else is a place name LinkedIn resolves itself ("Berlin, Germany", "Remote"). There is no default
+ * place in the code: with neither the argument nor the variable the call is refused and says what to set.
+ */
+export function resolveGeo(geo: string | undefined, env: Readonly<Record<string, string | undefined>> = process.env): string {
+  const wanted = (geo ?? env['JW_DEFAULT_LOCATION'] ?? '').trim();
+  if (wanted === '')
+    throw new JobwatchError(
+      'invalid_arguments',
+      'geo is required: a place name (for example "Berlin, Germany") or a LinkedIn geoId. An operator can set JW_DEFAULT_LOCATION.',
+    );
+  return parseGeoAliases(env['JW_LINKEDIN_GEO_ALIASES']).get(wanted.toLowerCase()) ?? wanted;
+}
+
+/** The URL parameter for a resolved location: `geoId=123456` for an id, `location=<name>` for a place name. */
+export function geoParam(geo: string): string {
+  if (/^\d{3,12}$/.test(geo)) return `geoId=${geo}`;
+  if (geo.length > 100 || [...geo].some((char) => char.charCodeAt(0) < 32)) throw new RangeError('not a usable location');
+  return `location=${encodeURIComponent(geo)}`;
 }
 
 // ---------------------------------------------------------------------------------------------- card text

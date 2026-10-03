@@ -79,7 +79,7 @@ const data = (result: Awaited<ReturnType<typeof run>>) =>
       source: string;
       read_from: string;
       first_seen: string;
-      stack_hints: string[];
+      matched_terms: string[];
     }[];
     excluded: { id: string; reason: string; term: string }[];
     boards: {
@@ -255,14 +255,14 @@ describe('teamtailor_jobs', () => {
 
   it('turns the HTML into text, summarizes it by default, and finds hints in it', async () => {
     const c = context();
-    const result = await run(c.ctx, { title_any: ['senior'] });
+    const result = await run(c.ctx, { title_any: ['senior'], hint_terms: ['React', 'TypeScript', 'Rust'] });
     expect(data(result).jobs[0]).toMatchObject({
       description: '',
       description_chars: c.jobs.jobs.get('8000001')?.description.length ?? -1,
     });
     expect(data(result).jobs[0]?.summary).toContain('We use React and TypeScript.');
     expect(data(result).jobs[0]?.summary).not.toContain('<');
-    expect(data(result).jobs[0]?.stack_hints).toEqual(expect.arrayContaining(['react', 'typescript']));
+    expect(data(result).jobs[0]?.matched_terms).toEqual(['React', 'TypeScript']); // the caller's words, as written, and only the ones in the text
     const full = await run(c.ctx, { title_any: ['senior'], detail: 'full' });
     expect(data(full).jobs[0]?.description).toContain('We use React and TypeScript.');
     expect(data(full).jobs[0]?.description).not.toContain('<');
