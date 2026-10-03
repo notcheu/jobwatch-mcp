@@ -2,6 +2,8 @@
  * Text helpers shared by the job adapters (LinkedIn, ATS boards, ...). Pure functions, no I/O.
  */
 
+import { findSalary } from './salary';
+
 const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -43,21 +45,21 @@ const STACK: [string, RegExp][] = [
   ['design-system', /\bdesign[- ]systems?\b/i],
   ['micro-frontends', /\bmicro[- ]?front-?ends?\b/i],
 ];
-const YEARS = /(\d{1,2})\s*\+?\s*(?:ans|an|years?|yrs?)\b/gi;
+const YEARS = /(\d{1,2})\s*\+?\s*(?:ans|an|years?|yrs?|a[ñn]os)\b/gi;
+/** A number of years is a required experience only when the text says experience around it (not "triple the valuation in 2 years"). */
+const EXPERIENCE = /exp[ée]rience|exp[ée]riment|experiencia|seniority|background|track record|expertise/i;
+const EXPERIENCE_WINDOW = 60;
 const REMOTE = [
+  // the specific forms first: the number of days is the useful part
+  /\b\d\s*remote\s*days?(?:\s*(?:per|a|each)\s*week)?/i,
+  /\b\d\s*days?\s*(?:in|at)\s*the\s*office(?:\s*(?:per|a|each)\s*week)?/i,
+  /\b\d\s*jours?\s*par\s*semaine\s*(?:de\s*|en\s*)?(?:t[ée]l[ée]travail|au bureau|sur site)/i,
   /\bfull[- ]remote\b/i,
   /\bremote\b/i,
   /\bt[ée]l[ée]travail\b/i,
   /\bhybrid(?:e)?\b/i,
   /\b\d+\s*(?:jours?|days?)\s*(?:de\s*)?(?:t[ée]l[ée]travail|remote|on-?site|au bureau)/i,
 ];
-const SALARY_UNIT = String.raw`(?:k\s*€|k€|K\s*EUR|€|EUR)`;
-const SALARY_NUMBER = String.raw`\d[\d\s.,]{0,8}`;
-const SALARY_IN_TEXT = new RegExp(
-  `${SALARY_NUMBER}(?:\\s*${SALARY_UNIT})?\\s*(?:-|à|to)\\s*${SALARY_NUMBER}\\s*${SALARY_UNIT}|${SALARY_NUMBER}\\s*${SALARY_UNIT}`,
-  'i',
-);
-
 export interface Hints {
   stack_hints: string[];
   years_hints: number[];
@@ -70,7 +72,13 @@ export function extractHints(description: string): Hints {
   const years = new Set<number>();
   for (const match of text.matchAll(YEARS)) {
     const value = Number(match[1]);
-    if (value >= 1 && value <= 30) years.add(value);
+    const lineStart = text.lastIndexOf('\n', match.index) + 1;
+    const lineEnd = text.indexOf('\n', match.index);
+    const around = text.slice(
+      Math.max(lineStart, match.index - EXPERIENCE_WINDOW),
+      Math.min(lineEnd === -1 ? text.length : lineEnd, match.index + match[0].length + EXPERIENCE_WINDOW),
+    );
+    if (value >= 1 && value <= 30 && EXPERIENCE.test(around)) years.add(value);
   }
   const remote = new Set<string>();
   for (const pattern of REMOTE) {
@@ -81,7 +89,7 @@ export function extractHints(description: string): Hints {
     stack_hints: STACK.filter(([, pattern]) => pattern.test(text)).map(([name]) => name),
     years_hints: [...years].sort((a, b) => a - b).slice(0, 6),
     remote_hints: [...remote].slice(0, 6),
-    salary_text: SALARY_IN_TEXT.exec(text)?.[0]?.replace(/\s+/g, ' ').trim().slice(0, 80) ?? null,
+    salary_text: findSalary(text),
   };
 }
 
