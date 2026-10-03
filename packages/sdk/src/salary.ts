@@ -49,6 +49,8 @@ const MIN_YEARLY = 15_000;
 /** A variable part can be small next to the fixed one. */
 const MIN_VARIABLE = 1_000;
 const MAX_YEARLY = 1_000_000;
+/** What follows an amount that makes it the variable part: `10k€ variable`, `10k€ of bonus`. */
+const AMOUNT_THEN_VARIABLE = /^\s*(?:of\s+|de\s+)?(?:variable|bonus|commission|primes?)\b/i;
 const VARIABLE = /(?:variable|bonus|\bOTE\b|commission|primes?)s?\b[^\d€$£¥₹]{0,40}/i;
 
 function parseValue(num: string, thousands: boolean): number {
@@ -125,34 +127,48 @@ function yearlyAmounts(line: string, minimum = MIN_YEARLY): YearlyAmount[] {
   return found;
 }
 
+/** The variable part of a salary: `Variable adicional: 12.500€` (label first) or `10k€ variable` (amount first). */
+function variablePart(rest: string): YearlyAmount | undefined {
+  const label = VARIABLE.exec(rest);
+  const labelled =
+    label === null ? undefined : yearlyAmounts(rest.slice(label.index + label[0].length).split('\n')[0] ?? '', MIN_VARIABLE)[0];
+  if (labelled !== undefined) return labelled;
+  const first = rest.split('\n')[0] ?? '';
+  return yearlyAmounts(first, MIN_VARIABLE).find((amount) => AMOUNT_THEN_VARIABLE.test(first.slice(amount.end)));
+}
+
 /**
- * The yearly salary a job text states, or null. An amount counts when it has the shape of a salary (2 or 3 digits then `k` or a group
- * of thousands, with a currency of any kind: `65k€`, `€65.000`, `$120,000`, `CHF 95k`), or when its line or the line before names a
- * salary (salary, salaire, rémunération, compensation, per year...). Either way the line must not be about meal vouchers, funding or
- * revenue, and the figure must not be a million, a daily or a monthly one. A variable part that follows the fixed one is added
- * (`26.400€ + variable 12.500€`). The first salary of the text wins.
+ * The yearly salary a job text states, or null. An amount is a candidate when its line or the line before names a salary (salary,
+ * salaire, rémunération, compensation, per year...), or when it has the shape of a salary on its own (2 or 3 digits then `k` or a
+ * group of thousands, with a currency of any kind: `65k€`, `€65.000`, `$120,000`, `CHF 95k`). A candidate that sits next to a salary
+ * word is preferred to one that only has the right shape, wherever it is in the text ("our clients pay 120k€ for the platform" comes
+ * after "salary is 78.000€ per year"); among equals the first wins. Whatever the candidate, its line must not be about meal vouchers,
+ * funding or revenue, and the figure must not be a million, a daily or a monthly one. A variable part next to the fixed one is added
+ * (`26.400€ + variable 12.500€`).
  */
 export function findSalaryRange(text: string): Salary | null {
   const lines = text.split('\n');
+  let shapedOnly: Salary | null = null;
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] ?? '';
     if (NOT_A_SALARY_LINE.test(line)) continue;
     const named = SALARY_WORDS.test(`${lines[index - 1] ?? ''}\n${line}`);
-    const fixed = yearlyAmounts(line).find((amount) => amount.shaped || named);
+    if (!named && shapedOnly !== null) continue;
+    const amounts = yearlyAmounts(line);
+    const fixed = (named ? amounts : amounts.filter((amount) => amount.shaped))[0];
     if (fixed === undefined) continue;
-    const rest = `${line.slice(fixed.end)}\n${lines[index + 1] ?? ''}`;
-    const label = VARIABLE.exec(rest);
-    const variable =
-      label === null ? undefined : yearlyAmounts(rest.slice(label.index + label[0].length).split('\n')[0] ?? '', MIN_VARIABLE)[0];
-    return {
+    const variable = variablePart(`${line.slice(fixed.end)}\n${lines[index + 1] ?? ''}`);
+    const salary: Salary = {
       text: (variable === undefined ? fixed.text : `${fixed.text} + variable ${variable.text}`).slice(0, 80),
       min: fixed.min,
       max: fixed.max,
       currency: fixed.currency,
       variable: variable?.max ?? null,
     };
+    if (named) return salary;
+    shapedOnly = salary;
   }
-  return null;
+  return shapedOnly;
 }
 
 /** The salary as the text it was written in (what the hints return), or null. */

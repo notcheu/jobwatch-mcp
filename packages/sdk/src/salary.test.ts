@@ -181,3 +181,33 @@ describe('formatSalary', () => {
     expect(text({ min: 120_000, max: 120_000, currency: 'USD', variable: null })).toBe('120 000 $');
   });
 });
+
+describe('a salary next to a salary word beats an amount that only has the shape', () => {
+  it('whatever the order in the text', () => {
+    expect(findSalary('Our clients pay 120k€ for the platform.\nThe salary is 78.000€ per year.')).toBe('78.000€');
+    expect(findSalary('The salary is 78.000€ per year.\nOur clients pay 120k€ for the platform.')).toBe('78.000€');
+  });
+
+  it('with the variable part written after the amount', () => {
+    expect(findSalaryRange('Our clients pay 120k€ for the platform.\nSalary is 78.000€ per year with 10k€ variable')).toEqual({
+      text: '78.000€ + variable 10k€',
+      min: 78_000,
+      max: 78_000,
+      currency: 'EUR',
+      variable: 10_000,
+    });
+  });
+
+  it('on the same line, the amount that is not the salary is left aside only when it is not shaped like one', () => {
+    expect(findSalary('Salary: 78.000€ - clients pay 120k€')).toBe('78.000€');
+  });
+
+  it('falls back to the first shaped amount when no line names a salary, and still skips the excluded lines', () => {
+    expect(findSalary('We pay 90k€ to the right person\nLunch: 150k€\nAnd 120k€ elsewhere')).toBe('90k€');
+    expect(findSalary('Meal voucher 150k€\nAnd 120k€ elsewhere')).toBe('120k€');
+  });
+
+  it('keeps the first of two named salaries', () => {
+    expect(findSalary('Salary: €50.000\nSalary: €90.000')).toBe('€50.000');
+  });
+});
