@@ -69,7 +69,8 @@ export {
   termMatcher,
 } from './jobtext';
 export type { Hints, PostedWithin } from './jobtext';
-export { findSalary } from './salary';
+export { findSalary, findSalaryRange, formatSalary } from './salary';
+export type { Salary } from './salary';
 
 export {
   boardExcludedSchema,

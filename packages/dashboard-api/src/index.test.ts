@@ -29,6 +29,7 @@ const job = {
   fetchedAt: '2026-10-09T12:00:00.000Z',
   lastSeen: '2026-10-09T12:00:00.000Z',
   descriptionChars: 3,
+  salary: null,
   foundBy: [],
 };
 
@@ -54,6 +55,12 @@ describe('the response types', () => {
         token: 'y',
       }).success,
     ).toBe(false);
+  });
+
+  it('carry the salary as numbers and a label, and nothing else', () => {
+    const salary = { min: 65_000, max: 90_000, currency: 'EUR', variable: null, label: '65 000 – 90 000 €' };
+    expect(jobRowSchema.safeParse({ ...job, salary }).success).toBe(true);
+    expect(jobRowSchema.safeParse({ ...job, salary: { ...salary, extra: 1 } }).success).toBe(false);
   });
 
   it('keep the parameters of a call and the description of a job to their detail types', () => {

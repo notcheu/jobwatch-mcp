@@ -27,6 +27,7 @@ const column = createColumnHelper<JobRow>();
 const SORT_NAMES: Record<string, string> = {
   title: 'title',
   company: 'company',
+  salary: 'salary',
   firstSeen: 'first_seen',
   lastSeen: 'last_seen',
   descriptionChars: 'description_chars',
@@ -39,6 +40,20 @@ const columns = [
     cell: (c) => <span className="block max-w-80 truncate font-medium">{c.getValue() ?? '–'}</span>,
   }),
   column.accessor('company', { header: 'Company', cell: (c) => <span className="block max-w-44 truncate">{c.getValue() ?? '–'}</span> }),
+  column.accessor((row) => row.salary?.max ?? null, {
+    id: 'salary',
+    header: 'Salary',
+    cell: (c) => {
+      const salary = c.row.original.salary;
+      return salary === null ? (
+        <span className="text-muted-foreground">–</span>
+      ) : (
+        <span className="whitespace-nowrap tabular-nums" title="Yearly, as stated in the job text">
+          {salary.label}
+        </span>
+      );
+    },
+  }),
   column.accessor('location', {
     header: 'Location',
     enableSorting: false,
@@ -380,6 +395,7 @@ function JobBody({ job }: { job: JobDetail }) {
         <Field label="Last seen">{new Date(job.lastSeen).toLocaleString()}</Field>
         <Field label="Text read">{new Date(job.fetchedAt).toLocaleString()}</Field>
         <Field label="Length">{compact(job.descriptionChars)} characters</Field>
+        {job.salary !== null && <Field label="Salary (yearly)">{job.salary.label}</Field>}
       </div>
       {job.foundBy.length > 0 && (
         <Field label="Found by">

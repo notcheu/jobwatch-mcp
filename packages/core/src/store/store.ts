@@ -1,6 +1,7 @@
 import { chmodSync, closeSync, mkdirSync, openSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { findSalaryRange } from '@jobwatch/sdk';
 
 /** Milliseconds since the epoch. Injected everywhere time matters, so tests control it. */
 export type Clock = () => number;
@@ -49,7 +50,7 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
 /**
  * Each entry upgrades the schema by one version (`PRAGMA user_version`). Never edit a released migration: add a new one.
  * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
- * 6 the per-tool daily totals (`tool_usage_daily`).
+ * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`.
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -148,6 +149,14 @@ const MIGRATIONS: readonly string[] = [
     PRIMARY KEY (day, tool)
   ) WITHOUT ROWID;
   `,
+  // 7: the yearly salary a job text states (see `findSalaryRange` in the SDK), read when the job is stored. NULL when the text states none.
+  `
+  ALTER TABLE jobs ADD COLUMN salary_min INTEGER;
+  ALTER TABLE jobs ADD COLUMN salary_max INTEGER;
+  ALTER TABLE jobs ADD COLUMN salary_currency TEXT;
+  ALTER TABLE jobs ADD COLUMN salary_variable INTEGER;
+  CREATE INDEX jobs_salary_max ON jobs (salary_max);
+  `,
 ];
 
 /** Days of per-tool daily totals kept (docs/plans/17-dashboard.md, D8). */
@@ -196,7 +205,8 @@ export class Store {
     }
     try {
       db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;');
-      Store.migrate(db);
+      const before = Store.migrate(db);
+      if (before < 7) Store.backfillSalaries(db);
       if (path !== ':memory:') chmodSync(path, 0o600);
     } catch (cause) {
       db.close();
@@ -206,7 +216,29 @@ export class Store {
     return new Store(db, days * 24 * 3600 * 1000);
   }
 
-  private static migrate(db: DatabaseSync): void {
+  /** Read the salary of the jobs stored before the salary columns existed (migration 7). One pass, once. */
+  private static backfillSalaries(db: DatabaseSync): void {
+    const found: (string | number | null)[][] = [];
+    for (const row of db.prepare('SELECT platform, id, description FROM jobs').iterate() as Iterable<Rows>) {
+      const salary = findSalaryRange(String(row['description']));
+      if (salary !== null)
+        found.push([salary.min, salary.max, salary.currency, salary.variable, String(row['platform']), String(row['id'])]);
+    }
+    const update = db.prepare(
+      'UPDATE jobs SET salary_min = ?, salary_max = ?, salary_currency = ?, salary_variable = ? WHERE platform = ? AND id = ?',
+    );
+    db.exec('BEGIN');
+    try {
+      for (const values of found) update.run(...values);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  /** Bring the schema up to date. Returns the version the database had before. */
+  private static migrate(db: DatabaseSync): number {
     const row = db.prepare('PRAGMA user_version').get() as Rows | undefined;
     const current = Number(row?.['user_version'] ?? 0);
     if (current > SCHEMA_VERSION) {
@@ -225,6 +257,7 @@ export class Store {
         throw error;
       }
     }
+    return current;
   }
 
   get schemaVersion(): number {
@@ -397,13 +430,17 @@ export class Store {
   putJob(platform: string, job: NewJobRow, now: number): void {
     if (!JOB_ID.test(job.id)) throw new StoreError('invalid job id');
     const text = (value: string | null, max: number): string | null => (value === null ? null : value.slice(0, max));
+    const description = job.description.slice(0, MAX_JOB_DESCRIPTION_CHARS);
+    const salary = findSalaryRange(description);
     this.db
       .prepare(
-        `INSERT INTO jobs (platform, id, first_seen, fetched_at, last_seen, title, company, location, board, url, description)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO jobs (platform, id, first_seen, fetched_at, last_seen, title, company, location, board, url, description,
+                           salary_min, salary_max, salary_currency, salary_variable)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (platform, id) DO UPDATE SET
            fetched_at = excluded.fetched_at, last_seen = excluded.last_seen, title = excluded.title, company = excluded.company, location = excluded.location, board = excluded.board,
-           url = excluded.url, description = excluded.description`,
+           url = excluded.url, description = excluded.description,
+           salary_min = excluded.salary_min, salary_max = excluded.salary_max, salary_currency = excluded.salary_currency, salary_variable = excluded.salary_variable`,
       )
       .run(
         platform,
@@ -416,7 +453,11 @@ export class Store {
         text(job.location, 300),
         text(job.board ?? null, 120),
         job.url.slice(0, 500),
-        job.description.slice(0, MAX_JOB_DESCRIPTION_CHARS),
+        description,
+        salary?.min ?? null,
+        salary?.max ?? null,
+        salary?.currency ?? null,
+        salary?.variable ?? null,
       );
   }
 
@@ -457,11 +498,16 @@ export class Store {
     }
     const condition = where.join(' AND ');
     const sortColumn = filter.sort === undefined ? column : JOB_SORT_COLUMNS[filter.sort];
-    const order = `${sortColumn}${sortColumn === 'title' || sortColumn === 'company' ? ' COLLATE NOCASE' : ''} ${filter.dir === 'asc' ? 'ASC' : 'DESC'}`;
+    const direction = filter.dir === 'asc' ? 'ASC' : 'DESC';
+    // a job with no salary comes last whichever way the column is sorted
+    const order =
+      sortColumn === 'salary_max'
+        ? `salary_max IS NULL, salary_max ${direction}`
+        : `${sortColumn}${sortColumn === 'title' || sortColumn === 'company' ? ' COLLATE NOCASE' : ''} ${direction}`;
     const total = Number(
       (this.db.prepare(`SELECT count(*) AS n FROM jobs WHERE ${condition}`).get(...params) as Rows | undefined)?.['n'] ?? 0,
     );
-    const columns = `platform, id, first_seen, fetched_at, last_seen, title, company, location, board, url, length(description) AS description_chars${
+    const columns = `platform, id, first_seen, fetched_at, last_seen, title, company, location, board, url, salary_min, salary_max, salary_currency, salary_variable, length(description) AS description_chars${
       filter.withDescription ? ', description' : ", '' AS description"
     }`;
     const rows = this.db
@@ -637,6 +683,7 @@ export const JOB_SORT_COLUMNS = {
   title: 'title',
   company: 'company',
   description_chars: 'description_chars',
+  salary: 'salary_max',
 } as const;
 
 export interface JobListFilter {
@@ -667,7 +714,16 @@ export interface ListedJobRow extends StoredJobRow {
   descriptionChars: number;
 }
 
+/** The yearly salary read from a job text when it was stored. */
+export interface StoredSalary {
+  min: number;
+  max: number;
+  currency: string;
+  variable: number | null;
+}
+
 export interface StoredJobRow extends NewJobRow {
+  salary: StoredSalary | null;
   firstSeen: number;
   fetchedAt: number;
   lastSeen: number;
@@ -684,6 +740,15 @@ function toJob(row: Rows): StoredJobRow {
     board: nullable(row['board']),
     url: String(row['url']),
     description: String(row['description']),
+    salary:
+      row['salary_max'] === null || row['salary_max'] === undefined
+        ? null
+        : {
+            min: Number(row['salary_min']),
+            max: Number(row['salary_max']),
+            currency: String(row['salary_currency']),
+            variable: row['salary_variable'] === null ? null : Number(row['salary_variable']),
+          },
     firstSeen: Number(row['first_seen']),
     fetchedAt: Number(row['fetched_at']),
     lastSeen: Number(row['last_seen']),

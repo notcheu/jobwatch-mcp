@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { extractHints } from './jobtext';
-import { findSalary } from './salary';
+import { findSalary, findSalaryRange, formatSalary } from './salary';
 
 describe('findSalary', () => {
   it('reads a labelled range with the currency in front of each end', () => {
@@ -34,8 +34,7 @@ describe('findSalary', () => {
     expect(findSalary('Salary: depends on experience. We handle 500k€ a month.')).toBeNull();
   });
 
-  it('ignores a figure with no salary word near it, and daily, monthly or million figures next to one', () => {
-    expect(findSalary('Our clients pay 120k€ for the platform')).toBeNull();
+  it('ignores daily, monthly and million figures, even next to a salary word', () => {
     expect(findSalary('Pay: 60-70k€')).toBe('60-70k€');
     expect(findSalary('Salary 4.000€/month')).toBeNull();
     expect(findSalary('Salary budget of 2 M€')).toBeNull();
@@ -102,5 +101,83 @@ describe('the hints of the real pages that went wrong', () => {
     expect(extractHints('minimum 8 ans d’expérience en vente B2B, dont 2 ans sur un segment Mid Market').years_hints).toEqual([2, 8]);
     expect(extractHints('Más de 3 años de experiencia en ventas').years_hints).toEqual([3]);
     expect(extractHints('We were founded 10 years ago and plan to double in 3 years.').years_hints).toEqual([]);
+  });
+});
+
+describe('an amount that has the shape of a salary needs no salary word', () => {
+  it.each([
+    ['We pay up to 65k€ for this role', '65k€'],
+    ['Budget: 120K€ fixe', '120K€'],
+    ['Our package starts at €65.000', '€65.000'],
+    ['€ 65 000 for the right person', '€ 65 000'],
+    ['You will earn 65,000 € plus benefits', '65,000 €'],
+    ['up to $120,000', '$120,000'],
+    ['£85k', '£85k'],
+    ['CHF 95k', 'CHF 95k'],
+    ['95k CHF', '95k CHF'],
+    ['70 000 USD', '70 000 USD'],
+    ['SEK 650 000', 'SEK 650 000'],
+    ['¥850,000', '¥850,000'],
+  ])('%s', (line, expected) => {
+    expect(findSalary(line)).toBe(expected);
+  });
+
+  it('reads the range of such amounts, and a currency-less lower end', () => {
+    expect(findSalary('We offer 65k€ - 85k€ depending on seniority')).toBe('65k€ - 85k€');
+    expect(findSalary('65-85k€')).toBe('65-85k€');
+  });
+
+  it('still refuses what is not a salary, shaped like one or not', () => {
+    for (const line of [
+      'Provide a payment engine (500k€/day payment stack)',
+      'Revenue of 500k€ per month',
+      'Meal voucher of 100k€',
+      'We raised €120.000.000 in funding',
+      'Equity worth 200k€',
+      'Our valuation is 150k€',
+      'A 6€ ticket restaurant',
+      '65k employees, 120 000 users',
+      'The offer 2025 000',
+    ])
+      expect(findSalary(line), line).toBeNull();
+  });
+});
+
+describe('findSalaryRange', () => {
+  it('gives the numbers of a range and a fixed amount, in currency units per year', () => {
+    expect(findSalaryRange('Salary range: €72.000 - €115.000')).toEqual({
+      text: '€72.000 - €115.000',
+      min: 72_000,
+      max: 115_000,
+      currency: 'EUR',
+      variable: null,
+    });
+    expect(findSalaryRange('55-65k€')).toMatchObject({ min: 55_000, max: 65_000, currency: 'EUR' });
+    expect(findSalaryRange('$120,000')).toMatchObject({ min: 120_000, max: 120_000, currency: 'USD' });
+    expect(findSalaryRange('CHF 95k')).toMatchObject({ min: 95_000, max: 95_000, currency: 'CHF' });
+    expect(findSalaryRange('95 000 euros')).toMatchObject({ currency: 'EUR' });
+  });
+
+  it('keeps the variable part apart', () => {
+    expect(findSalaryRange('Remuneración fija bruta anual: 26.400€ + Variable adicional: 12.500€')).toMatchObject({
+      min: 26_400,
+      max: 26_400,
+      variable: 12_500,
+    });
+  });
+
+  it('is null when there is none', () => {
+    expect(findSalaryRange('No figures here, only React.')).toBeNull();
+  });
+});
+
+describe('formatSalary', () => {
+  it('shows one value for a fixed amount and a range for a range', () => {
+    const text = (s: Parameters<typeof formatSalary>[0]) => formatSalary(s).replace(/\s/g, ' ');
+    expect(text({ min: 65_000, max: 65_000, currency: 'EUR', variable: null })).toBe('65 000 €');
+    expect(text({ min: 72_000, max: 115_000, currency: 'EUR', variable: null })).toBe('72 000 – 115 000 €');
+    expect(text({ min: 26_400, max: 26_400, currency: 'EUR', variable: 12_500 })).toBe('26 400 € + 12 500 € variable');
+    expect(text({ min: 85_000, max: 95_000, currency: 'CHF', variable: null })).toBe('85 000 – 95 000 CHF');
+    expect(text({ min: 120_000, max: 120_000, currency: 'USD', variable: null })).toBe('120 000 $');
   });
 });
