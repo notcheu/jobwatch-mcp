@@ -33,7 +33,7 @@ import {
   type RuntimeManager,
   type Store,
 } from '@jobwatch/core';
-import { buildCatalog, extractHints, formatSalary, summarizeJob } from '@jobwatch/sdk';
+import { buildCatalog, extractHints, summarizeJob } from '@jobwatch/sdk';
 import { z } from 'zod';
 
 /** What the dashboard reads. Nothing here can start a browser, call a site or spend a rate-limit unit. */
@@ -144,9 +144,9 @@ function parseDate(name: string, value: string | undefined, fallback: number): n
   return ms;
 }
 
-/** The salary of a stored job with its label, or null. */
+/** The salary of a stored job, or null. */
 function salaryOf(salary: StoredSalary | null) {
-  return salary === null ? null : { ...salary, label: formatSalary(salary) };
+  return salary;
 }
 
 export function listJobs(data: DashboardData, query: unknown): JobsPage {
@@ -220,7 +220,7 @@ export function getJob(data: DashboardData, source: string, id: string): JobDeta
     summary: summary.summary,
     summaryKind: summary.kind,
     outline: summary.outline,
-    hints: { stack: hints.stack_hints, years: hints.years_hints, remote: hints.remote_hints, salary: hints.salary_text },
+    hints: { years: hints.years_hints, remote: hints.remote_hints, salary: hints.salary_text },
   });
 }
 

@@ -4,6 +4,7 @@ import {
   boardJobSchema,
   describeJob,
   detailFields,
+  matchedTerms,
   defineAdapter,
   defineBrowserTool,
   fitToBytes,
@@ -105,7 +106,13 @@ const termFields = {
 
 const annotations = { readOnlyHint: true, openWorldHint: true, idempotentHint: true } as const;
 
-function toJob(job: AcceptedJob, detail: Detail, maxChars: number, posted: ReadonlyMap<string, ApecCard>): Job {
+function toJob(
+  job: AcceptedJob,
+  detail: Detail,
+  maxChars: number,
+  hintTerms: readonly string[],
+  posted: ReadonlyMap<string, ApecCard>,
+): Job {
   const card = posted.get(job.id);
   return {
     id: job.id,
@@ -122,7 +129,7 @@ function toJob(job: AcceptedJob, detail: Detail, maxChars: number, posted: Reado
     first_seen: job.firstSeen,
     fetched_at: job.fetchedAt,
     last_seen: job.lastSeen,
-    stack_hints: job.stack_hints,
+    matched_terms: matchedTerms(job.description, hintTerms),
     years_hints: job.years_hints,
     remote_hints: job.remote_hints,
     salary_text: card?.salary_text && !/négocier/i.test(card.salary_text) ? card.salary_text : job.salary_text,
@@ -180,7 +187,7 @@ const job = defineBrowserTool({
       },
     });
     const { fit, rest } = fitToBytes(
-      outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, new Map())),
+      outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, args.hint_terms, new Map())),
       JOBS_JSON_BUDGET,
     );
     return {
@@ -266,7 +273,7 @@ const search = defineBrowserTool({
     });
     const byId = new Map(found.cards.map((card) => [card.id, card] as const));
     const { fit, rest } = fitToBytes(
-      outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, byId)),
+      outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, args.hint_terms, byId)),
       JOBS_JSON_BUDGET,
     );
     const notReturned = [...rest, ...outcome.notReturned];

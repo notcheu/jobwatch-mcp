@@ -27,27 +27,10 @@ export function termMatcher(terms: readonly string[]): (text: string) => string 
   };
 }
 
-const STACK: [string, RegExp][] = [
-  ['react', /\bReact(?:\.js|JS)?\b/],
-  ['next.js', /\bNext\.?js\b/i],
-  ['typescript', /\bTypeScript\b/i],
-  ['javascript', /\bJavaScript\b/i],
-  ['angular', /\bAngular(?:JS)?\b/],
-  ['vue', /\bVue(?:\.js)?\b|\bNuxt\b/], // case-sensitive: the French word "vue" is everywhere
-  ['node.js', /\bNode(?:\.js)?\b/],
-  ['java', /\bJava\b(?!\s*Script)/],
-  ['kotlin', /\bKotlin\b/i],
-  ['php', /\bPHP\b|\bSymfony\b/],
-  ['python', /\bPython\b/i],
-  ['svelte', /\bSvelte\b/i],
-  ['graphql', /\bGraphQL\b/i],
-  ['storybook', /\bStorybook\b/i],
-  ['design-system', /\bdesign[- ]systems?\b/i],
-  ['micro-frontends', /\bmicro[- ]?front-?ends?\b/i],
-];
-const YEARS = /(\d{1,2})\s*\+?\s*(?:ans|an|years?|yrs?|a[ñn]os)\b/gi;
+const YEARS = /(\d{1,2})\s*\+?\s*(?:ans|an|years?|yrs?|a[ñn]os|jahre?n?|anni|anos|jaar|jaren)\b/gi;
 /** A number of years is a required experience only when the text says experience around it (not "triple the valuation in 2 years"). */
-const EXPERIENCE = /exp[ée]rience|exp[ée]riment|experiencia|seniority|background|track record|expertise/i;
+const EXPERIENCE =
+  /exp[ée]rience|exp[ée]riment|experiencia|experi[eê]ncia|esperienza|erfahrung|ervaring|seniority|background|track record|expertise/i;
 const EXPERIENCE_WINDOW = 60;
 const REMOTE = [
   // the specific forms first: the number of days is the useful part
@@ -57,14 +40,31 @@ const REMOTE = [
   /\bfull[- ]remote\b/i,
   /\bremote\b/i,
   /\bt[ée]l[ée]travail\b/i,
+  /\bhome[- ]?office\b|\bsmart[- ]working\b|\blavoro (?:da|in) remoto\b|\btrabalho remoto\b|\btrabajo remoto\b|\bthuiswerk\w*|\bremote[- ]?arbeit\b/i,
   /\bhybrid(?:e)?\b/i,
   /\b\d+\s*(?:jours?|days?)\s*(?:de\s*)?(?:t[ée]l[ée]travail|remote|on-?site|au bureau)/i,
 ];
 export interface Hints {
-  stack_hints: string[];
   years_hints: number[];
   remote_hints: string[];
   salary_text: string | null;
+}
+
+/**
+ * Which of the caller's words or phrases a text contains, as the caller wrote them (whole words, case and accents as `termMatcher`).
+ * There is no built-in list: what is worth looking for (a technology, a tool, a certification, a skill) depends on the job being
+ * searched, so the caller says it (`hint_terms`).
+ */
+export function matchedTerms(text: string, terms: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const found: string[] = [];
+  for (const raw of terms) {
+    const term = raw.trim();
+    if (term === '' || seen.has(term.toLowerCase())) continue;
+    seen.add(term.toLowerCase());
+    if (termMatcher([term])(text) !== null) found.push(term);
+  }
+  return found.slice(0, 30);
 }
 
 export function extractHints(description: string): Hints {
@@ -86,7 +86,6 @@ export function extractHints(description: string): Hints {
     if (match !== null) remote.add(match[0].toLowerCase());
   }
   return {
-    stack_hints: STACK.filter(([, pattern]) => pattern.test(text)).map(([name]) => name),
     years_hints: [...years].sort((a, b) => a - b).slice(0, 6),
     remote_hints: [...remote].slice(0, 6),
     salary_text: findSalary(text),

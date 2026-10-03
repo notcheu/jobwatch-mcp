@@ -62,6 +62,8 @@ services:
       JW_RUNTIME: docker
       JW_BROWSER_IMAGE: ${JW_BROWSER_IMAGE:-jobwatch-browser:latest}
       JW_BROWSER_NETWORK: jobwatch_jobwatch-browsers   # compose names networks <project>_<name>; the project is `jobwatch`
+      JW_DEFAULT_LOCATION: ${JW_DEFAULT_LOCATION:-}
+      JW_LINKEDIN_GEO_ALIASES: ${JW_LINKEDIN_GEO_ALIASES:-}
       JW_BROWSER_LANG: ${JW_BROWSER_LANG:-fr-FR}
       JW_BROWSER_MAX_TABS: ${JW_BROWSER_MAX_TABS:-3}   # most tabs open at once; 1 = a single tab, more than 1 lets adapters call session.openTab()
       JW_BROWSER_ACCEPT_LANGS: ${JW_BROWSER_ACCEPT_LANGS:-}   # personal list copied from your everyday browser: set it in deploy/.env

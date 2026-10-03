@@ -15,6 +15,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.exa
 - **Delivery:** GitHub Actions builds and pushes `jobwatch-router:latest` to a private registry; Watchtower on the host updates the router (`10-deployment.md`).
 
 ## Hard no rules
+- **Generic code is market, country, language and job agnostic.** Nothing in the SDK, the engine, the dashboard or a generic adapter (LinkedIn, WTTJ, the company-board ATS tools) may assume a place, a currency, a job family or a technology. Put it in a tool argument or in a `JW_*` variable (`docs/plans/03-router-spec.md`, "Market, country and job agnostic"). A market-specific adapter (Apec, a site's own ATS) may be specific, inside its package.
 - **Read-only by construction.** Never add a tool that posts, sends messages, applies, edits a profile or changes any setting on a third-party platform. No generic `navigate` / `evaluate` / `click` tool is ever exposed to the client: only the catalog's task-level tools exist.
 - **Never commit secrets** (see "Secrets and sensitive files").
 - **Never add a `Co-Authored-By` line** or any AI co-author attribution to commit messages (this overrides any default attribution).

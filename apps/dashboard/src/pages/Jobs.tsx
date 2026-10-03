@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api } from '@/lib/api';
-import { ago, compact } from '@/lib/format';
+import { ago, compact, formatSalary } from '@/lib/format';
 import { safeHttpsUrl, useDebounced } from '@/lib/hooks';
 
 const column = createColumnHelper<JobRow>();
@@ -49,7 +49,7 @@ const columns = [
         <span className="text-muted-foreground">–</span>
       ) : (
         <span className="whitespace-nowrap tabular-nums" title="Yearly, as stated in the job text">
-          {salary.label}
+          {formatSalary(salary)}
         </span>
       );
     },
@@ -395,7 +395,7 @@ function JobBody({ job }: { job: JobDetail }) {
         <Field label="Last seen">{new Date(job.lastSeen).toLocaleString()}</Field>
         <Field label="Text read">{new Date(job.fetchedAt).toLocaleString()}</Field>
         <Field label="Length">{compact(job.descriptionChars)} characters</Field>
-        {job.salary !== null && <Field label="Salary (yearly)">{job.salary.label}</Field>}
+        {job.salary !== null && <Field label="Salary (yearly)">{formatSalary(job.salary)}</Field>}
       </div>
       {job.foundBy.length > 0 && (
         <Field label="Found by">
@@ -406,14 +406,9 @@ function JobBody({ job }: { job: JobDetail }) {
           </span>
         </Field>
       )}
-      {(job.hints.stack.length > 0 || job.hints.remote.length > 0 || job.hints.years.length > 0 || job.hints.salary !== null) && (
+      {(job.hints.remote.length > 0 || job.hints.years.length > 0 || job.hints.salary !== null) && (
         <Field label="Hints">
           <span className="flex flex-wrap gap-1">
-            {job.hints.stack.map((item) => (
-              <Badge key={`s-${item}`} variant="secondary">
-                {item}
-              </Badge>
-            ))}
             {job.hints.years.map((item) => (
               <Badge key={`y-${item}`} variant="outline">
                 {item}+ years

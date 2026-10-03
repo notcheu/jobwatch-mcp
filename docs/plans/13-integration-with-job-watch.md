@@ -11,8 +11,8 @@ Only **how sources are read**. Profile, criteria, triage, mail template/rules, m
 | Old step (Chrome extension) | New step (orchestrator tools) |
 |---|---|
 | Check Chrome availability (`tabs_context_mcp`) | Check connector availability: call `session_status("all")`; `needs_login`/`checkpoint` → notify the owner, fall back if possible |
-| LinkedIn Paris daily (2 keyword sets, 50 results each, `f_TPR=r86400`) | `linkedin_search(keywords=…, geo="paris_idf", posted_within="last_24_hours", max_results=50, disallowed_terms=[…per search…], disallowed_scope="title_then_description")`; repeat a call while `remaining_ids` is not empty |
-| LinkedIn France remote (post-filter) | `linkedin_search(geo="france", remote_only=true, posted_within="last_24_hours", max_results=50, max_jobs=0)` (cards only) then `linkedin_job` for plausible ones |
+| LinkedIn Paris daily (2 keyword sets, 50 results each, `f_TPR=r86400`) | `linkedin_search(keywords=…, geo="Paris, France", posted_within="last_24_hours", max_results=50, disallowed_terms=[…per search…], disallowed_scope="title_then_description")`; repeat a call while `remaining_ids` is not empty |
+| LinkedIn France remote (post-filter) | `linkedin_search(geo="France", remote_only=true, posted_within="last_24_hours", max_results=50, max_jobs=0)` (cards only) then `linkedin_job` for plausible ones |
 | Wednesday sweep (5 pages, no time filter, all offers) | `linkedin_search(posted_within="any", max_results=125, max_jobs=0)` (+ `linkedin_job` for unseen plausible cards); promoted flag available in cards |
 | Weekly summary and keyword review | `stored_jobs(since="<monday>", until="<next monday>", terms=[…the search keywords…])` for the counts per source, board, day and keyword (no text), then `stored_jobs(detail="summary", only_matching=true, offset=…)` or `stored_job_texts` for the few jobs worth reading. No adapter is called |
 | WTTJ matches | `wttj_matches` (Phase 3) |
@@ -40,5 +40,5 @@ Only **how sources are read**. Profile, criteria, triage, mail template/rules, m
 The Chrome-extension runs spent many calls per source (navigate, run JS, read chunks). With tools, a daily run is a handful of calls returning compact JSON (descriptions truncated to ~1.2–1.5k chars and only for unseen, plausible titles). Measure tokens per run before/after during the parallel-run phase.
 
 ## Data passed between the two worlds
-- Input to tools: `skip_ids` (strings), keywords from `01-profile.md`'s title list, geo presets.
+- Input to tools: `skip_ids` (strings), keywords from `01-profile.md`'s title list, locations.
 - Output from tools: normalized cards; the routine maps them to its mail fields (`TITLE`, `COMPANY`, `LOCATION`, `SALARY`, `PUBLISHED`, `SUMMARY`, flags). Flags logic remains in `01-profile.md`.

@@ -4,6 +4,7 @@ import {
   boardJobSchema,
   describeJob,
   detailFields,
+  matchedTerms,
   defineAdapter,
   defineBrowserTool,
   fitToBytes,
@@ -93,7 +94,7 @@ const termFields = {
 };
 const annotations = { readOnlyHint: true, openWorldHint: true, idempotentHint: true } as const;
 
-function toJob(job: AcceptedJob, detail: Detail, maxChars: number, cards: ReadonlyMap<string, Card>): Job {
+function toJob(job: AcceptedJob, detail: Detail, maxChars: number, hintTerms: readonly string[], cards: ReadonlyMap<string, Card>): Job {
   const card = cards.get(job.id);
   return {
     id: job.id,
@@ -110,7 +111,7 @@ function toJob(job: AcceptedJob, detail: Detail, maxChars: number, cards: Readon
     first_seen: job.firstSeen,
     fetched_at: job.fetchedAt,
     last_seen: job.lastSeen,
-    stack_hints: job.stack_hints,
+    matched_terms: matchedTerms(job.description, hintTerms),
     years_hints: job.years_hints,
     remote_hints: card?.remote_policy
       ? [...new Set([card.remote_policy.toLowerCase(), ...job.remote_hints])].slice(0, 6)
@@ -184,7 +185,7 @@ const job = defineBrowserTool({
       },
     });
     const { fit, rest } = fitToBytes(
-      outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, new Map())),
+      outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, args.hint_terms, new Map())),
       JOBS_JSON_BUDGET,
     );
     return {
@@ -285,7 +286,7 @@ const matches = defineBrowserTool({
       ),
     });
     const { fit, rest } = fitToBytes(
-      outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, byId)),
+      outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, args.hint_terms, byId)),
       JOBS_JSON_BUDGET,
     );
     const notReturned = [...rest, ...outcome.notReturned];

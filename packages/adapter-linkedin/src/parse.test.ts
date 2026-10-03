@@ -1,7 +1,8 @@
+import { JobwatchError } from '@jobwatch/sdk';
 import { describe, expect, it } from 'vitest';
 import { aiSearchResultsLayout } from './layouts/aiSearchResults';
 import { classicLayout } from './layouts/classic';
-import { classifyPage, geoId, isJobId, jobUrl, parseCard, postedParam, workMode } from './parse';
+import { classifyPage, geoParam, isJobId, jobUrl, parseCard, parseGeoAliases, postedParam, resolveGeo, workMode } from './parse';
 
 describe('ids and urls', () => {
   it('accepts numeric job ids only', () => {
@@ -14,10 +15,29 @@ describe('ids and urls', () => {
     expect(() => jobUrl('4012345678/../x')).toThrow(RangeError);
   });
 
-  it('resolves presets and numeric geo ids, nothing else (not even prototype keys)', () => {
-    expect(geoId('paris_idf')).toBe('104246759');
-    expect(geoId('987654')).toBe('987654');
-    for (const bad of ['toString', 'constructor', 'paris', '12', '1;2']) expect(() => geoId(bad)).toThrow(RangeError);
+  it('turns a numeric geo into a geoId and a place name into a location, and refuses what cannot be one', () => {
+    expect(geoParam('987654')).toBe('geoId=987654');
+    expect(geoParam('Berlin, Germany')).toBe('location=Berlin%2C%20Germany');
+    expect(geoParam('São Paulo')).toBe('location=S%C3%A3o%20Paulo');
+    expect(() => geoParam('x'.repeat(101))).toThrow(RangeError);
+    expect(() => geoParam('a\nb')).toThrow(RangeError);
+  });
+
+  it('has no place built in: the argument, else JW_DEFAULT_LOCATION, else a refusal that says what to set', () => {
+    expect(resolveGeo('Austin, Texas', {})).toBe('Austin, Texas');
+    expect(resolveGeo(undefined, { JW_DEFAULT_LOCATION: 'Lisbon' })).toBe('Lisbon');
+    expect(resolveGeo('Madrid', { JW_DEFAULT_LOCATION: 'Lisbon' })).toBe('Madrid');
+    expect(() => resolveGeo(undefined, {})).toThrow(/JW_DEFAULT_LOCATION/);
+    expect(() => resolveGeo('  ', {})).toThrow(JobwatchError);
+  });
+
+  it('knows only the aliases the operator gives (JW_LINKEDIN_GEO_ALIASES)', () => {
+    const env = { JW_LINKEDIN_GEO_ALIASES: 'home=104246759, Nordics = 111222333, broken, bad=12' };
+    expect(resolveGeo('home', env)).toBe('104246759');
+    expect(resolveGeo('NORDICS', env)).toBe('111222333');
+    expect(resolveGeo('bad', env)).toBe('bad'); // not a geoId: kept as a place name
+    expect(resolveGeo('home', {})).toBe('home');
+    expect([...parseGeoAliases(undefined)]).toEqual([]);
   });
 });
 
@@ -85,10 +105,11 @@ describe('date range', () => {
     ['classic', classicLayout],
     ['ai', aiSearchResultsLayout],
   ])('puts it in the %s search url, with the geo and the page offset', (_name, layout) => {
-    const base = { keywords: 'full stack', geo: 'paris_idf', remote_only: false, page: 3, max_results: 25 } as const;
+    const base = { keywords: 'full stack', geo: '104246759', remote_only: false, page: 3, max_results: 25 } as const;
     const week = layout.searchUrl({ ...base, posted_within: 'past_week' });
     expect(week).toContain('f_TPR=r604800');
     expect(week).toContain('geoId=104246759');
+    expect(layout.searchUrl({ ...base, geo: 'Berlin, Germany', posted_within: 'any' })).toContain('location=Berlin%2C%20Germany');
     expect(week).toContain('start=50');
     expect(layout.searchUrl({ ...base, posted_within: 'any' })).not.toContain('f_TPR');
     expect(layout.searchUrl({ ...base, posted_within: 'past_month' })).toContain('f_TPR=r2592000');

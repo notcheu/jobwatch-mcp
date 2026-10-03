@@ -24,28 +24,68 @@ interface Amount {
   raw: string;
 }
 
-const SYMBOLS: Record<string, string> = { '€': 'EUR', '£': 'GBP', $: 'USD', '¥': 'JPY', '₹': 'INR' };
-const CODES = 'EUR|USD|GBP|CHF|CAD|AUD|NZD|SEK|NOK|DKK|PLN|CZK|HUF|RON|JPY|CNY|INR|AED|MAD|BRL|MXN|SGD|HKD|ZAR';
-const CURRENCY = `(?:[€£$¥₹]|(?:${CODES})\\b|euros?\\b|dollars?\\b)`;
+const SYMBOLS: Record<string, string> = {
+  '€': 'EUR',
+  '£': 'GBP',
+  $: 'USD',
+  '¥': 'JPY',
+  '₹': 'INR',
+  '₩': 'KRW',
+  '₺': 'TRY',
+  '₪': 'ILS',
+  '₽': 'RUB',
+};
+const CODES =
+  'EUR|USD|GBP|CHF|CAD|AUD|NZD|SEK|NOK|DKK|PLN|CZK|HUF|RON|BGN|TRY|ILS|JPY|CNY|KRW|TWD|THB|IDR|VND|PHP|MYR|INR|PKR|AED|SAR|QAR|EGP|MAD|NGN|KES|ZAR|BRL|MXN|ARS|CLP|COP|PEN|RUB|UAH|SGD|HKD';
+const CURRENCY = `(?:[€£$¥₹₩₺₪₽]|(?:${CODES})\\b|euros?\\b|dollars?\\b)`;
 const NUMBER = new RegExp(
   `(?<pre>${CURRENCY}\\s?)?(?<num>\\d{1,3}(?:[.,\\u202f ]\\d{3})+(?:[.,]\\d+)?|\\d+(?:[.,]\\d+)?)\\s?(?<k>[kK])?(?!\\w)\\s?(?<post>${CURRENCY})?`,
   'giu',
 );
-/** An amount that is a salary by its shape alone: 2 or 3 digits then `k` or a group of thousands, with a currency: `65k€`, `€65.000`, `$120,000`. */
-const THOUSANDS = '\\d{2,3}(?:[kK]|[.,\\u202f ]?\\d{3})';
+/**
+ * An amount that is a salary by its shape alone: 2 or 3 digits then `k` or a group of thousands, or two groups for currencies whose
+ * figures are large (`6,000,000`), with a currency: `65k€`, `€65.000`, `$120,000`, `¥6,000,000`.
+ */
+const THOUSANDS = '(?:\\d{2,3}(?:[kK]|[.,\\u202f ]?\\d{3})|\\d{1,3}(?:[.,\\u202f ]\\d{3}){2})';
 const SALARY_SHAPE = new RegExp(`^(?:${CURRENCY}\\s?${THOUSANDS}|${THOUSANDS}\\s?${CURRENCY})$`, 'iu');
 
 const RANGE_SEPARATOR = /^\s*(?:-|–|—|to|à|a)\s*$/i;
 const SALARY_WORDS =
-  /salary|salaire|r[ée]mun[ée]ration|remuneraci[oó]n|compensation|salario|\bpay\s*(?:range|:)|gross|\bbrut|bruto|\bOTE\b|package|\bfix(?:e|ed|a)\b|per (?:year|annum)|annual|par an|\/ ?an\b|annuel|anual/i;
+  /salary|salaire|r[ée]mun[ée]ration|remuneraci[oó]n|remunera[cç][aã]o|compensation|salario|sal[aá]rio|gehalt|verg[üu]tung|stipendio|retribuzione|salaris|\bloon\b|\bpay\s*(?:range|:)|gross|\bbrut|bruto|\bOTE\b|package|\bfix(?:e|ed|a|o)\b|per (?:year|annum)|annual|par an|\/ ?an\b|annuel|anual|j[äa]hrlich|pro jahr|annuo|per jaar|por ano/i;
 /** Lines whose amounts are something else: meal vouchers, funding, valuation, revenue. */
 const NOT_A_SALARY_LINE =
-  /ticket|repas|restaurant|voucher|swile|edenred|lunch|meal|titres|d[ée]jeuner|almuerzo|equity|valuation|series [a-e]|raised|lev[ée]e|funding|revenue|\bARR\b|chiffre d'affaires/i;
+  /ticket|repas|restaurant|voucher|swile|edenred|lunch|meal|titres|d[ée]jeuner|almuerzo|essen|buono pasto|vale[- ]refei|maaltijd|equity|valuation|series [a-e]|raised|lev[ée]e|funding|revenue|\bARR\b|chiffre d'affaires|umsatz|fatturato/i;
 /** What right after an amount says it is not a yearly salary: millions, per day, per month. */
 const NOT_YEARLY_AFTER =
-  /^\s*(?:m\b|million|millions|mn\b|bn\b|billion|\/\s?(?:day|jour|dia|month|mois)|per (?:day|month)|par (?:jour|mois)|a (?:day|month))/i;
+  /^\s*(?:m\b|million|millions|mn\b|bn\b|billion|\/\s?(?:day|jour|dia|month|mois|monat|mese|m[eê]s|maand|mo\b|hour|heure|hora|h\b)|per (?:day|month|hour)|par (?:jour|mois|heure)|pro (?:tag|monat|stunde)|al mese|por m[eê]s|per maand|a (?:day|month))/i;
 
-const MIN_YEARLY = 15_000;
+/**
+ * What a yearly salary can plausibly be, in currency units. The scale differs by currency (a salary of 6 000 000 is ordinary in yen and
+ * absurd in euros), so a currency known for large nominal figures gets a hundred times the room; every other one gets the default.
+ */
+const LARGE_NOMINAL = new Set([
+  'JPY',
+  'KRW',
+  'IDR',
+  'VND',
+  'INR',
+  'PKR',
+  'HUF',
+  'CLP',
+  'COP',
+  'NGN',
+  'KES',
+  'TWD',
+  'RUB',
+  'CZK',
+  'ARS',
+  'PHP',
+  'THB',
+]);
+const bounds = (currency: string, minimum: number): { min: number; max: number } =>
+  LARGE_NOMINAL.has(currency) ? { min: minimum * 20, max: MAX_YEARLY * 100 } : { min: minimum, max: MAX_YEARLY };
+
+const MIN_YEARLY = 10_000;
 /** A variable part can be small next to the fixed one. */
 const MIN_VARIABLE = 1_000;
 const MAX_YEARLY = 1_000_000;
@@ -110,7 +150,8 @@ function yearlyAmounts(line: string, minimum = MIN_YEARLY): YearlyAmount[] {
     const upper = joined && next !== undefined ? next : current;
     if (upper.currency === null) continue;
     if (NOT_YEARLY_AFTER.test(line.slice(upper.end))) continue;
-    if (upper.value < minimum || upper.value > MAX_YEARLY) continue;
+    const range = bounds(upper.currency, minimum);
+    if (upper.value < range.min || upper.value > range.max) continue;
     // "55-65k€": the lower end is written without its k
     const min = joined && upper.thousands && !current.thousands && current.value < 1000 ? current.value * 1000 : current.value;
     found.push({
@@ -173,15 +214,3 @@ export function findSalaryRange(text: string): Salary | null {
 
 /** The salary as the text it was written in (what the hints return), or null. */
 export const findSalary = (text: string): string | null => findSalaryRange(text)?.text ?? null;
-
-/**
- * A salary for a table cell: one value when the range is a single amount, else `72 000 – 115 000 €`; `+ 12 500 € variable` follows when
- * the text states one. Amounts are written with a thin space, the currency symbol after, the code when there is no symbol.
- */
-export function formatSalary(salary: Pick<Salary, 'min' | 'max' | 'currency' | 'variable'>, locale = 'fr-FR'): string {
-  const symbols: Record<string, string> = { EUR: '€', GBP: '£', USD: '$', JPY: '¥', INR: '₹' };
-  const suffix = symbols[salary.currency] ?? salary.currency;
-  const number = (value: number): string => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
-  const fixed = salary.min === salary.max ? `${number(salary.max)} ${suffix}` : `${number(salary.min)} – ${number(salary.max)} ${suffix}`;
-  return salary.variable === null ? fixed : `${fixed} + ${number(salary.variable)} ${suffix} variable`;
-}

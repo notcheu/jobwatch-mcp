@@ -310,7 +310,8 @@ describe('the API in local development mode (no sign-in)', () => {
     const job = await json(await t.call('/dashboard/api/v1/jobs/linkedin/1000001'));
     expect(job.description).toContain('Build Frontend Engineer with React');
     expect(job.outline.length).toBeGreaterThan(0);
-    expect(job.hints.stack).toContain('react');
+    expect(job.hints).toMatchObject({ years: [5] });
+    expect(job.hints.stack).toBeUndefined(); // no technology list is built in
     expect(job.foundBy).toEqual(['react']);
     expect((await t.call('/dashboard/api/v1/jobs/linkedin/9999999')).status).toBe(404);
     expect((await t.call('/dashboard/api/v1/jobs/Bad%20Source/1')).status).toBe(404);
