@@ -8,7 +8,7 @@ interface Amount {
 }
 
 const NUMBER =
-  /(?<pre>[€£$])?\s?(?<num>\d{1,3}(?:[.,  ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s?(?<k>[kK])?(?!\w)\s?(?<post>€|EUR\b|euros?\b|£|GBP\b|\$|USD\b)?/gu;
+  /(?<pre>[€£$])?\s?(?<num>\d{1,3}(?:[.,\u202f ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s?(?<k>[kK])?(?!\w)\s?(?<post>€|EUR\b|euros?\b|£|GBP\b|\$|USD\b)?/gu;
 const RANGE_SEPARATOR = /^\s*(?:-|–|—|to|à|a)\s*$/i;
 const SALARY_WORDS =
   /salary|salaire|r[ée]mun[ée]ration|remuneraci[oó]n|compensation|salario|\bpay\s*(?:range|:)|gross|\bbrut|bruto|\bOTE\b|package|\bfix(?:e|ed|a)\b|per (?:year|annum)|annual|par an|\/ ?an\b|annuel|anual/i;
@@ -25,7 +25,7 @@ const MIN_VARIABLE = 1_000;
 const MAX_YEARLY = 1_000_000;
 
 function parseValue(num: string, thousands: boolean): number {
-  const compact = num.replace(/[\s ]/g, '');
+  const compact = num.replace(/\s/g, '');
   if (/^\d{1,3}([.,]\d{3})+$/.test(compact)) return Number(compact.replace(/[.,]/g, ''));
   const value = Number(compact.replace(',', '.'));
   return thousands ? value * 1000 : value;
