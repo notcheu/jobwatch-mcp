@@ -28,11 +28,12 @@ import {
   type InstalledAdapters,
   type PlatformStatus,
   type RateLimiter,
+  type StoredSalary,
   type Registry,
   type RuntimeManager,
   type Store,
 } from '@jobwatch/core';
-import { buildCatalog, extractHints, summarizeJob } from '@jobwatch/sdk';
+import { buildCatalog, extractHints, formatSalary, summarizeJob } from '@jobwatch/sdk';
 import { z } from 'zod';
 
 /** What the dashboard reads. Nothing here can start a browser, call a site or spend a rate-limit unit. */
@@ -143,6 +144,11 @@ function parseDate(name: string, value: string | undefined, fallback: number): n
   return ms;
 }
 
+/** The salary of a stored job with its label, or null. */
+function salaryOf(salary: StoredSalary | null) {
+  return salary === null ? null : { ...salary, label: formatSalary(salary) };
+}
+
 export function listJobs(data: DashboardData, query: unknown): JobsPage {
   const q = jobsQuery.parse(query);
   const since = parseDate('from', q.from, 0);
@@ -181,6 +187,7 @@ export function listJobs(data: DashboardData, query: unknown): JobsPage {
       fetchedAt: iso(row.fetchedAt),
       lastSeen: iso(row.lastSeen),
       descriptionChars: row.descriptionChars,
+      salary: salaryOf(row.salary),
       foundBy: foundBy.get(`${row.platform}\u0000${row.id}`) ?? [],
     })),
     total,
@@ -207,6 +214,7 @@ export function getJob(data: DashboardData, source: string, id: string): JobDeta
     fetchedAt: iso(row.fetchedAt),
     lastSeen: iso(row.lastSeen),
     descriptionChars: row.description.length,
+    salary: salaryOf(row.salary),
     foundBy: data.store.foundBy(source, [id]).get(id) ?? [],
     description: row.description,
     summary: summary.summary,

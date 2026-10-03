@@ -17,6 +17,7 @@ const job = (over: Record<string, unknown> = {}) => ({
   fetchedAt: NOW,
   lastSeen: NOW,
   descriptionChars: 4200,
+  salary: { min: 72_000, max: 115_000, currency: 'EUR', variable: null, label: '72 000 – 115 000 €' },
   foundBy: ['react', 'frontend'],
   ...over,
 });
@@ -246,5 +247,40 @@ describe('searches', () => {
     renderApp('/searches?tool=wttj');
     expect(await screen.findByText(/No search recorded in this window/)).toBeInTheDocument();
     expect(seen.some((url) => url.startsWith('/dashboard/api/v1/searches') && url.includes('source=wttj'))).toBe(true);
+  });
+});
+
+describe('salary column', () => {
+  const fixed = { min: 65_000, max: 65_000, currency: 'EUR', variable: null, label: '65 000 €' };
+
+  it('shows a range as a range, a fixed amount as one value, and a dash when the text states none', async () => {
+    mockApi({
+      ...common,
+      '/jobs': page([job(), job({ id: '2', title: 'Fixed', salary: fixed }), job({ id: '3', title: 'Unstated', salary: null })]),
+    });
+    renderApp('/jobs');
+    const rows = await rowsLoaded(4);
+    expect(within(at(rows, 1)).getByText('72 000 – 115 000 €')).toBeInTheDocument();
+    expect(within(at(rows, 2)).getByText('65 000 €')).toBeInTheDocument();
+    expect(within(at(rows, 3)).queryByText(/€/)).not.toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Salary/ })).toBeInTheDocument();
+  });
+
+  it('sorts on the server by salary', async () => {
+    const seen = mockApi({ ...common, '/jobs': page([job()]) });
+    renderApp('/jobs');
+    const user = userEvent.setup();
+    await rowsLoaded(2);
+    await user.click(screen.getByRole('button', { name: /^Salary/ }));
+    await waitFor(() => expect(seen.some((url) => url.includes('sort=salary'))).toBe(true));
+  });
+
+  it('shows it in the detail too', async () => {
+    mockApi({ ...common, '/jobs': page([job()]), '/jobs/linkedin/1000001': detail() });
+    renderApp('/jobs');
+    const user = userEvent.setup();
+    await user.click(at(await rowsLoaded(2), 1));
+    const panel = await screen.findByRole('complementary', { name: 'Senior Frontend Engineer' });
+    expect(within(panel).getByText('Salary (yearly)')).toBeInTheDocument();
   });
 });

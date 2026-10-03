@@ -91,6 +91,7 @@ export type {
   DailyUsageRow,
   NewJobRow,
   StoredJobRow,
+  StoredSalary,
   UsageEvent,
 } from './store/store';
 export { DEFAULT_RATE, effectiveRate } from './limits/policy';

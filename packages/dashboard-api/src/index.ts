@@ -70,6 +70,12 @@ export type CallDetail = z.infer<typeof callDetailSchema>;
 
 // ------------------------------------------------------------------------------------------------------ jobs
 
+/** The yearly salary read from the job text: a fixed amount (`min` equals `max`) or a range, ready to show in `label`. */
+export const salarySchema = z
+  .object({ min: z.number(), max: z.number(), currency: z.string(), variable: z.number().nullable(), label: z.string() })
+  .strict();
+export type SalaryInfo = z.infer<typeof salarySchema>;
+
 export const jobRowSchema = z
   .object({
     source: z.string(),
@@ -83,6 +89,7 @@ export const jobRowSchema = z
     fetchedAt: iso,
     lastSeen: iso,
     descriptionChars: z.number(),
+    salary: salarySchema.nullable(),
     foundBy: z.array(z.string()),
   })
   .strict();

@@ -568,3 +568,68 @@ describe('daily tool totals', () => {
     expect(store.dailyUsage('2000-01-01', '2099-01-01')).toHaveLength(1);
   });
 });
+
+describe('salary columns', () => {
+  const T = Date.UTC(2026, 9, 5);
+  const job = (id: string, description: string): NewJobRow => ({
+    id,
+    board: null,
+    title: `Job ${id}`,
+    company: 'Acme',
+    location: 'Paris',
+    url: `https://x/${id}`,
+    description,
+  });
+  const list = (store: Store, extra: object = {}) =>
+    store.listJobs({ field: 'first_seen', since: 0, until: T + 1e9, sources: [], boards: [], limit: 10, withDescription: false, ...extra });
+
+  it('reads the salary of a text when the job is stored and keeps it in step with the text', () => {
+    const store = Store.open(':memory:');
+    store.putJob('teamtailor', job('a1', 'Salary range: €72.000 - €115.000'), T);
+    store.putJob('teamtailor', job('a2', 'Fixe 26.400€ + variable 12.500€'), T);
+    store.putJob('teamtailor', job('a3', '6€ de repas par jour'), T);
+    expect(store.getJob('teamtailor', 'a1')?.salary).toEqual({ min: 72_000, max: 115_000, currency: 'EUR', variable: null });
+    expect(store.getJob('teamtailor', 'a2')?.salary).toEqual({ min: 26_400, max: 26_400, currency: 'EUR', variable: 12_500 });
+    expect(store.getJob('teamtailor', 'a3')?.salary).toBeNull();
+    store.putJob('teamtailor', job('a3', 'Now it pays 60k€'), T + 1);
+    expect(store.getJob('teamtailor', 'a3')?.salary).toMatchObject({ min: 60_000, max: 60_000 });
+    store.putJob('teamtailor', job('a3', 'The pay was removed'), T + 2);
+    expect(store.getJob('teamtailor', 'a3')?.salary).toBeNull();
+    store.close();
+  });
+
+  it('sorts by the upper end, jobs without a salary last in both directions, and the list carries the salary', () => {
+    const store = Store.open(':memory:');
+    store.putJob('p', job('low', 'Salary 50k€'), T);
+    store.putJob('p', job('none', 'Nothing stated'), T);
+    store.putJob('p', job('high', '80-95k€'), T);
+    expect(list(store, { sort: 'salary', dir: 'desc' }).rows.map((r) => r.id)).toEqual(['high', 'low', 'none']);
+    expect(list(store, { sort: 'salary', dir: 'asc' }).rows.map((r) => r.id)).toEqual(['low', 'high', 'none']);
+    expect(list(store).rows.find((r) => r.id === 'high')?.salary).toMatchObject({ min: 80_000, max: 95_000 });
+    store.close();
+  });
+
+  it('fills the salary of jobs stored before the columns existed, once, when the database is upgraded', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'jw-salary-'));
+    try {
+      const path = join(dir, 'old.sqlite');
+      const old = Store.open(path);
+      old.putJob('p', job('x1', 'Salary range: €72.000 - €115.000'), T);
+      old.putJob('p', job('x2', 'No figure'), T);
+      old.close();
+      const raw = new DatabaseSync(path);
+      // put the file back as a version 6 database: no salary columns
+      raw.exec(
+        'DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
+      );
+      raw.close();
+      const upgraded = Store.open(path);
+      expect(upgraded.getJob('p', 'x1')?.salary).toMatchObject({ min: 72_000, max: 115_000 });
+      expect(upgraded.getJob('p', 'x2')?.salary).toBeNull();
+      expect(upgraded.schemaVersion).toBe(SCHEMA_VERSION);
+      upgraded.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
