@@ -69,7 +69,14 @@ function logSink(): { stream: Writable; text: () => string } {
 
 const okProvider = (released: { count: number }): ContextProvider => ({
   acquire: async () => ({
-    ctx: { http: {} as never, jobs: {} as never, log: {} as never, pace: async () => undefined, spend: () => undefined },
+    ctx: {
+      http: {} as never,
+      jobs: {} as never,
+      memory: {} as never,
+      log: {} as never,
+      pace: async () => undefined,
+      spend: () => undefined,
+    },
     release: async () => {
       released.count += 1;
     },
@@ -229,7 +236,14 @@ describe('callTool: context provider', () => {
   it('does not let a failing release hide the result', async () => {
     const provider: ContextProvider = {
       acquire: async () => ({
-        ctx: { http: {} as never, jobs: {} as never, log: {} as never, pace: async () => undefined, spend: () => undefined },
+        ctx: {
+          http: {} as never,
+          jobs: {} as never,
+          memory: {} as never,
+          log: {} as never,
+          pace: async () => undefined,
+          spend: () => undefined,
+        },
         release: async () => {
           throw new Error('container did not stop');
         },
@@ -381,7 +395,14 @@ describe('callTool: the in-memory detail of a call', () => {
   it('counts the units spent as the lease measured them when the call fails half way', async () => {
     const provider: ContextProvider = {
       acquire: async () => ({
-        ctx: { http: {} as never, jobs: {} as never, log: {} as never, pace: async () => undefined, spend: () => undefined },
+        ctx: {
+          http: {} as never,
+          jobs: {} as never,
+          memory: {} as never,
+          log: {} as never,
+          pace: async () => undefined,
+          spend: () => undefined,
+        },
         release: async () => undefined,
         spent: () => 3,
       }),

@@ -16,6 +16,7 @@ export const installed = {
   greenhouse: () => import('@jobwatch/adapter-greenhouse').then((m) => m.default),
   lever: () => import('@jobwatch/adapter-lever').then((m) => m.default),
   linkedin: () => import('@jobwatch/adapter-linkedin').then((m) => m.default),
+  'linkedin-geo': () => import('@jobwatch/adapter-linkedin-geo').then((m) => m.default),
   teamtailor: () => import('@jobwatch/adapter-teamtailor').then((m) => m.default),
   wttj: () => import('@jobwatch/adapter-wttj').then((m) => m.default),
   // <installed:end>

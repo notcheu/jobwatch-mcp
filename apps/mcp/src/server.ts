@@ -14,6 +14,7 @@ import {
   createContextProvider,
   createOpsAdapter,
   RateLimiter,
+  callTool,
   RegistryError,
   RuntimeManager,
   Store,
@@ -31,12 +32,13 @@ import {
   type PlatformStatus,
   type Clock,
   type ContextProvider,
+  type ContextProviderDeps,
   type InstalledAdapters,
   type RuntimeBackend,
   type RuntimeHooks,
 } from '@jobwatch/core';
 import { installed } from '@jobwatch/adapters';
-import { createApp } from './app';
+import { createApp, type AppDeps } from './app';
 import { DashboardManager } from './dashboard/manager';
 import { ChangeRefused, registerWrites } from './dashboard/writes';
 import { createMetricsServer } from './metrics-server';
@@ -71,6 +73,8 @@ export interface StartOptions {
   /** Tests inject their own installed table and context provider (which replaces the real one built from the runtime). */
   installed?: InstalledAdapters;
   contexts?: ContextProvider;
+  /** Replaces the HTTP client adapters get (tests only: no real request leaves the machine). */
+  createHttp?: ContextProviderDeps['createHttp'];
   /** Where log lines go; defaults to stdout. */
   logDestination?: NodeJS.WritableStream;
   /** Container runtime for browser adapters; tests pass a fake. Defaults to the docker CLI. */
@@ -207,6 +211,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
       store,
       clock,
       maxTabs: config.maxTabs,
+      ...(options.createHttp === undefined ? {} : { createHttp: options.createHttp }),
     });
   // The holder is created after `ops`, which needs it: the ops tools read the live list of enabled adapters through this function.
   const live: { holder?: RegistryHolder } = {};
@@ -239,7 +244,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   // The last calls, in memory, for the dashboard (docs/plans/17-dashboard.md). Their parameters are kept nowhere else.
   const callLog = new CallLog(config.callBuffer);
   live.holder = holder;
-  const app = createApp({
+  const appDeps: AppDeps = {
     registry: holder.view,
     contexts,
     logger,
@@ -278,7 +283,20 @@ export async function start(options: StartOptions): Promise<RunningServer> {
         argsHash: outcome.argsHash,
       });
     },
-  });
+  };
+  const app = createApp(appDeps);
+
+  /** Run one of the registry's tools from the host (the control socket): the same guard, budget, log and call history as an MCP call. */
+  const runTool = async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    if (!holder.current().tools.has(name))
+      throw new Error(`The tool ${name} is not available: enable its adapter first (jobwatch adapters enable linkedin-geo).`);
+    const { result } = await callTool(appDeps, name, args);
+    if (result.isError) {
+      const failure = JSON.parse(result.content[0]?.text ?? '{}') as { message?: string };
+      throw new Error(failure.message ?? 'The tool failed.');
+    }
+    return { ...result.structuredContent, warnings: result._meta?.jobwatch.warnings ?? [] };
+  };
   const mcpServer = createHttpServer(app);
   await listen(mcpServer, options.port ?? config.port, config.listenHost);
 
@@ -387,6 +405,16 @@ export async function start(options: StartOptions): Promise<RunningServer> {
             }),
             'dashboard.stop': async () => ({ ...(await dashboard.stop()) }),
             'dashboard.status': async () => ({ ...dashboard.status() }),
+            // places: look up, remember and forget names for LinkedIn locations, through the linkedin_locations tool
+            'geo.lookup': (request) => runTool('linkedin_locations', { query: String(request['query'] ?? '') }),
+            'geo.save': (request) =>
+              runTool('linkedin_locations', {
+                save_as: String(request['alias'] ?? ''),
+                id: String(request['id'] ?? ''),
+                ...(typeof request['label'] === 'string' && request['label'] !== '' ? { label: request['label'] } : {}),
+              }),
+            'geo.forget': (request) => runTool('linkedin_locations', { forget: String(request['alias'] ?? '') }),
+            'geo.list': () => runTool('linkedin_locations', { list: true }),
           },
           (error) => logger.warn({ err: error }, 'control_socket_error'),
         ).catch((error: unknown) => {

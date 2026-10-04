@@ -28,6 +28,7 @@ export type {
   GotoOptions,
   BrowserSession,
   BrowserTab,
+  PlatformMemory,
   HttpRequestOptions,
   HttpResponse,
   HttpClient,
@@ -71,6 +72,17 @@ export {
 } from './jobtext';
 export type { Hints, PostedWithin } from './jobtext';
 export { findSalary, findSalaryRange } from './salary';
+export {
+  LOCATION_LOOKUP_URL,
+  bestLocation,
+  forgetLocation,
+  locationKey,
+  lookupLocations,
+  saveLocation,
+  savedLocation,
+  savedLocations,
+} from './linkedinGeo';
+export type { LocationHit, SavedLocation } from './linkedinGeo';
 export type { Salary } from './salary';
 
 export {

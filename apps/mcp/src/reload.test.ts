@@ -6,6 +6,8 @@ import { sendControl, controlSocketPath } from '@jobwatch/core';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { installed } from '@jobwatch/adapters';
+import { FakeHttpClient } from '@jobwatch/sdk/testkit';
 import { installedFixtures, connectClient } from './harness';
 import { start, type RunningServer } from './server';
 
@@ -232,5 +234,78 @@ describe('changing adapters from the dashboard', () => {
       body: '{"enabled":true}',
     });
     expect(bare.status).toBe(403);
+  });
+});
+
+describe('places through the control socket (jobwatch geo)', () => {
+  const BERLIN = [
+    { id: '103035651', type: 'GEO', displayName: 'Berlin, Germany' },
+    { id: '90009712', type: 'GEO', displayName: 'Berlin Metropolitan Area' },
+  ];
+  const bootWithGeo = async () => {
+    await enable(['probe', 'linkedin-geo']);
+    running = await start({
+      env: {
+        JW_BASE_URL: 'http://127.0.0.1:18999',
+        JW_AUTH: 'none',
+        JW_LISTEN_HOST: '127.0.0.1',
+        JW_DATA_DIR: dir,
+        JW_DB_PATH: ':memory:',
+      },
+      version: 'test',
+      installed: { ...installedFixtures, 'linkedin-geo': installed['linkedin-geo'] },
+      createHttp: () => new FakeHttpClient(['www.linkedin.com'], [{ url: /typeaheadHits\?typeaheadType=GEO&query=Berlin$/, body: BERLIN }]),
+      port: 0,
+      metricsPort: 0,
+      logDestination: { write: () => true } as never,
+    });
+    return controlSocketPath(dir);
+  };
+
+  it('looks a place up, remembers a name for it, lists it and forgets it', async () => {
+    const socket = await bootWithGeo();
+    const found = await sendControl(socket, { command: 'geo.lookup', query: 'Berlin' });
+    expect(found).toMatchObject({ ok: true, best: { id: '103035651' } });
+    expect((found as any).places.map((place: any) => place.id)).toEqual(['103035651', '90009712']);
+
+    expect(await sendControl(socket, { command: 'geo.save', alias: 'home', id: '103035651', label: 'Berlin, Germany' })).toMatchObject({
+      ok: true,
+      saved: { alias: 'home', id: '103035651' },
+    });
+    expect(((await sendControl(socket, { command: 'geo.list' })) as any).remembered).toEqual([
+      { alias: 'home', id: '103035651', label: 'Berlin, Germany', saved_by: 'operator' },
+    ]);
+    expect(((await sendControl(socket, { command: 'geo.forget', alias: 'Home' })) as any).remembered).toEqual([]);
+  });
+
+  it('shows the lookup in the call history like any other call', async () => {
+    const socket = await bootWithGeo();
+    await sendControl(socket, { command: 'geo.lookup', query: 'Berlin' });
+    expect(running?.callLog.list({ limit: 5 }).calls[0]).toMatchObject({ tool: 'linkedin_locations', code: 'ok' });
+  });
+
+  it('says to enable the adapter when it is not', async () => {
+    await enable(['probe']);
+    const socket = await (async () => {
+      running = await start({
+        env: {
+          JW_BASE_URL: 'http://127.0.0.1:18999',
+          JW_AUTH: 'none',
+          JW_LISTEN_HOST: '127.0.0.1',
+          JW_DATA_DIR: dir,
+          JW_DB_PATH: ':memory:',
+        },
+        version: 'test',
+        installed: installedFixtures,
+        port: 0,
+        metricsPort: 0,
+        logDestination: { write: () => true } as never,
+      });
+      return controlSocketPath(dir);
+    })();
+    expect(await sendControl(socket, { command: 'geo.lookup', query: 'Berlin' })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('jobwatch adapters enable linkedin-geo'),
+    });
   });
 });

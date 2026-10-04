@@ -4,7 +4,8 @@ import { EXTRACT_PAGE_STATE, type ExtractedPageState } from './extract';
 import { aiSearchResultsLayout } from './layouts/aiSearchResults';
 import { classicLayout } from './layouts/classic';
 import type { SearchLayout } from './layouts/layout';
-import { POSTED_WITHIN, classifyPage, resolveGeo, termMatcher, type Card } from './parse';
+import { POSTED_WITHIN, classifyPage, termMatcher, type Card } from './parse';
+import { resolvePlace } from './geo';
 import { readByIds, readNew, type AcceptedJob } from './read';
 import { MAX_PAGE, pagesFor, searchCards, type SearchArgs } from './search';
 
@@ -288,7 +289,9 @@ export function createLinkedinTools(layout: SearchLayout) {
     },
     handler: async (args, ctx) => {
       const deadline = Date.now() + OPEN_BUDGET_MS;
-      const found = await searchCards(ctx, layout, { ...args, geo: resolveGeo(args.geo) } as SearchArgs);
+      const place = await resolvePlace(ctx, args.geo);
+      const found = await searchCards(ctx, layout, { ...args, geo: place.geo } as SearchArgs);
+      if (place.note !== undefined) found.warnings.push(place.note);
       const matchTerm = termMatcher(args.disallowed_terms);
       const outcome = await readNew(ctx, found.cards, {
         skip: new Set(args.skip_ids),

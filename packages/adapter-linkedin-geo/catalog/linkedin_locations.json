@@ -1,0 +1,196 @@
+{
+  "adapter": "linkedin-geo",
+  "allowed_hosts": [
+    "www.linkedin.com"
+  ],
+  "annotations": {
+    "idempotentHint": false,
+    "openWorldHint": true,
+    "readOnlyHint": true
+  },
+  "description": "Read-only on LinkedIn. Finds the LinkedIn geoId of a place from its public location autocomplete (query), and can remember a name for a place (save_as + id) so that searches can use it. A LinkedIn search already looks a place name up by itself when it can; use this to see the candidates and choose one when a name is ambiguous (Paris, France or Paris, Texas). Changes nothing on LinkedIn: remembered names live in the router.",
+  "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "forget": {
+        "description": "Forget a remembered name (one you saved, or one a search looked up by itself).",
+        "maxLength": 60,
+        "minLength": 2,
+        "type": "string"
+      },
+      "id": {
+        "description": "With save_as: the geoId to remember, taken from a lookup.",
+        "maxLength": 12,
+        "pattern": "^\\d{3,12}$",
+        "type": "string"
+      },
+      "label": {
+        "description": "With save_as: how LinkedIn writes the place (\"Berlin, Germany\"), shown when the names are listed.",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "list": {
+        "description": "List the remembered names.",
+        "type": "boolean"
+      },
+      "query": {
+        "description": "Look places up: the text to complete, like \"Berlin\" or \"Austin, Texas\".",
+        "maxLength": 100,
+        "minLength": 2,
+        "type": "string"
+      },
+      "save_as": {
+        "description": "With id: remember that name for the place, so a search can use it (\"home\", \"berlin\"). Overwrites an older one.",
+        "maxLength": 60,
+        "minLength": 2,
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "limits": {
+    "output_max_bytes": 32768,
+    "rate": {
+      "cost": 1
+    },
+    "timeout_s": 30
+  },
+  "name": "linkedin_locations",
+  "needs_browser": false,
+  "outputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "best": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "The suggestion a search by that name would use."
+      },
+      "forgotten": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "places": {
+        "description": "What LinkedIn suggests for the query, best first. Pass an id as `geo` to a LinkedIn search, or save it with save_as.",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "label"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "remembered": {
+        "description": "Every remembered name (only with list, or after a change).",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "alias": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "saved_by": {
+              "enum": [
+                "operator",
+                "auto"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "alias",
+            "id",
+            "label",
+            "saved_by"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "saved": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "alias": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "saved_by": {
+                "enum": [
+                  "operator",
+                  "auto"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "alias",
+              "id",
+              "label",
+              "saved_by"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "The name just remembered."
+      }
+    },
+    "required": [
+      "places",
+      "best",
+      "saved",
+      "forgotten",
+      "remembered"
+    ],
+    "type": "object"
+  },
+  "platform": "linkedin-geo",
+  "title": "LinkedIn locations (read-only)"
+}

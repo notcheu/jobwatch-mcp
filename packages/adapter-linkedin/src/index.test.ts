@@ -1,5 +1,5 @@
 import { AdapterBroken, Checkpoint, SessionInvalid } from '@jobwatch/sdk';
-import { createBrowserTestContext, describeAdapterContract, type FakePage } from '@jobwatch/sdk/testkit';
+import { createBrowserTestContext, describeAdapterContract, type FakeHttpRoute, type FakePage } from '@jobwatch/sdk/testkit';
 import { describe, expect, it } from 'vitest';
 import adapter, { createLinkedinAdapter, createLinkedinTools } from './index';
 import { classicLayout } from './layouts/classic';
@@ -31,23 +31,23 @@ function jobPage(description: string | null, extra: { closed?: boolean; title?: 
 }
 
 /** A context whose search page lists the four cards and whose job pages say `descriptions[id]` (default: a plain text). */
-function context(descriptions: Record<string, FakePage | string> = {}) {
+function context(descriptions: Record<string, FakePage | string> = {}, routes: FakeHttpRoute[] = []) {
   const pages: Record<string, FakePage> = { [SEARCH_URL]: searchPage() };
   for (const id of IDS) {
     const entry = descriptions[id] ?? `Description of ${id}. We use React and TypeScript.`;
     pages[jobUrl(id)] = typeof entry === 'string' ? jobPage(entry) : entry;
   }
-  return createBrowserTestContext({ allowedHosts: adapter.allowedHosts, pages });
+  return createBrowserTestContext({ allowedHosts: adapter.allowedHosts, pages, routes });
 }
 
 const visitedJobs = (visited: string[]): string[] =>
   visited.filter((url) => url.includes('/jobs/view/')).map((url) => url.split('/')[5] ?? '');
-const read = (over: object = {}) => tools.search.input.parse({ keywords: 'full stack', geo: 'Berlin, Germany', ...over });
+const read = (over: object = {}) => tools.search.input.parse({ keywords: 'full stack', geo: '103035651', ...over });
 /** The search as a plain listing: max_jobs=0 opens no job page and returns the cards. */
 const LIST = {
   input: {
-    parse: (args: object) => tools.search.input.parse({ max_jobs: 0, geo: 'Berlin, Germany', ...args }),
-    safeParse: (args: object) => tools.search.input.safeParse({ max_jobs: 0, geo: 'Berlin, Germany', ...args }),
+    parse: (args: object) => tools.search.input.parse({ max_jobs: 0, geo: '103035651', ...args }),
+    safeParse: (args: object) => tools.search.input.safeParse({ max_jobs: 0, geo: '103035651', ...args }),
   },
   handler: tools.search.handler,
 };
@@ -60,7 +60,7 @@ describeAdapterContract(adapter, {
       run: (args) => tools.job.handler(tools.job.input.parse(args), context().ctx),
     },
     linkedin_search: {
-      args: { keywords: 'frontend', geo: 'Berlin, Germany' },
+      args: { keywords: 'frontend', geo: '103035651' },
       run: (args) => tools.search.handler(tools.search.input.parse(args), context().ctx),
     },
   },
@@ -476,7 +476,7 @@ describe('max_results and several pages', () => {
       url: jobUrl('5000000002'),
       description: 'stored',
     });
-    const input = tools.search.input.parse({ keywords: 'x', geo: 'Berlin, Germany', max_results: 50, disallowed_terms: ['Engineer 1'] });
+    const input = tools.search.input.parse({ keywords: 'x', geo: '103035651', max_results: 50, disallowed_terms: ['Engineer 1'] });
     const result = await tools.search.handler(input, c.ctx);
     expect(result.data).toMatchObject({ pages_loaded: 2, scanned: 50 });
     expect(result.data.excluded.map((e) => e.id)).toEqual(['5000000001']);
@@ -588,6 +588,15 @@ describe('cost reporting', () => {
   });
 });
 
+const LISBON: FakeHttpRoute = {
+  url: /typeaheadHits\?typeaheadType=GEO&query=Lisbon/,
+  body: [
+    { id: '100364837', type: 'GEO', displayName: 'Lisbon, Portugal' },
+    { id: '90009999', type: 'GEO', displayName: 'Lisbon Metropolitan Area' },
+    { id: '102000001', type: 'GEO', displayName: 'Lisbon, Ohio, United States' },
+  ],
+};
+
 describe('the place of a search is never built in', () => {
   const searchOnce = (args: object) => {
     const c = context();
@@ -604,24 +613,25 @@ describe('the place of a search is never built in', () => {
     }
   });
 
-  it("uses the operator's default location when the call gives none, and the call's own when it does", async () => {
+  it("uses the operator's default location when the call gives none, looks it up once and remembers it", async () => {
     const saved = process.env['JW_DEFAULT_LOCATION'];
     process.env['JW_DEFAULT_LOCATION'] = 'Lisbon, Portugal';
     try {
       const urls: string[] = [];
-      const spy = {
+      const spied = createLinkedinTools({
         ...classicLayout,
         searchUrl: (args: Parameters<typeof classicLayout.searchUrl>[0]) => (
           urls.push(classicLayout.searchUrl(args)),
           classicLayout.searchUrl(args)
         ),
-      };
-      const spied = createLinkedinTools(spy);
-      const c = context();
+      });
+      const c = context({}, [LISBON]);
+      const first = await spied.search.handler(spied.search.input.parse({ keywords: 'x', max_jobs: 0 }), c.ctx);
       await spied.search.handler(spied.search.input.parse({ keywords: 'x', max_jobs: 0 }), c.ctx);
-      await spied.search.handler(spied.search.input.parse({ keywords: 'x', max_jobs: 0, geo: 'Madrid, Spain' }), c.ctx);
-      expect(urls[0]).toContain('location=Lisbon%2C%20Portugal');
-      expect(urls[1]).toContain('location=Madrid%2C%20Spain');
+      await spied.search.handler(spied.search.input.parse({ keywords: 'x', max_jobs: 0, geo: '103035651' }), c.ctx);
+      expect(urls.map((url) => /geoId=(\d+)/.exec(url)?.[1])).toEqual(['100364837', '100364837', '103035651']);
+      expect(first.warnings.join(' ')).toContain('Lisbon, Portugal (geoId 100364837)');
+      expect(c.http.requests.filter((request) => request.url.includes('typeaheadHits'))).toHaveLength(1); // asked once, then remembered
     } finally {
       if (saved === undefined) delete process.env['JW_DEFAULT_LOCATION'];
       else process.env['JW_DEFAULT_LOCATION'] = saved;

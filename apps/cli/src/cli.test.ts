@@ -396,3 +396,106 @@ describe('dashboard', () => {
     expect(await cli(['dashboard', 'stop', '--ttl', '5'])).toBe(1);
   });
 });
+
+describe('geo', () => {
+  const places = [
+    { id: '103035651', label: 'Berlin, Germany' },
+    { id: '90009712', label: 'Berlin Metropolitan Area' },
+  ];
+  const withRouter = async (run: (seen: Record<string, unknown>[]) => Promise<void>) => {
+    const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
+    const seen: Record<string, unknown>[] = [];
+    const record = (name: string, answer: Record<string, unknown>) => async (request: Record<string, unknown>) => (
+      seen.push({ ...request, command: name }),
+      answer
+    );
+    const control = await startControlServer(controlSocketPath(dataDir), {
+      'geo.lookup': record('geo.lookup', { places, best: places[0] }),
+      'geo.save': record('geo.save', { saved: { alias: 'home' } }),
+      'geo.forget': record('geo.forget', { forgotten: 'home', remembered: [] }),
+      'geo.list': record('geo.list', {
+        remembered: [
+          { alias: 'home', id: '103035651', label: 'Berlin, Germany', saved_by: 'operator' },
+          { alias: 'lisbon', id: '100364837', label: 'Lisbon, Portugal', saved_by: 'auto' },
+        ],
+      }),
+    });
+    try {
+      await run(seen);
+    } finally {
+      await control.close();
+    }
+  };
+
+  it('lists the candidates with their geoIds and says how to remember one', async () => {
+    await withRouter(async (seen) => {
+      expect(await cli(['geo', 'Berlin'])).toBe(0);
+      expect(seen).toEqual([{ command: 'geo.lookup', query: 'Berlin' }]);
+    });
+    expect(out).toContain(' 1. 103035651    Berlin, Germany');
+    expect(out).toContain(' 2. 90009712     Berlin Metropolitan Area');
+    expect(out).toContain('--save <name> --pick <number>');
+  });
+
+  it('remembers a name for the chosen candidate, with its label, and takes a text of several words', async () => {
+    await withRouter(async (seen) => {
+      expect(await cli(['geo', 'Berlin', '--save', 'home', '--pick', '2'])).toBe(0);
+      expect(seen[1]).toEqual({ command: 'geo.save', alias: 'home', id: '90009712', label: 'Berlin Metropolitan Area' });
+      expect(await cli(['geo', 'Austin,', 'Texas'])).toBe(0);
+      expect(seen[2]).toEqual({ command: 'geo.lookup', query: 'Austin, Texas' });
+    });
+    expect(out).toContain('Remembered "home" = 90009712 (Berlin Metropolitan Area).');
+  });
+
+  it('takes the first candidate without --pick, and refuses a pick that does not exist', async () => {
+    await withRouter(async (seen) => {
+      expect(await cli(['geo', 'Berlin', '--save', 'home'])).toBe(0);
+      expect(seen[1]).toMatchObject({ id: '103035651' });
+      expect(await cli(['geo', 'Berlin', '--save', 'home', '--pick', '9'])).toBe(1);
+      expect(err).toContain('--pick is a number between 1 and 2');
+    });
+  });
+
+  it('lists and forgets remembered names, marking the ones a search looked up by itself', async () => {
+    await withRouter(async (seen) => {
+      expect(await cli(['geo', '--list'])).toBe(0);
+      expect(out).toContain('home');
+      expect(out).toMatch(/lisbon\s+100364837\s+Lisbon, Portugal\s+\(looked up by a search\)/);
+      expect(await cli(['geo', '--forget', 'home'])).toBe(0);
+      expect(seen[1]).toEqual({ command: 'geo.forget', alias: 'home' });
+      expect(out).toContain('Forgot "home".');
+    });
+  });
+
+  it("says so when no router is running, and shows the router's own refusal", async () => {
+    expect(await cli(['geo', 'Berlin'])).toBe(2);
+    expect(err).toContain('No router is running');
+    const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
+    const control = await startControlServer(controlSocketPath(dataDir), {
+      'geo.lookup': async () => {
+        throw new Error('The tool linkedin_locations is not available: enable its adapter first (jobwatch adapters enable linkedin-geo).');
+      },
+    });
+    try {
+      err = '';
+      expect(await cli(['geo', 'Berlin'])).toBe(2);
+    } finally {
+      await control.close();
+    }
+    expect(err).toContain('jobwatch adapters enable linkedin-geo');
+  });
+
+  it('refuses a call that asks for nothing, for two things, or for a pick without a save', async () => {
+    for (const args of [
+      ['geo'],
+      ['geo', 'Berlin', '--list'],
+      ['geo', '--list', '--forget', 'x'],
+      ['geo', 'Berlin', '--pick', '2'],
+      ['geo', '--save', 'x'],
+    ]) {
+      err = '';
+      expect(await cli(args), args.join(' ')).toBe(1);
+      expect(err).toContain('Usage:');
+    }
+  });
+});

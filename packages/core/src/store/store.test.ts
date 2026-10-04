@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   CALL_LOG_RETENTION_MS,
   MAX_JOB_DESCRIPTION_CHARS,
+  MAX_MEMORY_ENTRIES,
   SCHEMA_VERSION,
   Store,
   StoreError,
@@ -618,9 +619,9 @@ describe('salary columns', () => {
       old.putJob('p', job('x2', 'No figure'), T);
       old.close();
       const raw = new DatabaseSync(path);
-      // put the file back as a version 6 database: no salary columns
+      // put the file back as a version 6 database: no salary columns, no adapter memory
       raw.exec(
-        'DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
+        'DROP TABLE platform_memory; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -631,5 +632,48 @@ describe('salary columns', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('adapter memory', () => {
+  let store: Store;
+  beforeEach(() => {
+    store = Store.open(':memory:');
+  });
+  afterEach(() => store.close());
+
+  it('keeps a value under a key, replaces it, forgets it, and lists by prefix oldest first', () => {
+    store.setMemory('linkedin.geo:berlin', '{"id":"1"}', 1000);
+    store.setMemory('linkedin.geo:lisbon', '{"id":"2"}', 2000);
+    store.setMemory('other:key', 'x', 1500);
+    expect(store.getMemory('linkedin.geo:berlin')).toBe('{"id":"1"}');
+    expect(store.getMemory('missing')).toBeNull();
+    expect(store.listMemory('linkedin.geo:').map((entry) => entry.key)).toEqual(['linkedin.geo:berlin', 'linkedin.geo:lisbon']);
+    store.setMemory('linkedin.geo:berlin', '{"id":"3"}', 3000);
+    expect(store.getMemory('linkedin.geo:berlin')).toBe('{"id":"3"}');
+    expect(store.listMemory('linkedin.geo:').map((entry) => entry.key)).toEqual(['linkedin.geo:lisbon', 'linkedin.geo:berlin']);
+    store.deleteMemory('linkedin.geo:berlin');
+    expect(store.getMemory('linkedin.geo:berlin')).toBeNull();
+  });
+
+  it('treats a prefix with a wildcard character as text, not as a pattern', () => {
+    store.setMemory('a%b:1', 'x', 1);
+    store.setMemory('aXb:1', 'y', 2);
+    expect(store.listMemory('a%b:').map((entry) => entry.key)).toEqual(['a%b:1']);
+  });
+
+  it('refuses a key or a value that is not usable', () => {
+    expect(() => store.setMemory('', 'x', 1)).toThrow(StoreError);
+    expect(() => store.setMemory('k'.repeat(121), 'x', 1)).toThrow(StoreError);
+    expect(() => store.setMemory('bad\nkey', 'x', 1)).toThrow(StoreError);
+    expect(() => store.setMemory('k', 'v'.repeat(401), 1)).toThrow(StoreError);
+  });
+
+  it('drops the oldest entries when it is full', () => {
+    for (let i = 0; i < MAX_MEMORY_ENTRIES + 5; i++) store.setMemory(`k:${String(i).padStart(4, '0')}`, 'v', i);
+    const keys = store.listMemory('k:').map((entry) => entry.key);
+    expect(keys).toHaveLength(MAX_MEMORY_ENTRIES);
+    expect(keys[0]).toBe('k:0005');
+    expect(store.getMemory('k:0000')).toBeNull();
   });
 });

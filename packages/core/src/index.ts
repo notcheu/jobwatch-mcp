@@ -29,7 +29,7 @@ export type {
   ToolOutcome,
 } from './call';
 export { createMetrics } from './metrics';
-export { createContextProvider, createJobStore } from './contexts';
+export { createContextProvider, createJobStore, createPlatformMemory } from './contexts';
 export type { ContextProviderDeps } from './contexts';
 export { createHttpClient } from './http/client';
 export type { HttpClientOptions } from './http/client';
