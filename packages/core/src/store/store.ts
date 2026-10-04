@@ -50,7 +50,7 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
 /**
  * Each entry upgrades the schema by one version (`PRAGMA user_version`). Never edit a released migration: add a new one.
  * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
- * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`.
+ * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`).
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -156,6 +156,15 @@ const MIGRATIONS: readonly string[] = [
   ALTER TABLE jobs ADD COLUMN salary_currency TEXT;
   ALTER TABLE jobs ADD COLUMN salary_variable INTEGER;
   CREATE INDEX jobs_salary_max ON jobs (salary_max);
+  `,
+  // 8: a small key-value memory adapters use (`ctx.memory`): what they looked up once and need not look up again.
+  `
+  CREATE TABLE platform_memory (
+    key        TEXT    PRIMARY KEY,
+    value      TEXT    NOT NULL,
+    updated_at INTEGER NOT NULL
+  ) WITHOUT ROWID;
+  CREATE INDEX platform_memory_updated ON platform_memory (updated_at);
   `,
 ];
 
@@ -381,6 +390,43 @@ export class Store {
       textAvailable: Number(row['text_available']),
       textReturned: Number(row['text_returned']),
     }));
+  }
+
+  // ------------------------------------------------------------------------------------------------ adapter memory
+
+  getMemory(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM platform_memory WHERE key = ?').get(key) as Rows | undefined;
+    return row === undefined ? null : String(row['value']);
+  }
+
+  /** Store a short text under a key. Keys and values are validated; when the memory is full the oldest entries go. */
+  setMemory(key: string, value: string, now: number): void {
+    if (key.length < 1 || key.length > MAX_MEMORY_KEY || [...key].some((char) => char.charCodeAt(0) < 32))
+      throw new StoreError('invalid memory key');
+    if (value.length > MAX_MEMORY_VALUE) throw new StoreError('memory value too long');
+    this.transaction(() => {
+      this.db
+        .prepare(
+          'INSERT INTO platform_memory (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
+        )
+        .run(key, value, now);
+      this.db
+        .prepare(
+          'DELETE FROM platform_memory WHERE key IN (SELECT key FROM platform_memory ORDER BY updated_at DESC, key LIMIT -1 OFFSET ?)',
+        )
+        .run(MAX_MEMORY_ENTRIES);
+    });
+  }
+
+  deleteMemory(key: string): void {
+    this.db.prepare('DELETE FROM platform_memory WHERE key = ?').run(key);
+  }
+
+  listMemory(prefix: string): { key: string; value: string; updatedAt: number }[] {
+    const rows = this.db
+      .prepare('SELECT key, value, updated_at FROM platform_memory WHERE substr(key, 1, ?) = ? ORDER BY updated_at, key')
+      .all(prefix.length, prefix) as unknown as Rows[];
+    return rows.map((row) => ({ key: String(row['key']), value: String(row['value']), updatedAt: Number(row['updated_at']) }));
   }
 
   recordCall(call: CallRecord): void {
@@ -643,6 +689,10 @@ export interface DailyUsageRow {
 }
 
 const MAX_QUERY_CHARS = 200;
+const MAX_MEMORY_KEY = 120;
+const MAX_MEMORY_VALUE = 400;
+/** Entries kept in the adapters' memory, all adapters together. */
+export const MAX_MEMORY_ENTRIES = 1000;
 /** Ids kept per search: a board listing can hold thousands of postings, and the counts stay exact whatever is kept. */
 const MAX_SEARCH_HITS = 1000;
 

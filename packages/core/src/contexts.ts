@@ -6,6 +6,7 @@ import {
   type BrowserSession,
   type HttpClient,
   type JobStore,
+  type PlatformMemory,
 } from '@jobwatch/sdk';
 import type { ContextProvider } from './call';
 import { DEFAULT_BROWSER_PACING, NO_PACING, createPacer, type PacerOptions } from './browser/pacer';
@@ -57,6 +58,17 @@ export function createJobStore(store: Store, platform: string, clock: () => numb
     put: async (job) => store.putJob(platform, job, clock()),
     touch: async (ids) => store.touchJobs(platform, ids, clock()),
     recordSearch: async (search) => store.recordSearch(platform, search, clock()),
+  };
+}
+
+/** The adapters' key-value memory over the store (`ctx.memory`). */
+export function createPlatformMemory(store: Store, clock: () => number = Date.now): PlatformMemory {
+  return {
+    get: async (key) => store.getMemory(key),
+    set: async (key, value) => store.setMemory(key, value, clock()),
+    delete: async (key) => store.deleteMemory(key),
+    list: async (prefix) =>
+      store.listMemory(prefix).map((entry) => ({ key: entry.key, value: entry.value, updatedAt: new Date(entry.updatedAt).toISOString() })),
   };
 }
 
@@ -117,6 +129,7 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
           meter.units += units;
         },
         jobs: createJobStore(jobStore, adapter.platform, deps.clock),
+        memory: createPlatformMemory(jobStore, deps.clock),
         log: createAdapterLogger(deps.logger, adapter.id),
         pace: pacerFor(adapter),
       };

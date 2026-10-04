@@ -137,9 +137,23 @@ export interface JobStore {
   recordSearch(search: { query: string; found: readonly string[]; returned: readonly string[] }): Promise<void>;
 }
 
+/**
+ * A small key-value memory the router keeps for adapters, in its database: things an adapter looked up once and should not look up
+ * again (the id LinkedIn gave a place name). Shared by all adapters, so keys carry the adapter's prefix by convention
+ * (`linkedin.geo:berlin`). Values are short text. It is bounded: the oldest entries go when it is full. Nothing secret belongs here.
+ */
+export interface PlatformMemory {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+  /** Entries whose key starts with `prefix`, oldest first. */
+  list(prefix: string): Promise<{ key: string; value: string; updatedAt: string }[]>;
+}
+
 export interface BaseContext {
   http: HttpClient;
   jobs: JobStore;
+  memory: PlatformMemory;
   log: Logger;
   /** Human-like delay from the platform's pacing policy. */
   pace(kind: PaceKind): Promise<void>;

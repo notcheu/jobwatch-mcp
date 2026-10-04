@@ -14,8 +14,32 @@ import type {
   Logger,
   NewJob,
   PaceKind,
+  PlatformMemory,
   StoredJob,
 } from '../context';
+
+/** `ctx.memory` for tests: a map you can seed and inspect. */
+export class FakePlatformMemory implements PlatformMemory {
+  readonly entries = new Map<string, string>();
+  get(key: string): Promise<string | null> {
+    return Promise.resolve(this.entries.get(key) ?? null);
+  }
+  set(key: string, value: string): Promise<void> {
+    this.entries.set(key, value);
+    return Promise.resolve();
+  }
+  delete(key: string): Promise<void> {
+    this.entries.delete(key);
+    return Promise.resolve();
+  }
+  list(prefix: string): Promise<{ key: string; value: string; updatedAt: string }[]> {
+    return Promise.resolve(
+      [...this.entries]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([key, value]) => ({ key, value, updatedAt: new Date(0).toISOString() })),
+    );
+  }
+}
 
 /** In-memory `JobStore` for adapter tests. `jobs` is inspectable; `now` can be moved to test retention-independent logic. */
 export class FakeJobStore implements JobStore {
@@ -236,6 +260,8 @@ export interface TestContext<C> {
   paced: PaceKind[];
   /** The store behind `ctx.jobs`: seed it with `put`, assert on `jobs`. */
   jobs: FakeJobStore;
+  /** The memory behind `ctx.memory`: seed it with `set`, assert on `entries`. */
+  memory: FakePlatformMemory;
   /**
    * Budget units the engine would have measured so far: every `ctx.http` request, every `session.goto`, plus `ctx.spend`.
    * A test can compare it with the `cost` a handler reports: they must agree.
@@ -246,6 +272,7 @@ export interface TestContext<C> {
 function baseParts(options: TestContextOptions): {
   http: FakeHttpClient;
   jobs: FakeJobStore;
+  memory: FakePlatformMemory;
   log: Logger;
   logs: CapturedLog[];
   paced: PaceKind[];
@@ -279,6 +306,7 @@ function baseParts(options: TestContextOptions): {
       meter.units += units;
     },
     jobs: new FakeJobStore(undefined, options.platform),
+    memory: new FakePlatformMemory(),
     log: { debug: push('debug'), info: push('info'), warn: push('warn'), error: push('error') },
     logs,
     paced,
@@ -291,15 +319,15 @@ function baseParts(options: TestContextOptions): {
 
 /** Context for testing a `kind: "http"` adapter. */
 export function createHttpTestContext(options: TestContextOptions): TestContext<HttpAdapterContext> {
-  const { http, jobs, log, logs, paced, pace, spend, meter } = baseParts(options);
-  return { ctx: { http, jobs, log, pace, spend }, http, jobs, logs, paced, spent: () => meter.units };
+  const { http, jobs, memory, log, logs, paced, pace, spend, meter } = baseParts(options);
+  return { ctx: { http, jobs, memory, log, pace, spend }, http, jobs, memory, logs, paced, spent: () => meter.units };
 }
 
 /** Context for testing a `kind: "browser"` adapter. Also returns the fake session for assertions. */
 export function createBrowserTestContext(
   options: TestContextOptions,
 ): TestContext<BrowserAdapterContext> & { session: FakeBrowserSession } {
-  const { http, jobs, log, logs, paced, pace, spend, meter } = baseParts(options);
+  const { http, jobs, memory, log, logs, paced, pace, spend, meter } = baseParts(options);
   const session = new FakeBrowserSession(options.allowedHosts, options.pages, options.maxTabs);
   // the engine counts every page load, in an extra tab as well
   const count = (target: FakeBrowserSession): void => {
@@ -311,5 +339,5 @@ export function createBrowserTestContext(
   };
   count(session);
   session.onTab = count;
-  return { ctx: { http, jobs, log, pace, spend, session }, http, jobs, logs, paced, session, spent: () => meter.units };
+  return { ctx: { http, jobs, memory, log, pace, spend, session }, http, jobs, memory, logs, paced, session, spent: () => meter.units };
 }
