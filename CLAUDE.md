@@ -68,7 +68,7 @@ Pinned versions: TypeScript 5.9.3 on purpose (`typescript-eslint` 8.71 supports 
 
 ## Gotchas (details in the linked docs)
 - **CI image must be built with `provenance: false`**, otherwise Watchtower cannot resolve the new digest (`10-…`).
-- **LinkedIn drops the `f_WT=2` remote filter on load:** remote must be post-filtered. Match `Vue` case-sensitively (the French word "vue" otherwise matches everywhere) (`07-…`).
+- **LinkedIn may drop the `f_WT=2` remote filter on load:** it is sent on the classic layout only, and remote is post-filtered anyway. Match `Vue` case-sensitively (the French word "vue" otherwise matches everywhere) (`07-…`).
 - **Chrome DevTools rejects non-IP/non-localhost `Host` headers:** connect to the container IP, not its DNS name (`05-…`, G2).
 - **Session cookies may not survive a restart** unless session restore is on; verify login persistence over repeated stop/start (`05-…`, G4).
 - **Rootless Docker socket ownership:** the socket is owned by the host user, which is uid 0 inside containers; the router may need `user: "0:0"` (still unprivileged on the host) (`10-…`).
