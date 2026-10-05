@@ -14,7 +14,7 @@ import { callTool } from './call';
 import { createContextProvider, createJobStore } from './contexts';
 import { Store } from './store/store';
 import { createLogger } from './logging';
-import { loadAdapters } from './registry';
+import { loadModules } from './registry';
 import type { BrowserConnection } from './browser/session';
 import { FakeBackend } from './runtime/fake';
 import { RuntimeManager } from './runtime/manager';
@@ -132,7 +132,7 @@ async function setup(
       }) as HttpClient,
     pacerOptions: { sleep: async () => undefined },
   });
-  const registry = await loadAdapters(
+  const registry = await loadModules(
     adapters.map((a) => a.id),
     Object.fromEntries(adapters.map((a) => [a.id, async () => a])),
   );

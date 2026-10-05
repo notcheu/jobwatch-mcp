@@ -24,7 +24,7 @@ import {
   type ContextProvider,
 } from './call';
 import { createLogger } from './logging';
-import { loadAdapters } from './registry';
+import { loadModules } from './registry';
 
 const SECRET = 'li_at=AQEDAR-SUPER-SECRET-COOKIE';
 
@@ -85,7 +85,7 @@ const okProvider = (released: { count: number }): ContextProvider => ({
 
 async function depsFor(handler: Handler, extra: { provider?: ContextProvider; limits?: Parameters<typeof adapterWith>[1] } = {}) {
   const adapter = adapterWith(handler, extra.limits);
-  const registry = await loadAdapters(['probe'], { probe: async () => adapter });
+  const registry = await loadModules(['probe'], { probe: async () => adapter });
   const sink = logSink();
   const released = { count: 0 };
   const deps: CallDeps = {

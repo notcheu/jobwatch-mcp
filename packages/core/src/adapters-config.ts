@@ -29,7 +29,7 @@ const fileSchema = z
 
 export type EnabledSource = 'env' | 'file' | 'default';
 
-export interface EnabledAdapters {
+export interface EnabledModules {
   /** Every enabled module, adapters and utilities: what the registry loads. */
   ids: string[];
   adapters: string[];
@@ -67,7 +67,7 @@ export async function readEnabledFile(dataDir: string): Promise<EnabledLists | u
 type EnvLists = Pick<Config, 'adaptersFromEnv' | 'dataDir'> & Partial<Pick<Config, 'utilitiesFromEnv'>>;
 
 /** Resolve the effective lists: JW_ADAPTERS and JW_UTILITIES win over the file, the file over the empty default. */
-export async function resolveEnabledAdapters(config: EnvLists): Promise<EnabledAdapters> {
+export async function resolveEnabledModules(config: EnvLists): Promise<EnabledModules> {
   const fromFile =
     config.adaptersFromEnv !== undefined && config.utilitiesFromEnv !== undefined ? undefined : await readEnabledFile(config.dataDir);
   const adapters = config.adaptersFromEnv !== undefined ? [...config.adaptersFromEnv] : (fromFile?.adapters ?? []);
@@ -108,7 +108,7 @@ export const isPinned = (config: Pick<EnvLists, 'adaptersFromEnv' | 'utilitiesFr
  * listed would stop the router from starting). Refuses to edit while the group's variable is set, because the environment would
  * silently override the result.
  */
-export async function setAdaptersEnabled(
+export async function setModulesEnabled(
   config: EnvLists,
   installedIds: readonly string[],
   requested: readonly string[],

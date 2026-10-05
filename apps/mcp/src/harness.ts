@@ -1,12 +1,12 @@
 import { Writable } from 'node:stream';
 import type { AddressInfo } from 'node:net';
-import type { InstalledAdapters } from '@jobwatch/core';
+import type { InstalledModules } from '@jobwatch/core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { start, type RunningServer, type StartOptions } from './server';
 import { fakeContexts, other, probe } from './fixtures';
 
-export const installedFixtures: InstalledAdapters = { probe: async () => probe, other: async () => other };
+export const installedFixtures: InstalledModules = { probe: async () => probe, other: async () => other };
 
 export interface TestServer {
   running: RunningServer;

@@ -2,7 +2,7 @@
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createHash } from 'node:crypto';
-import { CallLog, CircuitBreaker, RateLimiter, Store, createLogger, createRegistryHolder, loadAdapters, policyFor } from '@jobwatch/core';
+import { CallLog, CircuitBreaker, RateLimiter, Store, createLogger, createRegistryHolder, loadModules, policyFor } from '@jobwatch/core';
 import { exportJWK, generateKeyPair, SignJWT, createLocalJWKSet, type JWK } from 'jose';
 import { afterEach, describe, expect, it } from 'vitest';
 import { installedFixtures } from '../harness';
@@ -156,8 +156,8 @@ function seededLog(): CallLog {
 
 async function build(over: Partial<DashboardDeps> = {}, authRequired = false, oidcFor?: (clock: { now: number }) => Oidc) {
   const store = seededStore();
-  const registry = await loadAdapters(['probe'], installedFixtures);
-  const holder = createRegistryHolder(registry, (ids) => loadAdapters(ids, installedFixtures));
+  const registry = await loadModules(['probe'], installedFixtures);
+  const holder = createRegistryHolder(registry, (ids) => loadModules(ids, installedFixtures));
   const breaker = new CircuitBreaker(store, () => NOW);
   const limiter = new RateLimiter(store, () => NOW, policyFor(registry.adapters));
   const sessions = new SessionStore(8 * 3600 * 1000, () => clock.now);

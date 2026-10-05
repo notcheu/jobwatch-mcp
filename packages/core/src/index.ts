@@ -10,13 +10,13 @@ export {
   isPinned,
   pinVariable,
   readEnabledFile,
-  resolveEnabledAdapters,
-  setAdaptersEnabled,
+  resolveEnabledModules,
+  setModulesEnabled,
   writeEnabledFile,
 } from './adapters-config';
-export type { EnabledAdapters, EnabledLists, EnabledSource, ModuleGroup, ToggleResult } from './adapters-config';
-export { RegistryError, listTools, loadAdapters } from './registry';
-export type { InstalledAdapters, ListedTool, RegisteredTool, Registry } from './registry';
+export type { EnabledModules, EnabledLists, EnabledSource, ModuleGroup, ToggleResult } from './adapters-config';
+export { RegistryError, listTools, loadModules } from './registry';
+export type { InstalledAdapters, InstalledModules, InstalledUtilities, ListedTool, RegisteredTool, Registry } from './registry';
 export { MAX_PARAMS_BYTES, UnknownToolError, argsHash, callTool, noRuntime, paramsForHistory } from './call';
 export type {
   Admission,

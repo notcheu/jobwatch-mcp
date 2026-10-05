@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { CallLog, CircuitBreaker, RateLimiter, Store, createLogger, loadAdapters, policyFor } from '@jobwatch/core';
+import { CallLog, CircuitBreaker, RateLimiter, Store, createLogger, loadModules, policyFor } from '@jobwatch/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installedFixtures } from '../harness';
 import { DashboardManager, type DashboardSettings } from './manager';
@@ -15,7 +15,7 @@ afterEach(async () => {
 
 async function build(over: Partial<DashboardSettings> = {}) {
   const store = Store.open(':memory:');
-  const registry = await loadAdapters(['probe'], installedFixtures);
+  const registry = await loadModules(['probe'], installedFixtures);
   const settings: DashboardSettings = {
     port: 0,
     url: 'https://jobs.example.com/dashboard/',

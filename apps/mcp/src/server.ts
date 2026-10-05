@@ -23,23 +23,23 @@ import {
   createLogger,
   createMetrics,
   describeConfig,
-  loadAdapters,
+  loadModules,
   loadConfig,
   type ConnectBrowser,
   policyFor,
   isPinned,
   pinVariable,
-  resolveEnabledAdapters,
-  setAdaptersEnabled,
+  resolveEnabledModules,
+  setModulesEnabled,
   type PlatformStatus,
   type Clock,
   type ContextProvider,
   type ContextProviderDeps,
-  type InstalledAdapters,
+  type InstalledModules,
   type RuntimeBackend,
   type RuntimeHooks,
 } from '@jobwatch/core';
-import { installed } from '@jobwatch/adapters';
+import { installedModules } from '@jobwatch/mcp-modules';
 import { roleOf, type McpModule } from '@jobwatch/sdk';
 import { createApp, type AppDeps } from './app';
 import { DashboardManager } from './dashboard/manager';
@@ -74,7 +74,7 @@ export interface StartOptions {
   env: Readonly<Record<string, string | undefined>>;
   version: string;
   /** Tests inject their own installed table and context provider (which replaces the real one built from the runtime). */
-  installed?: InstalledAdapters;
+  installed?: InstalledModules;
   contexts?: ContextProvider;
   /** Replaces the HTTP client adapters get (tests only: no real request leaves the machine). */
   createHttp?: ContextProviderDeps['createHttp'];
@@ -124,10 +124,10 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   for (const warning of warnings) logger.warn(warning);
   logger.info({ config: describeConfig(config) }, 'config_loaded');
 
-  const enabled = await resolveEnabledAdapters(config);
+  const enabled = await resolveEnabledModules(config);
   // Two passes: the ops tools need the limiter, breaker and runtime, which are built from the enabled adapters.
-  const table = options.installed ?? installed;
-  const enabledOnly = await loadAdapters(enabled.ids, table);
+  const table = options.installed ?? installedModules;
+  const enabledOnly = await loadModules(enabled.ids, table);
   if (enabled.ids.length === 0)
     logger.warn('No adapters are enabled: only the built-in ops tools are listed. Enable one with `jobwatch adapters enable <id>`.');
   if (config.auth === 'front' && config.frontSharedSecret === undefined) {
@@ -230,11 +230,11 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     clock,
     logger,
   });
-  const registry = await loadAdapters(enabled.ids, table, [ops]);
+  const registry = await loadModules(enabled.ids, table, [ops]);
   policyAdapters = registry.adapters;
   const holder = createRegistryHolder(
     registry,
-    (ids) => loadAdapters(ids, table, [ops]),
+    (ids) => loadModules(ids, table, [ops]),
     async (next) => {
       // validated before the swap; a browser adapter needs the runtime to exist from its first call
       if (next.enabled.some((adapter) => adapter.kind === 'browser')) await ensureRuntime();
@@ -316,7 +316,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const pinnedByEnv = config.adaptersFromEnv !== undefined || config.utilitiesFromEnv !== undefined;
   const reloadAdapters = async (): Promise<ReloadResult> => {
     if (pinnedByEnv) throw new Error('JW_ADAPTERS or JW_UTILITIES sets the enabled list; unset it to change it without a restart.');
-    const wanted = await resolveEnabledAdapters(config);
+    const wanted = await resolveEnabledModules(config);
     const result = await holder.reload(wanted.ids);
     logger.info({ enabled: result.enabled, added: result.addedAdapters, removed: result.removedAdapters }, 'adapters_reloaded');
     return result;
@@ -381,13 +381,13 @@ export async function start(options: StartOptions): Promise<RunningServer> {
                 .filter(([, role]) => (role === 'utility') === (group === 'utilities'))
                 .map(([key]) => key)
                 .sort();
-              await setAdaptersEnabled(config, groupIds, [id], enabled, group);
+              await setModulesEnabled(config, groupIds, [id], enabled, group);
               try {
                 const result = await reloadAdapters();
                 return { enabledAdapters: result.enabled, addedTools: result.addedTools, removedTools: result.removedTools };
               } catch (error) {
                 // the file was written but the list does not load: put it back so the next start is not broken
-                await setAdaptersEnabled(config, groupIds, [id], !enabled, group).catch(() => undefined);
+                await setModulesEnabled(config, groupIds, [id], !enabled, group).catch(() => undefined);
                 throw new ChangeRefused(
                   422,
                   'not_loadable',

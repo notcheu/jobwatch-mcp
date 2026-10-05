@@ -122,7 +122,7 @@ flowchart TB
 ```
 
 To add a platform (diagram 7 shows the packages):
-1. `npm run new:adapter -- <id>` creates `packages/adapter-<id>`, adds one line to `packages/adapters` and writes the first catalog snapshot.
+1. `npm run new:adapter -- <id>` (or `npm run new:utility -- <id>` for a helper module that fetches no jobs) creates `packages/adapter-<id>` (`packages/utility-<id>`), adds one line to the matching map in `packages/mcp-modules` and writes the first catalog snapshot.
 2. Write the tools with `defineHttpTool` or `defineBrowserTool`, add fixtures and a contract test using `@jobwatch/sdk/testkit`.
 3. `npm run catalog:gen` after every change to a tool, commit the snapshot, then `jobwatch adapters enable <id>` and restart the router.
 

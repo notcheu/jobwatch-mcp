@@ -6,7 +6,7 @@ import { sendControl, controlSocketPath } from '@jobwatch/core';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { installed } from '@jobwatch/adapters';
+import { installedUtilities } from '@jobwatch/mcp-modules';
 import { FakeHttpClient } from '@jobwatch/sdk/testkit';
 import { installedFixtures, connectClient } from './harness';
 import { start, type RunningServer } from './server';
@@ -253,7 +253,7 @@ describe('places through the control socket (jobwatch linkedin-geo)', () => {
         JW_DB_PATH: ':memory:',
       },
       version: 'test',
-      installed: { ...installedFixtures, 'linkedin-geo': installed['linkedin-geo'] },
+      installed: { ...installedFixtures, 'linkedin-geo': installedUtilities['linkedin-geo'] },
       createHttp: () => new FakeHttpClient(['www.linkedin.com'], [{ url: /typeaheadHits\?typeaheadType=GEO&query=Berlin$/, body: BERLIN }]),
       port: 0,
       metricsPort: 0,

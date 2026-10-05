@@ -1,7 +1,9 @@
 import {
   formatViolations,
   validateAdapter,
+  type AdapterModule,
   type McpModule,
+  type UtilityModule,
   type ErasedTool,
   type BaseContext,
   type CatalogEntry,
@@ -9,10 +11,13 @@ import {
 } from '@jobwatch/sdk';
 
 /**
- * The installed adapters: id to a loader. The list lives in `@jobwatch/adapters`; core only knows this shape,
- * so it never imports an adapter and the dependency rule (core depends on sdk only) holds.
+ * The installed modules: id to a loader. The lists live in `@jobwatch/mcp-modules`; core only knows these shapes, so it never
+ * imports an adapter or a utility and the dependency rule (core depends on sdk only) holds. Adapters fetch jobs, utilities are
+ * helper modules; the registry loads either from `InstalledModules`.
  */
-export type InstalledAdapters = Readonly<Record<string, () => Promise<McpModule>>>;
+export type InstalledAdapters = Readonly<Record<string, () => Promise<AdapterModule>>>;
+export type InstalledUtilities = Readonly<Record<string, () => Promise<UtilityModule>>>;
+export type InstalledModules = Readonly<Record<string, () => Promise<McpModule>>>;
 
 export class RegistryError extends Error {
   readonly problems: readonly string[];
@@ -44,9 +49,9 @@ export interface Registry {
  * adapters, and adapters that share a platform but disagree on kind (they would share one runtime).
  * Only enabled adapters are imported; a disabled adapter costs nothing and exposes nothing.
  */
-export async function loadAdapters(
+export async function loadModules(
   enabledIds: readonly string[],
-  installed: InstalledAdapters,
+  installed: InstalledModules,
   builtins: readonly McpModule[] = [],
 ): Promise<Registry> {
   const problems: string[] = [];

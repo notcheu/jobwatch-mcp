@@ -16,7 +16,7 @@ import { CircuitBreaker } from '../limits/breaker';
 import { createGuard, policyFor } from '../limits/guard';
 import { RateLimiter } from '../limits/ratelimit';
 import { createLogger } from '../logging';
-import { loadAdapters } from '../registry';
+import { loadModules } from '../registry';
 import { FakeBackend } from '../runtime/fake';
 import { RuntimeManager } from '../runtime/manager';
 import { Store } from '../store/store';
@@ -138,7 +138,7 @@ async function setup(adapters: AdapterModule[], over: { contexts?: ContextProvid
       acquire: async () => (acquired++, { ctx: { session } as unknown as BaseContext, release: async () => void released++ }),
     } satisfies ContextProvider);
   const ops = createOpsAdapter({ enabledAdapters: () => adapters, runtime, store, limiter, breaker, contexts, clock: () => now, logger });
-  const registry = await loadAdapters(
+  const registry = await loadModules(
     adapters.map((a) => a.id),
     Object.fromEntries(adapters.map((a) => [a.id, async () => a])),
     [ops],
@@ -199,7 +199,7 @@ describe('the ops adapter is a normal adapter', () => {
 
   it('is reserved: an installed adapter cannot take its id', async () => {
     const ops = createOpsAdapter({} as never);
-    await expect(loadAdapters(['ops'], { ops: async () => webAdapter('web') }, [ops])).rejects.toThrow(/reserved built-in id/);
+    await expect(loadModules(['ops'], { ops: async () => webAdapter('web') }, [ops])).rejects.toThrow(/reserved built-in id/);
   });
 });
 
