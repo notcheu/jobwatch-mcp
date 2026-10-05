@@ -264,7 +264,7 @@ Read specific jobs by id (up to 25; stored ones come from the database with no v
 { "ids": ["4000000001", "4000000002"], "detail": "full" }
 ```
 
-`geo` is a place name LinkedIn understands (`"Berlin, Germany"`, `"Austin, Texas"`, `"Remote"`) or a numeric LinkedIn geoId. Leave it out to use the operator's `JW_DEFAULT_LOCATION`; there is no place built in. A place name is looked up on LinkedIn's own location autocomplete the first time and remembered (the result says which place it chose and what else it could be); `linkedin_locations` or `jobwatch geo` show the candidates and let you remember a name yourself; `JW_LINKEDIN_GEO_ALIASES` (`home=104246759`) names geoIds in the environment.
+`geo` is a place name LinkedIn understands (`"Berlin, Germany"`, `"Austin, Texas"`, `"Remote"`) or a numeric LinkedIn geoId. Leave it out to use the operator's `JW_DEFAULT_LOCATION`; there is no place built in. A place name is looked up on LinkedIn's own location autocomplete the first time and remembered (the result says which place it chose and what else it could be); `linkedin_locations` or `jobwatch linkedin-geo` show the candidates and let you remember a name yourself; `JW_LINKEDIN_GEO_ALIASES` (`home=104246759`) names geoIds in the environment.
 </details>
 
 <details>

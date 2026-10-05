@@ -237,7 +237,7 @@ describe('changing adapters from the dashboard', () => {
   });
 });
 
-describe('places through the control socket (jobwatch geo)', () => {
+describe('places through the control socket (jobwatch linkedin-geo)', () => {
   const BERLIN = [
     { id: '103035651', type: 'GEO', displayName: 'Berlin, Germany' },
     { id: '90009712', type: 'GEO', displayName: 'Berlin Metropolitan Area' },
