@@ -23,11 +23,11 @@ All variables are optional unless noted. An empty value counts as "not set". The
 | `AUTH` | `front` | `front`: requests come through the OAuth front. `none`: no authentication, accepted only when `BASE_URL` is a loopback address (local development). |
 | `LISTEN_HOST` | `0.0.0.0` | Address the MCP server listens on. |
 | `PORT` | `8080`; `18931` in the example files | Port of the MCP server (1024-65535). In Docker Compose it is also the port the OAuth front listens on and the one published on the host (`BIND:PORT`). |
-| `DATA_DIR` | `/data`; `./.data` for `npm run dev` and `start` | Holds the SQLite database, `adapters.json` and, with `LOCAL_CHROME`, the browser profiles. In Compose it is `./data` next to the compose file, mounted at `/data`. |
+| `DATA_DIR` | `/data`; `./.data` for `npm run dev` and `start` | Holds the SQLite database, `adapters.json` and, with `BROWSER_LOCAL_CHROME`, the browser profiles. In Compose it is `./data` next to the compose file, mounted at `/data`. |
 | `DB_PATH` | `<DATA_DIR>/jobwatch.sqlite` | The SQLite file. The schema is migrated at every boot. |
 | `JOB_RETENTION_DAYS` | `30` | Days a stored job is kept after it was last seen (1-3650). |
 | `LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` or `fatal`. |
-| `RUNTIME` | `docker` | Container runtime for the browser. Only `docker` is implemented. |
+| `BROWSER_RUNTIME` | `docker` | Container runtime for the browser. Only `docker` is implemented. |
 | `TOKEN_CHARS_PER_TOKEN` | `3.5` | Characters per token, for the estimate of what a result costs Claude (1-10). |
 
 ## Modules
@@ -62,15 +62,15 @@ Needed only for the public deployment behind the OAuth front. Step by step: [`oa
 
 ## Browser
 
-Used by the browser modules (`linkedin`, `apec`, `wttj`). HTTP-only modules never start a browser. Three sources of Chrome, in this order of precedence: `CDP_URL`, `LOCAL_CHROME`, then a container (default).
+Used by the browser modules (`linkedin`, `apec`, `wttj`). HTTP-only modules never start a browser. Three sources of Chrome, in this order of precedence: `BROWSER_CDP_URL`, `BROWSER_LOCAL_CHROME`, then a container (default).
 
 ### Which Chrome
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LOCAL_CHROME` | `false` (`true` in `.env.local`) | Start a visible Chrome on this machine, with a profile per platform in `<DATA_DIR>/browser-profiles/`. |
-| `LOCAL_CHROME_PATH` | auto | Chrome executable for `LOCAL_CHROME`, when it is not found in the usual places. |
-| `CDP_URL` | unset | Attach to a Chrome that is already running: a loopback DevTools URL such as `http://127.0.0.1:9222` (start Chrome with `--remote-debugging-port` and its own `--user-data-dir`). Wins over `LOCAL_CHROME`. The server only opens and closes tabs of its own. |
+| `BROWSER_LOCAL_CHROME` | `false` (`true` in `.env.local`) | Start a visible Chrome on this machine, with a profile per platform in `<DATA_DIR>/browser-profiles/`. |
+| `BROWSER_LOCAL_CHROME_PATH` | auto | Chrome executable for `BROWSER_LOCAL_CHROME`, when it is not found in the usual places. |
+| `BROWSER_CDP_URL` | unset | Attach to a Chrome that is already running: a loopback DevTools URL such as `http://127.0.0.1:9222` (start Chrome with `--remote-debugging-port` and its own `--user-data-dir`). Wins over `BROWSER_LOCAL_CHROME`. The server only opens and closes tabs of its own. |
 
 ### Container (the default)
 
@@ -79,12 +79,12 @@ Used by the browser modules (`linkedin`, `apec`, `wttj`). HTTP-only modules neve
 | `BROWSER_IMAGE` | `localhost/jobwatch-browser:1` (`jobwatch-browser:latest` in `compose.yml`) | Browser image the router spawns. |
 | `BROWSER_NETWORK` | `jobwatch-browsers` | Internal Docker network of the browsers (Compose names it `<project>_jobwatch-browsers`, set in `compose.yml`). |
 | `BROWSER_SECCOMP` | unset | Absolute path of the Chrome seccomp profile as the docker CLI sees it; unset = Docker's default profile. |
-| `PROFILE_VOLUME_PREFIX` | `jw-profile-` | Browser profiles are Docker volumes named `<prefix><platform>`. |
-| `FINGERPRINT` | `enforce` | Startup check that the container's Chrome looks like a normal one: `enforce` refuses a browser that fails, `warn` logs, `off` skips. |
-| `MEM_HIGH_MB`, `MEM_MAX_MB` | `1200`, `1500` | Soft and hard memory marks of the container (256-16384; high must be lower than max). Per-tool budgets override them. |
-| `IDLE_TTL_S` | `120` | Seconds the browser stays up after its last call (10-3600). |
-| `MAX_LIFETIME_S` | `1800` | A browser older than this is recycled at the next call (60-86400). |
-| `QUEUE_TIMEOUT_S` | `60` | How long a call waits for the single browser before failing with `busy` (1-600). |
+| `BROWSER_PROFILE_VOLUME_PREFIX` | `jw-profile-` | Browser profiles are Docker volumes named `<prefix><platform>`. |
+| `BROWSER_FINGERPRINT` | `enforce` | Startup check that the container's Chrome looks like a normal one: `enforce` refuses a browser that fails, `warn` logs, `off` skips. |
+| `BROWSER_MEM_HIGH_MB`, `BROWSER_MEM_MAX_MB` | `1200`, `1500` | Soft and hard memory marks of the container (256-16384; high must be lower than max). Per-tool budgets override them. |
+| `BROWSER_IDLE_TTL_S` | `120` | Seconds the browser stays up after its last call (10-3600). |
+| `BROWSER_MAX_LIFETIME_S` | `1800` | A browser older than this is recycled at the next call (60-86400). |
+| `BROWSER_QUEUE_TIMEOUT_S` | `60` | How long a call waits for the single browser before failing with `busy` (1-600). |
 
 ### For every source
 
@@ -94,7 +94,7 @@ Used by the browser modules (`linkedin`, `apec`, `wttj`). HTTP-only modules neve
 | `BROWSER_ACCEPT_LANGS` | unset | `Accept-Language` list, copied from `navigator.languages` of your everyday browser (`fr-FR,en-GB,en-US`). |
 | `BROWSER_MAX_TABS` | `3` | Most tabs open at once. `1` = a single tab; more lets adapters open extra tabs. Each tab costs memory and the cap does not change. |
 
-`BROWSER_LANG` and `BROWSER_ACCEPT_LANGS` are handed to the browser container; with `LOCAL_CHROME` or `CDP_URL` the Chrome keeps its own language.
+`BROWSER_LANG` and `BROWSER_ACCEPT_LANGS` are handed to the browser container; with `BROWSER_LOCAL_CHROME` or `BROWSER_CDP_URL` the Chrome keeps its own language.
 
 ## Operator dashboard
 

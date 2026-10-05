@@ -54,13 +54,13 @@ describe('loadConfig defaults', () => {
 
 describe('loadConfig validation', () => {
   it('coerces and bounds numbers', () => {
-    expect(loadConfig({ ...base, PORT: '18931', MEM_MAX_MB: '2000' }).config).toMatchObject({ port: 18931, memMaxMb: 2000 });
+    expect(loadConfig({ ...base, PORT: '18931', BROWSER_MEM_MAX_MB: '2000' }).config).toMatchObject({ port: 18931, memMaxMb: 2000 });
     for (const [key, value] of [
       ['PORT', '80'],
       ['PORT', 'abc'],
-      ['IDLE_TTL_S', '5'],
-      ['MEM_MAX_MB', '100000'],
-      ['QUEUE_TIMEOUT_S', '1.5'],
+      ['BROWSER_IDLE_TTL_S', '5'],
+      ['BROWSER_MEM_MAX_MB', '100000'],
+      ['BROWSER_QUEUE_TIMEOUT_S', '1.5'],
     ] as const) {
       expect(problemsOf({ ...base, [key]: value }), `${key}=${value}`).not.toEqual([]);
     }
@@ -68,11 +68,13 @@ describe('loadConfig validation', () => {
 
   it('rejects an unknown log level or runtime', () => {
     expect(problemsOf({ ...base, LOG_LEVEL: 'loud' })).not.toEqual([]);
-    expect(problemsOf({ ...base, RUNTIME: 'podman' })).not.toEqual([]);
+    expect(problemsOf({ ...base, BROWSER_RUNTIME: 'podman' })).not.toEqual([]);
   });
 
   it('requires the high memory mark to be below the hard cap', () => {
-    expect(problemsOf({ ...base, MEM_HIGH_MB: '1500', MEM_MAX_MB: '1500' })).toContain('MEM_HIGH_MB must be lower than MEM_MAX_MB');
+    expect(problemsOf({ ...base, BROWSER_MEM_HIGH_MB: '1500', BROWSER_MEM_MAX_MB: '1500' })).toContain(
+      'BROWSER_MEM_HIGH_MB must be lower than BROWSER_MEM_MAX_MB',
+    );
   });
 
   it('never serves metrics on the MCP port', () => {
@@ -87,7 +89,7 @@ describe('loadConfig validation', () => {
   });
 
   it('collects every problem at once', () => {
-    expect(problemsOf({ PORT: 'x', LOG_LEVEL: 'loud', MEM_HIGH_MB: '10' }).length).toBeGreaterThanOrEqual(4);
+    expect(problemsOf({ PORT: 'x', LOG_LEVEL: 'loud', BROWSER_MEM_HIGH_MB: '10' }).length).toBeGreaterThanOrEqual(4);
   });
 
   it('ignores the variables of other tools', () => {
@@ -262,30 +264,32 @@ describe('browser mode', () => {
     expect(loadConfig(base).config).toMatchObject({ browserMode: 'docker', browserCdpAddress: undefined });
   });
 
-  it('starts a local Chrome with LOCAL_CHROME', () => {
-    expect(loadConfig({ ...base, LOCAL_CHROME: 'true' }).config.browserMode).toBe('local');
+  it('starts a local Chrome with BROWSER_LOCAL_CHROME', () => {
+    expect(loadConfig({ ...base, BROWSER_LOCAL_CHROME: 'true' }).config.browserMode).toBe('local');
   });
 
-  it('attaches to a running Chrome with CDP_URL, localhost included', () => {
-    expect(loadConfig({ ...base, CDP_URL: 'http://127.0.0.1:9222' }).config).toMatchObject({
+  it('attaches to a running Chrome with BROWSER_CDP_URL, localhost included', () => {
+    expect(loadConfig({ ...base, BROWSER_CDP_URL: 'http://127.0.0.1:9222' }).config).toMatchObject({
       browserMode: 'attach',
       browserCdpAddress: '127.0.0.1:9222',
     });
-    expect(loadConfig({ ...base, CDP_URL: 'http://localhost:9333' }).config.browserCdpAddress).toBe('127.0.0.1:9333');
+    expect(loadConfig({ ...base, BROWSER_CDP_URL: 'http://localhost:9333' }).config.browserCdpAddress).toBe('127.0.0.1:9333');
   });
 
   it('refuses a DevTools URL that is not loopback, has no port or is not http', () => {
     for (const url of ['http://192.168.1.5:9222', 'http://example.com:9222', 'http://127.0.0.1', 'https://127.0.0.1:9222', 'nonsense'])
-      expect(problemsOf({ ...base, CDP_URL: url }), url).toEqual([expect.stringContaining('CDP_URL')]);
+      expect(problemsOf({ ...base, BROWSER_CDP_URL: url }), url).toEqual([expect.stringContaining('BROWSER_CDP_URL')]);
   });
 
   it('attaches when both are set: the running Chrome wins, with a warning', () => {
-    const { config, warnings } = loadConfig({ ...base, LOCAL_CHROME: 'true', CDP_URL: 'http://127.0.0.1:9222' });
+    const { config, warnings } = loadConfig({ ...base, BROWSER_LOCAL_CHROME: 'true', BROWSER_CDP_URL: 'http://127.0.0.1:9222' });
     expect(config.browserMode).toBe('attach');
-    expect(warnings).toEqual([expect.stringContaining('LOCAL_CHROME is ignored')]);
+    expect(warnings).toEqual([expect.stringContaining('BROWSER_LOCAL_CHROME is ignored')]);
   });
 
   it('warns about a Chrome path that nothing uses', () => {
-    expect(loadConfig({ ...base, LOCAL_CHROME_PATH: '/usr/bin/chrome' }).warnings).toEqual([expect.stringContaining('LOCAL_CHROME_PATH')]);
+    expect(loadConfig({ ...base, BROWSER_LOCAL_CHROME_PATH: '/usr/bin/chrome' }).warnings).toEqual([
+      expect.stringContaining('BROWSER_LOCAL_CHROME_PATH'),
+    ]);
   });
 });

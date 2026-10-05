@@ -167,10 +167,10 @@ If a site shows a security check (`checkpoint`), stop, wait at least 24 hours an
 
 ### Use your own Chrome instead of the Docker image
 
-By default the browser modules (`linkedin`, `apec`, `wttj`) run in a Chrome container. For development on your own machine you can use a Chrome without Docker, in one of two ways. `npm run dev` and `npm run start` use a local Chrome by default (`LOCAL_CHROME=true` in `.env.local`); the Docker Compose deployment keeps the container:
+By default the browser modules (`linkedin`, `apec`, `wttj`) run in a Chrome container. For development on your own machine you can use a Chrome without Docker, in one of two ways. `npm run dev` and `npm run start` use a local Chrome by default (`BROWSER_LOCAL_CHROME=true` in `.env.local`); the Docker Compose deployment keeps the container:
 
-- **`LOCAL_CHROME=true`**: the server starts a visible Chrome itself, the way Playwright does, and stops it after the idle period. Each platform gets its own profile in `<DATA_DIR>/browser-profiles/`, so a sign-in survives restarts. Chrome is looked for in the usual places; set `LOCAL_CHROME_PATH` to use another executable. Close any Chrome that already uses that profile directory.
-- **`CDP_URL=http://127.0.0.1:9222`**: the server attaches to a Chrome that is already running. Start it with its DevTools port open and a profile directory of its own (Chrome ignores the port on its default profile):
+- **`BROWSER_LOCAL_CHROME=true`**: the server starts a visible Chrome itself, the way Playwright does, and stops it after the idle period. Each platform gets its own profile in `<DATA_DIR>/browser-profiles/`, so a sign-in survives restarts. Chrome is looked for in the usual places; set `BROWSER_LOCAL_CHROME_PATH` to use another executable. Close any Chrome that already uses that profile directory.
+- **`BROWSER_CDP_URL=http://127.0.0.1:9222`**: the server attaches to a Chrome that is already running. Start it with its DevTools port open and a profile directory of its own (Chrome ignores the port on its default profile):
 
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/.jobwatch-chrome"

@@ -84,7 +84,7 @@ describe('browser runtime wiring', () => {
         BROWSER_IMAGE: 'registry.example.com/jobwatch-browser:154',
         BROWSER_NETWORK: 'my-net',
         BROWSER_SECCOMP: '/etc/jobwatch/seccomp.json',
-        PROFILE_VOLUME_PREFIX: 'prof-',
+        BROWSER_PROFILE_VOLUME_PREFIX: 'prof-',
       },
       ['browsery'],
       { installed, runtimeBackend: backend, ...noHooks },

@@ -28,7 +28,7 @@ export function findChrome(
 }
 
 export interface LocalBackendOptions {
-  /** Chrome executable (`LOCAL_CHROME_PATH`); unset = `findChrome`. */
+  /** Chrome executable (`BROWSER_LOCAL_CHROME_PATH`); unset = `findChrome`. */
   executable?: string;
   /** Directory holding one Chrome profile per platform, so a sign-in survives a restart. */
   profilesDir: string;
@@ -48,7 +48,7 @@ export class LocalBackend implements RuntimeBackend {
   async start(spec: RuntimeSpec): Promise<RuntimeHandle> {
     const executable = this.options.executable ?? findChrome(process.platform, process.env);
     if (executable === undefined || !existsSync(executable))
-      throw new BackendError('Chrome was not found. Install it or set LOCAL_CHROME_PATH to its executable.');
+      throw new BackendError('Chrome was not found. Install it or set BROWSER_LOCAL_CHROME_PATH to its executable.');
     await this.remove(spec.name);
     const profile = join(this.options.profilesDir, spec.profileVolume);
     await mkdir(profile, { recursive: true });
@@ -64,7 +64,9 @@ export class LocalBackend implements RuntimeBackend {
       child.once('error', (cause) => reject(new BackendError(`cannot run Chrome: ${cause.message}`, { cause })));
       child.once('exit', () =>
         reject(
-          new BackendError('Chrome exited at once. Is another Chrome already using this profile directory? Close it, or use CDP_URL.'),
+          new BackendError(
+            'Chrome exited at once. Is another Chrome already using this profile directory? Close it, or use BROWSER_CDP_URL.',
+          ),
         ),
       );
     });

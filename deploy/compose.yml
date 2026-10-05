@@ -52,7 +52,7 @@ services:
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
     environment:                             # tied to this file's layout, so not in .env
-      RUNTIME: docker
+      BROWSER_RUNTIME: docker
       BROWSER_NETWORK: jobwatch_jobwatch-browsers   # compose names networks <project>_<name>; the project is `jobwatch`
       DOCKER_HOST: unix:///var/run/docker.sock          # mcpuser's ROOTLESS socket, mounted below
     volumes:

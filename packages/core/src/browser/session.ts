@@ -33,7 +33,7 @@ export interface ConnectOptions {
   /** Most tabs at once; 1 (default) keeps the single-tab rule. */
   maxTabs?: number;
   /**
-   * The browser is somebody's own (`CDP_URL`, or a local Chrome): open a tab of ours instead of taking the first one,
+   * The browser is somebody's own (`BROWSER_CDP_URL`, or a local Chrome): open a tab of ours instead of taking the first one,
    * leave every other tab alone (never close, route or park them), close only the tabs we opened, and leave the cookies as they are.
    */
   shared?: boolean;

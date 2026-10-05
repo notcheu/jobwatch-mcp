@@ -1,7 +1,7 @@
 import { BackendError, type ContainerState, type RuntimeBackend, type RuntimeHandle, type RuntimeSpec } from './backend';
 
 /**
- * A Chrome that is already running and that somebody else owns (`CDP_URL`). There is nothing to start, stop or
+ * A Chrome that is already running and that somebody else owns (`BROWSER_CDP_URL`). There is nothing to start, stop or
  * measure: `start` only checks that DevTools answers, `stop` leaves the browser alone (never quits it), and no memory cap
  * applies. The browser layer opens its own tab in it and never touches the others (`connectBrowser`, `shared: true`).
  */

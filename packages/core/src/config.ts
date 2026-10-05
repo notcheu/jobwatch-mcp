@@ -26,10 +26,10 @@ export interface Config {
   browserAcceptLangs: readonly string[] | undefined;
   /**
    * Where the browser comes from. `docker`: a container per platform (default). `local`: Chrome started on this machine
-   * (`LOCAL_CHROME`). `attach`: an already running Chrome reached over DevTools (`CDP_URL`, which wins over `LOCAL_CHROME`).
+   * (`BROWSER_LOCAL_CHROME`). `attach`: an already running Chrome reached over DevTools (`BROWSER_CDP_URL`, which wins over `BROWSER_LOCAL_CHROME`).
    */
   browserMode: 'docker' | 'local' | 'attach';
-  /** `LOCAL_CHROME_PATH`: the Chrome executable of `local` mode; unset = look in the usual places. */
+  /** `BROWSER_LOCAL_CHROME_PATH`: the Chrome executable of `local` mode; unset = look in the usual places. */
   localBrowserPath: string | undefined;
   /** `ip:port` of the DevTools of the browser to attach to; set in `attach` mode only. Always loopback. */
   browserCdpAddress: string | undefined;
@@ -130,18 +130,20 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       'AUTH=none is only allowed when BASE_URL is a loopback address (local development); the public deployment must use the OAuth front',
     );
   }
-  if (parsed.MEM_HIGH_MB >= parsed.MEM_MAX_MB) problems.push('MEM_HIGH_MB must be lower than MEM_MAX_MB');
+  if (parsed.BROWSER_MEM_HIGH_MB >= parsed.BROWSER_MEM_MAX_MB) problems.push('BROWSER_MEM_HIGH_MB must be lower than BROWSER_MEM_MAX_MB');
   if (parsed.METRICS_ENABLED && parsed.METRICS_PORT === parsed.PORT)
     problems.push('METRICS_PORT must differ from PORT: metrics are never served on the MCP port');
 
   let browserCdpAddress: string | undefined;
-  if (parsed.CDP_URL !== undefined) {
-    browserCdpAddress = parseCdpUrl(parsed.CDP_URL);
-    if (browserCdpAddress === undefined) problems.push('CDP_URL: must be a loopback http URL with a port, e.g. http://127.0.0.1:9222');
-    if (parsed.LOCAL_CHROME) warnings.push('LOCAL_CHROME is ignored because CDP_URL is set: the running Chrome is used');
+  if (parsed.BROWSER_CDP_URL !== undefined) {
+    browserCdpAddress = parseCdpUrl(parsed.BROWSER_CDP_URL);
+    if (browserCdpAddress === undefined)
+      problems.push('BROWSER_CDP_URL: must be a loopback http URL with a port, e.g. http://127.0.0.1:9222');
+    if (parsed.BROWSER_LOCAL_CHROME)
+      warnings.push('BROWSER_LOCAL_CHROME is ignored because BROWSER_CDP_URL is set: the running Chrome is used');
   }
-  if (parsed.LOCAL_CHROME_PATH !== undefined && !parsed.LOCAL_CHROME && parsed.CDP_URL === undefined)
-    warnings.push('LOCAL_CHROME_PATH is ignored unless LOCAL_CHROME=true');
+  if (parsed.BROWSER_LOCAL_CHROME_PATH !== undefined && !parsed.BROWSER_LOCAL_CHROME && parsed.BROWSER_CDP_URL === undefined)
+    warnings.push('BROWSER_LOCAL_CHROME_PATH is ignored unless BROWSER_LOCAL_CHROME=true');
 
   let adaptersFromEnv: string[] | undefined;
   if (env['ADAPTERS'] !== undefined) {
@@ -170,7 +172,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       frontSharedSecret: parsed.FRONT_SHARED_SECRET,
       listenHost: parsed.LISTEN_HOST,
       port: parsed.PORT,
-      runtime: parsed.RUNTIME,
+      runtime: parsed.BROWSER_RUNTIME,
       browserImage: parsed.BROWSER_IMAGE,
       browserNetwork: parsed.BROWSER_NETWORK,
       browserSeccomp: parsed.BROWSER_SECCOMP,
@@ -178,8 +180,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       browserAcceptLangs: parsed.BROWSER_ACCEPT_LANGS?.split(',')
         .map((l) => l.trim())
         .filter(Boolean),
-      browserMode: browserCdpAddress !== undefined ? 'attach' : parsed.LOCAL_CHROME ? 'local' : 'docker',
-      localBrowserPath: parsed.LOCAL_CHROME_PATH,
+      browserMode: browserCdpAddress !== undefined ? 'attach' : parsed.BROWSER_LOCAL_CHROME ? 'local' : 'docker',
+      localBrowserPath: parsed.BROWSER_LOCAL_CHROME_PATH,
       browserCdpAddress,
       maxTabs: parsed.BROWSER_MAX_TABS,
       dashboard: {
@@ -200,18 +202,18 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       },
       callBuffer: parsed.DASHBOARD_CALL_BUFFER,
       charsPerToken: parsed.TOKEN_CHARS_PER_TOKEN,
-      fingerprint: parsed.FINGERPRINT,
-      profileVolumePrefix: parsed.PROFILE_VOLUME_PREFIX,
+      fingerprint: parsed.BROWSER_FINGERPRINT,
+      profileVolumePrefix: parsed.BROWSER_PROFILE_VOLUME_PREFIX,
       dataDir: parsed.DATA_DIR,
       jobRetentionDays: parsed.JOB_RETENTION_DAYS,
       dbPath: parsed.DB_PATH ?? `${parsed.DATA_DIR.replace(/\/+$/, '')}/jobwatch.sqlite`,
       adaptersFromEnv,
       utilitiesFromEnv,
-      idleTtlS: parsed.IDLE_TTL_S,
-      maxLifetimeS: parsed.MAX_LIFETIME_S,
-      queueTimeoutS: parsed.QUEUE_TIMEOUT_S,
-      memHighMb: parsed.MEM_HIGH_MB,
-      memMaxMb: parsed.MEM_MAX_MB,
+      idleTtlS: parsed.BROWSER_IDLE_TTL_S,
+      maxLifetimeS: parsed.BROWSER_MAX_LIFETIME_S,
+      queueTimeoutS: parsed.BROWSER_QUEUE_TIMEOUT_S,
+      memHighMb: parsed.BROWSER_MEM_HIGH_MB,
+      memMaxMb: parsed.BROWSER_MEM_MAX_MB,
       logLevel: parsed.LOG_LEVEL,
       metrics: { enabled: parsed.METRICS_ENABLED, port: parsed.METRICS_PORT },
     },

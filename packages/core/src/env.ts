@@ -19,7 +19,7 @@ export const envSchema = z.object({
   FRONT_SHARED_SECRET: z.string().min(16).optional(),
   LISTEN_HOST: z.string().min(1).default('0.0.0.0'),
   PORT: integer(1024, 65535, 8080),
-  RUNTIME: z.enum(['docker', 'systemd-scope']).default('docker'),
+  BROWSER_RUNTIME: z.enum(['docker', 'systemd-scope']).default('docker'),
   BROWSER_IMAGE: z.string().min(1).default('localhost/jobwatch-browser:1'),
   BROWSER_NETWORK: z
     .string()
@@ -37,9 +37,9 @@ export const envSchema = z.object({
     .regex(/^[A-Za-z0-9,;=.-]{2,512}$/)
     .optional(),
   BROWSER_MAX_TABS: z.coerce.number().int().min(1).default(3),
-  LOCAL_CHROME: flag.default(false),
-  LOCAL_CHROME_PATH: z.string().min(1).optional(),
-  CDP_URL: z.string().min(1).optional(),
+  BROWSER_LOCAL_CHROME: flag.default(false),
+  BROWSER_LOCAL_CHROME_PATH: z.string().min(1).optional(),
+  BROWSER_CDP_URL: z.string().min(1).optional(),
   DASHBOARD_PORT: integer(1024, 65535, 8090),
   DASHBOARD_URL: z.url().optional(),
   DASHBOARD_STATIC_DIR: z.string().min(1).optional(),
@@ -55,8 +55,8 @@ export const envSchema = z.object({
   DASHBOARD_OIDC_CLIENT_SECRET: z.string().min(1).max(300).optional(),
   DASHBOARD_CALL_BUFFER: integer(100, 20_000, 2000),
   TOKEN_CHARS_PER_TOKEN: z.coerce.number().min(1).max(10).default(3.5),
-  FINGERPRINT: z.enum(['enforce', 'warn', 'off']).default('enforce'),
-  PROFILE_VOLUME_PREFIX: z
+  BROWSER_FINGERPRINT: z.enum(['enforce', 'warn', 'off']).default('enforce'),
+  BROWSER_PROFILE_VOLUME_PREFIX: z
     .string()
     .regex(/^[a-z0-9][a-z0-9_.-]*$/)
     .default('jw-profile-'),
@@ -65,11 +65,11 @@ export const envSchema = z.object({
   JOB_RETENTION_DAYS: integer(1, 3650, 30),
   ADAPTERS: z.string().optional(),
   UTILITIES: z.string().optional(),
-  IDLE_TTL_S: integer(10, 3600, 120),
-  MAX_LIFETIME_S: integer(60, 86_400, 1800),
-  QUEUE_TIMEOUT_S: integer(1, 600, 60),
-  MEM_HIGH_MB: integer(256, 16_384, 1200),
-  MEM_MAX_MB: integer(256, 16_384, 1500),
+  BROWSER_IDLE_TTL_S: integer(10, 3600, 120),
+  BROWSER_MAX_LIFETIME_S: integer(60, 86_400, 1800),
+  BROWSER_QUEUE_TIMEOUT_S: integer(1, 600, 60),
+  BROWSER_MEM_HIGH_MB: integer(256, 16_384, 1200),
+  BROWSER_MEM_MAX_MB: integer(256, 16_384, 1500),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   METRICS_ENABLED: flag.default(false),
   METRICS_PORT: integer(1024, 65535, 9464),

@@ -8,7 +8,7 @@ const repoFile = (path: string): string => readFileSync(new URL(`../../../${path
 describe('parseEnv', () => {
   it('applies the defaults and ignores the variables of other tools', () => {
     const result = parseEnv({ BASE_URL: 'https://mcp.example.com', PATH: '/usr/bin' });
-    expect(result).toMatchObject({ ok: true, data: { PORT: 8080, AUTH: 'front', LOG_LEVEL: 'info', LOCAL_CHROME: false } });
+    expect(result).toMatchObject({ ok: true, data: { PORT: 8080, AUTH: 'front', LOG_LEVEL: 'info', BROWSER_LOCAL_CHROME: false } });
   });
 
   it('turns text into numbers and booleans', () => {
@@ -51,7 +51,7 @@ describe('the example env files', () => {
   it('.env.local lists every variable the server reads, and its active values are valid', () => {
     const text = repoFile('.env.local');
     expect(ENV_NAMES.filter((name) => !mentions(text, name))).toEqual([]);
-    expect(parseEnv(parseDotenv(text))).toMatchObject({ ok: true, data: { AUTH: 'none', LOCAL_CHROME: true } });
+    expect(parseEnv(parseDotenv(text))).toMatchObject({ ok: true, data: { AUTH: 'none', BROWSER_LOCAL_CHROME: true } });
   });
 
   it('deploy/.env.example lists every variable compose.yml reads', () => {
