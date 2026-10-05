@@ -83,10 +83,9 @@ The front and the router each get the whole `.env` as their environment, so any 
 | Variable | Meaning |
 |---|---|
 | `BASE_URL` | Public URL of the server, e.g. `https://mcp.example.com` (default `http://127.0.0.1:18931`) |
-| `PORT`, `BIND` | Port of the MCP endpoint (front and router) and the host address it is published on (default `127.0.0.1:18931`) |
+| `PORT` | Port of the MCP endpoint (front and router), published on `127.0.0.1` by `compose.yml` (default `18931`) |
 | `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `TOKEN_SIGNING_SECRET` | Only with OAuth: see [OAuth](docs/oauth.md) |
 | `TRUSTED_PROXY_CIDRS` | Address of your reverse proxy as the front sees it (default `172.17.0.1/32`, the Docker gateway) |
-| `DOCKER_SOCKET` | Docker socket to mount; empty = `$XDG_RUNTIME_DIR/docker.sock` (Linux rootless). macOS: `/var/run/docker.sock` |
 | `BROWSER_IMAGE`, `BROWSER_LANG`, `BROWSER_ACCEPT_LANGS` | The browser image and the language list of your everyday browser |
 
 The router keeps its data (enabled modules, stored jobs) in `./data`. To update: `docker compose pull router && docker compose up -d router` (or run [Watchtower](docs/watchtower.md)).
@@ -94,6 +93,7 @@ The router keeps its data (enabled modules, stored jobs) in `./data`. To update:
 **Trying it on a laptop, without OAuth.** `deploy/compose.dev.yml` runs only the router (built from this repo), on `http://127.0.0.1:18931/mcp` (`PORT`) with **no authentication** (accepted only on a loopback address), so no Google client is needed. Never expose that port.
 
 ```bash
+cp deploy/.env.example deploy/.env      # Compose needs the file; the OAuth block can stay as it is
 docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up router
 claude mcp add --transport http jobwatch-dev http://127.0.0.1:18931/mcp
 ```

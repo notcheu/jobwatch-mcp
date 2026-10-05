@@ -54,9 +54,36 @@ describe('the example env files', () => {
     expect(parseEnv(parseDotenv(text))).toMatchObject({ ok: true, data: { AUTH: 'none', BROWSER_LOCAL_CHROME: true } });
   });
 
+  it('deploy/.env.example sets every variable that has a default, to that default', () => {
+    const text = repoFile('deploy/.env.example');
+    const active = parseDotenv(text);
+    const defaults = parseEnv({ BASE_URL: 'https://mcp.example.com' });
+    if (!defaults.ok) throw new Error('the defaults must parse');
+    const differsOnPurpose = new Set(['BASE_URL', 'PORT', 'DASHBOARD_PORT', 'BROWSER_IMAGE']); // Compose has its own values for these
+    const notSet = Object.entries(defaults.data)
+      .filter(([name, value]) => value !== undefined && mentions(text, name) && active[name] === undefined) // no default, or not meant for Compose: skipped
+      .map(([name]) => name);
+    expect(notSet).toEqual([]);
+    const parsed = parseEnv({ BASE_URL: 'https://mcp.example.com', ...active });
+    if (!parsed.ok) throw new Error(parsed.problems.join('; '));
+    for (const name of Object.keys(defaults.data)) {
+      if (differsOnPurpose.has(name) || active[name] === undefined) continue;
+      expect(parsed.data[name as keyof typeof parsed.data], name).toEqual(defaults.data[name as keyof typeof defaults.data]);
+    }
+  });
+
   it('deploy/.env.example lists every browser variable, disabled or not', () => {
     const text = repoFile('deploy/.env.example');
     expect(ENV_NAMES.filter((name) => name.startsWith('BROWSER_') && !mentions(text, name))).toEqual([]);
+  });
+
+  it('compose.yml has no defaults: what it reads is required, and .env.example sets it', () => {
+    const compose = repoFile('deploy/compose.yml');
+    expect(compose).not.toMatch(/\$\{[A-Z_]+:-/);
+    const active = parseDotenv(repoFile('deploy/.env.example'));
+    const required = [...compose.matchAll(/\$\{([A-Z_]+):\?/g)].map((match) => match[1] ?? '');
+    expect(required.length).toBeGreaterThan(0);
+    expect(required.filter((name) => active[name] === undefined)).toEqual([]);
   });
 
   it('deploy/.env.example lists every variable compose.yml reads', () => {

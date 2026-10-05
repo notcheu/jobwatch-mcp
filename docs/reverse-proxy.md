@@ -1,8 +1,8 @@
 # Reverse proxy
 
-The OAuth front publishes one port on the host (`BIND:PORT`, default `127.0.0.1:18931`). Put any reverse proxy that terminates TLS in front of it and send **every path** of your domain there. Do not rewrite paths and do not buffer responses (MCP uses streamed responses).
+The OAuth front publishes one port on the host (`PORT`, default `127.0.0.1:18931`). Put any reverse proxy that terminates TLS in front of it and send **every path** of your domain there. Do not rewrite paths and do not buffer responses (MCP uses streamed responses).
 
-Set `TRUSTED_PROXY_CIDRS` in `.env` to the address your proxy has when it reaches the front: the Docker gateway (`172.17.0.1/32`, the default) if the proxy runs on the host, otherwise its LAN IP followed by `/32`. If the proxy runs on another machine or in a container, also set `BIND` to an address it can reach.
+Set `TRUSTED_PROXY_CIDRS` in `.env` to the address your proxy has when it reaches the front: the Docker gateway (`172.17.0.1/32`, the default) if the proxy runs on the host, otherwise its LAN IP followed by `/32`. If the proxy runs on another machine or in a container, also change `127.0.0.1` in the front's `ports:` line of `compose.yml` to an address it can reach.
 
 ## Nginx
 
@@ -32,6 +32,6 @@ Complete examples, with the HTTP to HTTPS redirect, a bootstrap site for the cer
 
 ## Other proxies
 
-Caddy, Traefik, HAProxy and the like work the same way: terminate TLS, forward everything to the front's port, keep the `Host` header and set `X-Forwarded-For` and `X-Forwarded-Proto`. The operator dashboard is optional and needs its own route: `/dashboard` goes to `DASHBOARD_BIND:DASHBOARD_PORT` (default `127.0.0.1:18933`), before the catch-all route.
+Caddy, Traefik, HAProxy and the like work the same way: terminate TLS, forward everything to the front's port, keep the `Host` header and set `X-Forwarded-For` and `X-Forwarded-Proto`. The operator dashboard is optional and needs its own route: `/dashboard` goes to `DASHBOARD_PORT` (default `127.0.0.1:18933`), before the catch-all route.
 
 The full host setup and the threat model are in [`plans/10-deployment.md`](plans/10-deployment.md) and [`plans/09-security.md`](plans/09-security.md).

@@ -1,4 +1,5 @@
-# Self-contained: copy this file next to a `.env` file (Compose reads it by itself) and run `docker compose up -d`. Data lands in ./data.
+# Self-contained: copy this file next to a `.env` file (copy deploy/.env.example; Compose reads it by itself) and run `docker compose up -d`. Data lands in ./data.
+# There are no defaults here: PORT, BASE_URL, BROWSER_NETWORK, DASHBOARD_PORT and METRICS_PORT must be set in `.env`, or Compose stops and says which.
 # Every setting lives in `.env` (see .env.example): the front and the router get the whole file as their environment, so this file only
 # holds what is tied to its own layout (images, networks, the Docker socket, what is published).
 # Always-on services only. Browser containers are spawned by the router (label jobwatch.managed=true).
@@ -9,21 +10,21 @@ volumes:
   redis-data:
 networks:
   jobwatch-core:     { internal: false }     # front <-> router, front <-> redis (front needs egress to reach Google)
-  jobwatch-browsers: { name: "${BROWSER_NETWORK:-jobwatch-browsers}", internal: false }   # router <-> spawned browsers (the router joins them to this network by name: BROWSER_NETWORK); egress is OPEN until the Phase 4 allowlist proxy (09, 14)
+  jobwatch-browsers: { name: "${BROWSER_NETWORK:?set BROWSER_NETWORK in .env}", internal: false }   # router <-> spawned browsers (the router joins them to this network by name: BROWSER_NETWORK); egress is OPEN until the Phase 4 allowlist proxy (09, 14)
 services:
   front:                                     # OAuth 2.1 authorization server + reverse proxy (decision D7: babs/mcp-auth-proxy)
     image: ghcr.io/babs/mcp-auth-proxy:1.4.1   # babs/mcp-auth-proxy, pinned to the version this stack was tested with
-    env_file: [ { path: .env, required: false } ]   # OIDC_*, TOKEN_SIGNING_SECRET, TRUSTED_PROXY_CIDRS
+    env_file: .env   # OIDC_*, TOKEN_SIGNING_SECRET, TRUSTED_PROXY_CIDRS
     environment:                             # tied to this file's layout, so not in .env
-      PROXY_BASE_URL: ${BASE_URL:-http://127.0.0.1:18931}   # the front's public URL: the same BASE_URL as the router's
-      LISTEN_ADDR: 0.0.0.0:${PORT:-18931}   # where the front listens in its container; PORT is also what gets published below
+      PROXY_BASE_URL: ${BASE_URL:?set BASE_URL in .env}   # the front's public URL: the same BASE_URL as the router's
+      LISTEN_ADDR: 0.0.0.0:${PORT:?set PORT in .env}   # where the front listens in its container; PORT is also what gets published below
       METRICS_ADDR: 127.0.0.1:9090          # the front's own metrics and /readyz, inside its container (never published)
-      UPSTREAM_MCP_URL: http://router:${PORT:-18931}/mcp   # where the front forwards authenticated calls: the router on the private network. The path is both the public mount and forwarded verbatim
+      UPSTREAM_MCP_URL: http://router:${PORT:?set PORT in .env}/mcp   # where the front forwards authenticated calls: the router on the private network. The path is both the public mount and forwarded verbatim
       REDIS_URL: redis://redis:6379/0
     depends_on:
       redis: { condition: service_healthy }
     ports:
-      - "${BIND:-127.0.0.1}:${PORT:-18931}:${PORT:-18931}"   # the ONLY published MCP port (the front's LISTEN_ADDR uses the same PORT); the reverse proxy's target
+      - "127.0.0.1:${PORT:?set PORT in .env}:${PORT:?set PORT in .env}"   # the ONLY published MCP port (the front's LISTEN_ADDR uses the same PORT); the reverse proxy's target. Replace 127.0.0.1 by the host's LAN IP if the proxy is on another machine or in a container
     networks: [ jobwatch-core ]
     mem_limit: 128m
     read_only: true
@@ -49,18 +50,18 @@ services:
     image: jobwatch-router:latest            # pushed by CI (.github/workflows/docker-publish.yml), or built with `docker build -t jobwatch-router:latest .`
     labels:
       - "com.centurylinklabs.watchtower.enable=true"   # only read by Watchtower, if you run it (docs/watchtower.md)
-    env_file: [ { path: .env, required: false } ]   # every router setting: see .env.example and docs/environment-variables.md
+    env_file: .env   # every router setting: see .env.example and docs/environment-variables.md
     user: "0:0"                              # CONFIRMED on the reference host: under rootless Docker uid 0 in the container IS mcpuser on the host. uid 1000 could not write ./data nor would it open the socket. Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
     read_only: true
     tmpfs: [ "/tmp:rw,size=64m" ]
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
     volumes:
-      - "${DOCKER_SOCKET:-${XDG_RUNTIME_DIR}/docker.sock}:/var/run/docker.sock"   # Linux rootless: $XDG_RUNTIME_DIR/docker.sock; Docker Desktop (macOS): /var/run/docker.sock
+      - "${XDG_RUNTIME_DIR}/docker.sock:/var/run/docker.sock"   # the rootless Docker socket of this user (Linux). Docker Desktop (macOS): replace the left side by /var/run/docker.sock. Never a root socket
       - "./data:/data"             # owned by mcpuser = uid 0 in the container (hence user "0:0" above)
       # Browser profiles are named Docker volumes (jw-profile-<platform>) created by the router: no host paths, so the same file works on Linux and macOS.
     ports:
-      - "${DASHBOARD_BIND:-127.0.0.1}:${DASHBOARD_PORT:-18933}:${DASHBOARD_PORT:-18933}"   # the dashboard, for the reverse proxy (/dashboard); nothing listens until it is started
-      - "${METRICS_BIND:-127.0.0.1}:${METRICS_PORT:-9464}:${METRICS_PORT:-9464}"   # Prometheus scrape target; nothing listens unless metrics are enabled
+      - "127.0.0.1:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}"   # the dashboard, for the reverse proxy (/dashboard); nothing listens until it is started
+      - "127.0.0.1:${METRICS_PORT:?set METRICS_PORT in .env}:${METRICS_PORT:?set METRICS_PORT in .env}"   # Prometheus scrape target; nothing listens unless metrics are enabled
     networks: [ jobwatch-core, jobwatch-browsers ]   # the MCP port is not published: only the front reaches it
     restart: unless-stopped

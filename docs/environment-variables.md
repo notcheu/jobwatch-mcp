@@ -22,7 +22,7 @@ All variables are optional unless noted. An empty value counts as "not set". The
 | `BASE_URL` | `http://127.0.0.1:18931` in `compose.yml`, required elsewhere | Public URL of the server. `http` is accepted only for loopback. |
 | `AUTH` | `front` | `front`: requests come through the OAuth front. `none`: no authentication, accepted only when `BASE_URL` is a loopback address (local development). |
 | `LISTEN_HOST` | `0.0.0.0` | Address the MCP server listens on. |
-| `PORT` | `8080`; `18931` in the example files | Port of the MCP server (1024-65535). In Docker Compose it is also the port the OAuth front listens on and the one published on the host (`BIND:PORT`). |
+| `PORT` | `8080`; `18931` in the example files | Port of the MCP server (1024-65535). In Docker Compose it is also the port the OAuth front listens on and the one `compose.yml` publishes on the host. |
 | `DATA_DIR` | `/data`; `./.data` for `npm run dev` and `start` | Holds the SQLite database, `adapters.json` and, with `BROWSER_LOCAL_CHROME`, the browser profiles. In Compose it is `./data` next to the compose file, mounted at `/data`. |
 | `DB_PATH` | `<DATA_DIR>/jobwatch.sqlite` | The SQLite file. The schema is migrated at every boot. |
 | `JOB_RETENTION_DAYS` | `30` | Days a stored job is kept after it was last seen (1-3650). |
@@ -73,6 +73,7 @@ Used by the browser modules (`linkedin`, `apec`, `wttj`). HTTP-only modules neve
 | Variable | Default | Meaning |
 |---|---|---|
 | `BROWSER_IMAGE` | `localhost/jobwatch-browser:1` (`jobwatch-browser:latest` in `compose.yml`) | Browser image the router spawns. |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Where the router finds the Docker socket inside its container. `compose.yml` mounts the socket at that path, so leave it as it is. |
 | `BROWSER_NETWORK` | `jobwatch-browsers` | Internal Docker network of the browsers. `compose.yml` creates it under this name (`BROWSER_NETWORK` in `.env`), and the router attaches the browsers to it. |
 | `BROWSER_SECCOMP` | unset | Absolute path of the Chrome seccomp profile as the docker CLI sees it; unset = Docker's default profile. |
 | `BROWSER_PROFILE_VOLUME_PREFIX` | `jw-profile-` | Browser profiles are Docker volumes named `<prefix><platform>`. |
@@ -98,7 +99,7 @@ Closed until `jobwatch dashboard start`. Sign-in variables are under [OAuth](#oa
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DASHBOARD_PORT` | `8090`; `18933` in the example files | Port the dashboard listens on while it is open. In Docker Compose it is published on the host as `DASHBOARD_BIND:DASHBOARD_PORT`. |
+| `DASHBOARD_PORT` | `8090`; `18933` in the example files | Port the dashboard listens on while it is open. In Docker Compose `compose.yml` publishes it on the host. |
 | `DASHBOARD_URL` | `<BASE_URL origin>/dashboard/` | Where the operator opens it. |
 | `DASHBOARD_STATIC_DIR` | unset | The built interface; without it a plain page says only the API is up. |
 | `DASHBOARD_IDLE_S` | `1800` | Seconds without a request before it closes itself (60-86400). |
@@ -111,18 +112,15 @@ Closed until `jobwatch dashboard start`. Sign-in variables are under [OAuth](#oa
 | Variable | Default | Meaning |
 |---|---|---|
 | `METRICS_ENABLED` | `false` | `true`: Prometheus `/metrics` on its own port, never on the MCP port. |
-| `METRICS_PORT` | `9464` | Its port; must differ from `PORT`. In Docker Compose it is published on the host as `METRICS_BIND:METRICS_PORT`. |
-| `METRICS_BIND` | `127.0.0.1` | Host address the metrics port is published on. Compose only. |
+| `METRICS_PORT` | `9464` | Its port; must differ from `PORT`. In Docker Compose `compose.yml` publishes it on the host. |
 
 ## Docker Compose
 
-Read by `compose.yml` itself, to build the stack. The images are fixed in `compose.yml`: `jobwatch-router:latest`, `redis:7-alpine` and the OAuth front `ghcr.io/babs/mcp-auth-proxy:1.4.1`.
+`compose.yml` has no defaults of its own: `PORT`, `BASE_URL`, `BROWSER_NETWORK`, `DASHBOARD_PORT` and `METRICS_PORT` are required in `.env` (Compose stops and names the missing one), and `deploy/.env.example` sets all of them. What only concerns the stack, not the server, is set in `compose.yml` itself and is not an environment variable: edit the file.
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `BIND` | `127.0.0.1` | Host address the front's `PORT` is published on. Use the host's LAN IP if the reverse proxy is on another machine or in a container. |
-| `DASHBOARD_BIND` | `127.0.0.1` | Host address `DASHBOARD_PORT` is published on (nothing listens until the dashboard is started). |
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Where the router finds the Docker socket inside its container. `compose.yml` mounts the socket at that path, so leave it as it is. |
-| `DOCKER_SOCKET` | `$XDG_RUNTIME_DIR/docker.sock` | Docker socket mounted into the router. Linux rootless Docker: the default. macOS: `/var/run/docker.sock`. Never a root socket. |
+- **Images:** `jobwatch-router:latest`, `redis:7-alpine` and the OAuth front `ghcr.io/babs/mcp-auth-proxy:1.4.1`.
+- **Published addresses:** the front's `PORT`, `DASHBOARD_PORT` and `METRICS_PORT` are published on `127.0.0.1`. Replace it by the host's LAN IP if the reverse proxy or Prometheus is on another machine or in a container.
+- **Docker socket:** `${XDG_RUNTIME_DIR}/docker.sock` (the rootless Docker socket of the user, Linux). On Docker Desktop (macOS) replace it by `/var/run/docker.sock`. Never a root socket.
+- **The front's own settings:** `PROXY_BASE_URL`, `UPSTREAM_MCP_URL`, `LISTEN_ADDR`, `METRICS_ADDR`.
 
 The Watchtower variable (`WATCHTOWER_IMAGE`) belongs to the optional service described in [`watchtower.md`](watchtower.md).
