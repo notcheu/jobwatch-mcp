@@ -9,12 +9,16 @@ volumes:
   redis-data:
 networks:
   jobwatch-core:     { internal: false }     # front <-> router, front <-> redis (front needs egress to reach Google)
-  jobwatch-browsers: { internal: false }     # router <-> spawned browsers; egress is OPEN until the Phase 4 allowlist proxy (09, 14)
+  jobwatch-browsers: { name: "${BROWSER_NETWORK:-jobwatch-browsers}", internal: false }   # router <-> spawned browsers (the router joins them to this network by name: BROWSER_NETWORK); egress is OPEN until the Phase 4 allowlist proxy (09, 14)
 services:
   front:                                     # OAuth 2.1 authorization server + reverse proxy (decision D7: babs/mcp-auth-proxy)
-    image: ${FRONT_IMAGE:-ghcr.io/babs/mcp-auth-proxy:1.4.1}   # pin by digest once verified (S1)
-    env_file: [ { path: .env, required: false } ]   # PROXY_BASE_URL, UPSTREAM_MCP_URL, OIDC_*, TOKEN_SIGNING_SECRET, TRUSTED_PROXY_CIDRS, LISTEN_ADDR, METRICS_ADDR
-    environment:
+    image: ghcr.io/babs/mcp-auth-proxy:1.4.1   # babs/mcp-auth-proxy, pinned to the version this stack was tested with
+    env_file: [ { path: .env, required: false } ]   # OIDC_*, TOKEN_SIGNING_SECRET, TRUSTED_PROXY_CIDRS
+    environment:                             # tied to this file's layout, so not in .env
+      PROXY_BASE_URL: ${BASE_URL:-http://127.0.0.1:18931}   # the front's public URL: the same BASE_URL as the router's
+      LISTEN_ADDR: 0.0.0.0:${PORT:-18931}   # where the front listens in its container; PORT is also what gets published below
+      METRICS_ADDR: 127.0.0.1:9090          # the front's own metrics and /readyz, inside its container (never published)
+      UPSTREAM_MCP_URL: http://router:${PORT:-18931}/mcp   # where the front forwards authenticated calls: the router on the private network. The path is both the public mount and forwarded verbatim
       REDIS_URL: redis://redis:6379/0
     depends_on:
       redis: { condition: service_healthy }
@@ -26,7 +30,7 @@ services:
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
     restart: unless-stopped
-  redis:                                     # replay defence for the front (single-use codes, refresh rotation)
+  redis:
     image: redis:7-alpine
     user: "999:999"                          # the image's own redis user: its root entrypoint needs SETUID/SETGID, which cap_drop ALL removes (tested)
     command: [ "redis-server", "--appendonly", "yes", "--maxmemory", "32mb", "--maxmemory-policy", "noeviction" ]
@@ -51,10 +55,6 @@ services:
     tmpfs: [ "/tmp:rw,size=64m" ]
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
-    environment:                             # tied to this file's layout, so not in .env
-      BROWSER_RUNTIME: docker
-      BROWSER_NETWORK: jobwatch_jobwatch-browsers   # compose names networks <project>_<name>; the project is `jobwatch`
-      DOCKER_HOST: unix:///var/run/docker.sock          # mcpuser's ROOTLESS socket, mounted below
     volumes:
       - "${DOCKER_SOCKET:-${XDG_RUNTIME_DIR}/docker.sock}:/var/run/docker.sock"   # Linux rootless: $XDG_RUNTIME_DIR/docker.sock; Docker Desktop (macOS): /var/run/docker.sock
       - "./data:/data"             # owned by mcpuser = uid 0 in the container (hence user "0:0" above)

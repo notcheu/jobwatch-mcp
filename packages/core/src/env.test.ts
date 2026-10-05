@@ -54,6 +54,11 @@ describe('the example env files', () => {
     expect(parseEnv(parseDotenv(text))).toMatchObject({ ok: true, data: { AUTH: 'none', BROWSER_LOCAL_CHROME: true } });
   });
 
+  it('deploy/.env.example lists every browser variable, disabled or not', () => {
+    const text = repoFile('deploy/.env.example');
+    expect(ENV_NAMES.filter((name) => name.startsWith('BROWSER_') && !mentions(text, name))).toEqual([]);
+  });
+
   it('deploy/.env.example lists every variable compose.yml reads', () => {
     const text = repoFile('deploy/.env.example');
     const names = [...new Set([...repoFile('deploy/compose.yml').matchAll(/\$\{([A-Z][A-Z0-9_]*)/g)].map((match) => match[1] ?? ''))];

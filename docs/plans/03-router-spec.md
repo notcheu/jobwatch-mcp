@@ -289,7 +289,7 @@ BASE_URL=https://mcp.example.com          # public URL (resource identifier)
 FRONT_SHARED_SECRET=...                    # header from the OAuth front (or mTLS)
 BROWSER_RUNTIME=docker                             # docker | systemd-scope
 BROWSER_IMAGE=localhost/jobwatch-browser:1
-BROWSER_NETWORK=jobwatch-browsers          # internal Docker network of the browsers (compose names it <project>_jobwatch-browsers)
+BROWSER_NETWORK=jobwatch-browsers          # internal Docker network of the browsers (compose.yml creates the network under this name)
 BROWSER_SECCOMP=                           # absolute path of the Chrome seccomp profile in the router container; unset = Docker default
 BROWSER_PROFILE_VOLUME_PREFIX=jw-profile-         # browser profiles are named Docker volumes jw-profile-<platform> (no host paths: works on Linux and macOS)
 AUTH=front                                # front | none (none only for local development, loopback only; see compose.dev.yml)

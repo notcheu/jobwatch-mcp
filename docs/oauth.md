@@ -8,19 +8,15 @@ You need this to use the server from Claude on the web or desktop (a public HTTP
 
 1. Google Cloud Console: create a project, then **APIs & Services → OAuth consent screen**. User type **External**, scopes `openid`, `email`, `profile`, and add **only your own account as a test user**.
 2. **Credentials → Create credentials → OAuth client ID → Web application**. Authorized redirect URI: `https://<your domain>/callback`.
-3. Fill in the OAuth block of `.env` (see [`deploy/.env.example`](../deploy/.env.example)): the client ID and secret, a `TOKEN_SIGNING_SECRET` generated with `openssl rand -base64 48` (keep it identical across restarts), and your public URL. The front reads `PROXY_BASE_URL`, `UPSTREAM_MCP_URL`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `TOKEN_SIGNING_SECRET`, `TRUSTED_PROXY_CIDRS`, `LISTEN_ADDR` and `METRICS_ADDR` from there:
+3. Fill in the OAuth block of `.env` (see [`deploy/.env.example`](../deploy/.env.example)): the client ID and secret, a `TOKEN_SIGNING_SECRET` generated with `openssl rand -base64 48` (keep it identical across restarts), and your public URL. The front reads `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `TOKEN_SIGNING_SECRET` and `TRUSTED_PROXY_CIDRS` from there (its other settings are in `compose.yml`):
 
 ```bash
 BASE_URL=https://mcp.example.com
-PROXY_BASE_URL=${BASE_URL}
-UPSTREAM_MCP_URL=http://router:${PORT}/mcp
 OIDC_ISSUER_URL=https://accounts.google.com
 OIDC_CLIENT_ID=<google-oauth-client-id>.apps.googleusercontent.com
 OIDC_CLIENT_SECRET=<google-oauth-client-secret>
 TOKEN_SIGNING_SECRET=<openssl rand -base64 48>
 TRUSTED_PROXY_CIDRS=172.17.0.1/32
-LISTEN_ADDR=0.0.0.0:${PORT}
-METRICS_ADDR=127.0.0.1:9090
 ```
 
 The router gets the same file, so it also sees these secrets; it uses only the client ID and secret, as the dashboard's default sign-in client.

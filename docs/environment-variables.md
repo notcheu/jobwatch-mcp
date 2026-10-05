@@ -43,19 +43,15 @@ See [Modules](../README.md#modules) in the README for what a module is.
 
 ## OAuth
 
-Needed only for the public deployment behind the OAuth front. Step by step: [`oauth.md`](oauth.md).
+Needed only for the public deployment behind the OAuth front. The front's own `PROXY_BASE_URL` (= `BASE_URL`), `UPSTREAM_MCP_URL` (`http://router:${PORT}/mcp`), `LISTEN_ADDR` (`0.0.0.0:${PORT}`) and `METRICS_ADDR` (`127.0.0.1:9090`, never published) are set in `compose.yml`, not here. Step by step: [`oauth.md`](oauth.md).
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `OIDC_CLIENT_ID` | | Client ID of your Google OAuth client. The router reads it too, as the dashboard's default client. |
 | `OIDC_CLIENT_SECRET` | | Its secret. Never commit it. |
 | `TOKEN_SIGNING_SECRET` | | `openssl rand -base64 48`. Keep it identical across restarts; changing it invalidates every issued token. |
-| `PROXY_BASE_URL` | | The front's public URL: the same as `BASE_URL`. Required by the front. |
-| `UPSTREAM_MCP_URL` | | Where the front forwards `/mcp`: `http://router:${PORT}/mcp`. Required by the front. |
 | `OIDC_ISSUER_URL` | | `https://accounts.google.com`. Required by the front. The dashboard uses it too unless `DASHBOARD_OIDC_ISSUER` is set. |
 | `TRUSTED_PROXY_CIDRS` | | Address of your reverse proxy as the front sees it (the Docker gateway `172.17.0.1/32` if the proxy runs on the host, else its LAN IP followed by `/32`). |
-| `LISTEN_ADDR` | front default `:8080` | Where the front listens in its container: `0.0.0.0:${PORT}`. |
-| `METRICS_ADDR` | front default `127.0.0.1:9090` | Where the front's own metrics and `/readyz` answer, inside its container (never published). |
 | `FRONT_SHARED_SECRET` | unset | At least 16 characters. When set with `AUTH=front`, the router requires it as a shared secret from the front. |
 | `DASHBOARD_OIDC_CLIENT_ID`, `DASHBOARD_OIDC_CLIENT_SECRET` | the connector's client | A Google OAuth client of its own for the dashboard sign-in. |
 | `DASHBOARD_OIDC_ISSUER` | `OIDC_ISSUER_URL`, else `https://accounts.google.com` | OIDC issuer of the dashboard sign-in. |
@@ -77,7 +73,7 @@ Used by the browser modules (`linkedin`, `apec`, `wttj`). HTTP-only modules neve
 | Variable | Default | Meaning |
 |---|---|---|
 | `BROWSER_IMAGE` | `localhost/jobwatch-browser:1` (`jobwatch-browser:latest` in `compose.yml`) | Browser image the router spawns. |
-| `BROWSER_NETWORK` | `jobwatch-browsers` | Internal Docker network of the browsers (Compose names it `<project>_jobwatch-browsers`, set in `compose.yml`). |
+| `BROWSER_NETWORK` | `jobwatch-browsers` | Internal Docker network of the browsers. `compose.yml` creates it under this name (`BROWSER_NETWORK` in `.env`), and the router attaches the browsers to it. |
 | `BROWSER_SECCOMP` | unset | Absolute path of the Chrome seccomp profile as the docker CLI sees it; unset = Docker's default profile. |
 | `BROWSER_PROFILE_VOLUME_PREFIX` | `jw-profile-` | Browser profiles are Docker volumes named `<prefix><platform>`. |
 | `BROWSER_FINGERPRINT` | `enforce` | Startup check that the container's Chrome looks like a normal one: `enforce` refuses a browser that fails, `warn` logs, `off` skips. |
@@ -120,13 +116,13 @@ Closed until `jobwatch dashboard start`. Sign-in variables are under [OAuth](#oa
 
 ## Docker Compose
 
-Read by `compose.yml` itself, to build the stack. The router image is `jobwatch-router:latest` and Redis is `redis:7-alpine`, both fixed in `compose.yml`.
+Read by `compose.yml` itself, to build the stack. The images are fixed in `compose.yml`: `jobwatch-router:latest`, `redis:7-alpine` and the OAuth front `ghcr.io/babs/mcp-auth-proxy:1.4.1`.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `FRONT_IMAGE` | `ghcr.io/babs/mcp-auth-proxy:1.4.1` | OAuth front image; pin it by digest. |
 | `BIND` | `127.0.0.1` | Host address the front's `PORT` is published on. Use the host's LAN IP if the reverse proxy is on another machine or in a container. |
 | `DASHBOARD_BIND` | `127.0.0.1` | Host address `DASHBOARD_PORT` is published on (nothing listens until the dashboard is started). |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Where the router finds the Docker socket inside its container. `compose.yml` mounts the socket at that path, so leave it as it is. |
 | `DOCKER_SOCKET` | `$XDG_RUNTIME_DIR/docker.sock` | Docker socket mounted into the router. Linux rootless Docker: the default. macOS: `/var/run/docker.sock`. Never a root socket. |
 
 The Watchtower variable (`WATCHTOWER_IMAGE`) belongs to the optional service described in [`watchtower.md`](watchtower.md).

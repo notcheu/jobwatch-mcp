@@ -82,7 +82,7 @@ The front and the router each get the whole `.env` as their environment, so any 
 
 | Variable | Meaning |
 |---|---|
-| `BASE_URL`, `PROXY_BASE_URL` | Public URL of the server, e.g. `https://mcp.example.com` (default `http://127.0.0.1:18931`) |
+| `BASE_URL` | Public URL of the server, e.g. `https://mcp.example.com` (default `http://127.0.0.1:18931`) |
 | `PORT`, `BIND` | Port of the MCP endpoint (front and router) and the host address it is published on (default `127.0.0.1:18931`) |
 | `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `TOKEN_SIGNING_SECRET` | Only with OAuth: see [OAuth](docs/oauth.md) |
 | `TRUSTED_PROXY_CIDRS` | Address of your reverse proxy as the front sees it (default `172.17.0.1/32`, the Docker gateway) |
