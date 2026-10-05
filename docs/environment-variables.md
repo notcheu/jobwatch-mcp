@@ -38,7 +38,7 @@ See [Modules](../README.md#modules) in the README for what a module is.
 |---|---|---|
 | `ADAPTERS` | unset | Comma list of adapters (`apec,wttj`). Pins the list: it overrides `adapters.json` and the CLI can no longer change it. Unset = what `jobwatch adapters enable` wrote; nothing is enabled by default. |
 | `UTILITIES` | unset | The same for utilities (`linkedin-geo,ats-discovery`). |
-| `DEFAULT_LOCATION` | unset | Where LinkedIn searches look when a call gives no `geo`: a place name (`Berlin, Germany`) or a LinkedIn geoId. No place is built in. |
+| `LINKEDIN_DEFAULT_LOCATION` | unset | Where LinkedIn searches look when a call gives no `geo`: a place name (`Berlin, Germany`) or a LinkedIn geoId. No place is built in. |
 | `LINKEDIN_GEO_ALIASES` | unset | Names for LinkedIn geoIds you use often (`home=104246759,europe=91000000`). |
 
 ## OAuth

@@ -94,7 +94,7 @@ const searchInput = z
   .object({
     keywords: z.string().trim().min(1).max(200).describe('Search keywords, e.g. "full stack engineer".'),
     geo: geo.describe(
-      'Where to search: a place name LinkedIn understands ("Berlin, Germany", "Austin, Texas", "Remote"), or a numeric LinkedIn geoId. Omit it to use the operator\'s default location (DEFAULT_LOCATION).',
+      'Where to search: a place name LinkedIn understands ("Berlin, Germany", "Austin, Texas", "Remote"), or a numeric LinkedIn geoId. Omit it to use the operator\'s default location (LINKEDIN_DEFAULT_LOCATION).',
     ),
     posted_within: z
       .enum(POSTED_WITHIN)

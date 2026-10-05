@@ -9,7 +9,7 @@ export interface ResolvedPlace {
 }
 
 /**
- * The place of a search, as an id when it can be: the argument (else `DEFAULT_LOCATION`) is a geoId, an operator alias, a place
+ * The place of a search, as an id when it can be: the argument (else `LINKEDIN_DEFAULT_LOCATION`) is a geoId, an operator alias, a place
  * remembered from before, or a name that LinkedIn's own autocomplete turns into an id (and that is then remembered, so each place is
  * asked about once). When LinkedIn does not answer, the name goes into the address as it is and LinkedIn resolves it itself.
  */

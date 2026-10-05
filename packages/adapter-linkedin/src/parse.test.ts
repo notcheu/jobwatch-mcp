@@ -23,11 +23,11 @@ describe('ids and urls', () => {
     expect(() => geoParam('a\nb')).toThrow(RangeError);
   });
 
-  it('has no place built in: the argument, else DEFAULT_LOCATION, else a refusal that says what to set', () => {
+  it('has no place built in: the argument, else LINKEDIN_DEFAULT_LOCATION, else a refusal that says what to set', () => {
     expect(resolveGeo('Austin, Texas', {})).toBe('Austin, Texas');
-    expect(resolveGeo(undefined, { DEFAULT_LOCATION: 'Lisbon' })).toBe('Lisbon');
-    expect(resolveGeo('Madrid', { DEFAULT_LOCATION: 'Lisbon' })).toBe('Madrid');
-    expect(() => resolveGeo(undefined, {})).toThrow(/DEFAULT_LOCATION/);
+    expect(resolveGeo(undefined, { LINKEDIN_DEFAULT_LOCATION: 'Lisbon' })).toBe('Lisbon');
+    expect(resolveGeo('Madrid', { LINKEDIN_DEFAULT_LOCATION: 'Lisbon' })).toBe('Madrid');
+    expect(() => resolveGeo(undefined, {})).toThrow(/LINKEDIN_DEFAULT_LOCATION/);
     expect(() => resolveGeo('  ', {})).toThrow(JobwatchError);
   });
 

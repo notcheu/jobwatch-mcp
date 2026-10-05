@@ -52,7 +52,7 @@
         "type": "array"
       },
       "geo": {
-        "description": "Where to search: a place name LinkedIn understands (\"Berlin, Germany\", \"Austin, Texas\", \"Remote\"), or a numeric LinkedIn geoId. Omit it to use the operator's default location (DEFAULT_LOCATION).",
+        "description": "Where to search: a place name LinkedIn understands (\"Berlin, Germany\", \"Austin, Texas\", \"Remote\"), or a numeric LinkedIn geoId. Omit it to use the operator's default location (LINKEDIN_DEFAULT_LOCATION).",
         "maxLength": 100,
         "minLength": 2,
         "type": "string"

@@ -17,9 +17,9 @@ describe('parseEnv', () => {
   });
 
   it('treats an empty value as not set', () => {
-    const result = parseEnv({ BASE_URL: 'https://mcp.example.com', PORT: '', DEFAULT_LOCATION: '' });
+    const result = parseEnv({ BASE_URL: 'https://mcp.example.com', PORT: '', LINKEDIN_DEFAULT_LOCATION: '' });
     expect(result).toMatchObject({ ok: true, data: { PORT: 8080 } });
-    if (result.ok) expect(result.data.DEFAULT_LOCATION).toBeUndefined();
+    if (result.ok) expect(result.data.LINKEDIN_DEFAULT_LOCATION).toBeUndefined();
   });
 
   it('lists every problem with the variable name, never its value', () => {

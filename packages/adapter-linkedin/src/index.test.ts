@@ -603,18 +603,18 @@ describe('the place of a search is never built in', () => {
   };
 
   it('is refused without a place, with a message that says what to give or set', async () => {
-    const saved = process.env['DEFAULT_LOCATION'];
-    delete process.env['DEFAULT_LOCATION'];
+    const saved = process.env['LINKEDIN_DEFAULT_LOCATION'];
+    delete process.env['LINKEDIN_DEFAULT_LOCATION'];
     try {
-      await expect(searchOnce({})).rejects.toThrow(/geo is required.*DEFAULT_LOCATION/);
+      await expect(searchOnce({})).rejects.toThrow(/geo is required.*LINKEDIN_DEFAULT_LOCATION/);
     } finally {
-      if (saved !== undefined) process.env['DEFAULT_LOCATION'] = saved;
+      if (saved !== undefined) process.env['LINKEDIN_DEFAULT_LOCATION'] = saved;
     }
   });
 
   it("uses the operator's default location when the call gives none, looks it up once and remembers it", async () => {
-    const saved = process.env['DEFAULT_LOCATION'];
-    process.env['DEFAULT_LOCATION'] = 'Lisbon, Portugal';
+    const saved = process.env['LINKEDIN_DEFAULT_LOCATION'];
+    process.env['LINKEDIN_DEFAULT_LOCATION'] = 'Lisbon, Portugal';
     try {
       const urls: string[] = [];
       const spied = createLinkedinTools({
@@ -632,8 +632,8 @@ describe('the place of a search is never built in', () => {
       expect(first.warnings.join(' ')).toContain('Lisbon, Portugal (geoId 100364837)');
       expect(c.http.requests.filter((request) => request.url.includes('typeaheadHits'))).toHaveLength(1); // asked once, then remembered
     } finally {
-      if (saved === undefined) delete process.env['DEFAULT_LOCATION'];
-      else process.env['DEFAULT_LOCATION'] = saved;
+      if (saved === undefined) delete process.env['LINKEDIN_DEFAULT_LOCATION'];
+      else process.env['LINKEDIN_DEFAULT_LOCATION'] = saved;
     }
   });
 });

@@ -60,16 +60,16 @@ export function parseGeoAliases(raw: string | undefined): Map<string, string> {
 }
 
 /**
- * The location of a search: the `geo` argument, else `DEFAULT_LOCATION`. A numeric value is a LinkedIn geoId, an alias is looked up
+ * The location of a search: the `geo` argument, else `LINKEDIN_DEFAULT_LOCATION`. A numeric value is a LinkedIn geoId, an alias is looked up
  * (`LINKEDIN_GEO_ALIASES`), anything else is a place name LinkedIn resolves itself ("Berlin, Germany", "Remote"). There is no default
  * place in the code: with neither the argument nor the variable the call is refused and says what to set.
  */
 export function resolveGeo(geo: string | undefined, env: Readonly<Record<string, string | undefined>> = process.env): string {
-  const wanted = (geo ?? env['DEFAULT_LOCATION'] ?? '').trim();
+  const wanted = (geo ?? env['LINKEDIN_DEFAULT_LOCATION'] ?? '').trim();
   if (wanted === '')
     throw new JobwatchError(
       'invalid_arguments',
-      'geo is required: a place name (for example "Berlin, Germany") or a LinkedIn geoId. An operator can set DEFAULT_LOCATION.',
+      'geo is required: a place name (for example "Berlin, Germany") or a LinkedIn geoId. An operator can set LINKEDIN_DEFAULT_LOCATION.',
     );
   return parseGeoAliases(env['LINKEDIN_GEO_ALIASES']).get(wanted.toLowerCase()) ?? wanted;
 }
