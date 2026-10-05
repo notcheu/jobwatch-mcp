@@ -15,7 +15,7 @@ export interface ContractOptions {
   /** The adapter's committed `catalog/` folder. */
   snapshotDir: string;
   /**
-   * Rewrite the snapshot instead of failing when it is out of date. Defaults to `JW_UPDATE_CATALOG=1` in the environment,
+   * Rewrite the snapshot instead of failing when it is out of date. Defaults to `UPDATE_CATALOG=1` in the environment,
    * which is what `npm run catalog:gen` sets (like `vitest -u`). Never enable it in CI.
    */
   updateSnapshots?: boolean;
@@ -34,7 +34,7 @@ export function describeAdapterContract(adapter: McpModule, options: ContractOpt
     });
 
     it('has a catalog snapshot in sync with its definitions (run `npm run catalog:gen` to update)', async () => {
-      if (options.updateSnapshots ?? process.env['JW_UPDATE_CATALOG'] === '1') await writeCatalogSnapshot(adapter, options.snapshotDir);
+      if (options.updateSnapshots ?? process.env['UPDATE_CATALOG'] === '1') await writeCatalogSnapshot(adapter, options.snapshotDir);
       expect(await diffCatalogSnapshot(adapter, options.snapshotDir)).toEqual({ missing: [], stale: [], changed: [] });
     });
 

@@ -79,3 +79,16 @@ export function createBrowserHooks(options: BrowserHooksOptions): RuntimeHooks {
     },
   };
 }
+
+/**
+ * Hooks for a browser that is not a container of ours (`local` and `attach` modes): wait until DevTools answers, nothing else.
+ * No fingerprint check (it is the operator's own browser, with its own language and fonts), no `Browser.close` (the backend ends a
+ * local Chrome itself and an attached one is never quit), and no memory shedding (nothing caps it).
+ */
+export function createAttachHooks(options: Pick<BrowserHooksOptions, 'devtoolsTimeoutMs' | 'fetchImpl' | 'sleep'> = {}): RuntimeHooks {
+  return {
+    async ready(handle: RuntimeHandle): Promise<void> {
+      await waitForDevTools(handle.address, options.devtoolsTimeoutMs ?? 25_000, options.fetchImpl, options.sleep);
+    },
+  };
+}

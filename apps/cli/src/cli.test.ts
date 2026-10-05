@@ -103,7 +103,7 @@ afterEach(async () => {
 const cli = (argv: string[], over: Partial<Deps> = {}): Promise<number> =>
   run(argv, {
     io: { out: (t) => (out += t), err: (t) => (err += t) },
-    env: { JW_DATA_DIR: dataDir },
+    env: { DATA_DIR: dataDir },
     adapters: table,
     utilities: utilitiesTable,
     version: '9.9.9',
@@ -158,10 +158,10 @@ describe('adapters list', () => {
     expect(out).toContain(`Enabled list: ${join(dataDir, 'adapters.json')}\n`);
   });
 
-  it('says when JW_ADAPTERS overrides the file', async () => {
-    await cli(['adapters', 'list'], { env: { JW_DATA_DIR: dataDir, JW_ADAPTERS: 'apec' } });
+  it('says when ADAPTERS overrides the file', async () => {
+    await cli(['adapters', 'list'], { env: { DATA_DIR: dataDir, ADAPTERS: 'apec' } });
     expect(out).toMatch(/apec\s+enabled/);
-    expect(out).toContain('JW_ADAPTERS (environment, overrides the file)');
+    expect(out).toContain('ADAPTERS (environment, overrides the file)');
   });
 
   it('--tools adds each tool with its parameters, required ones starred, defaults shown', async () => {
@@ -268,7 +268,7 @@ describe('adapters enable / disable', () => {
     const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
     const control = await startControlServer(controlSocketPath(dataDir), {
       'adapters.reload': async () => {
-        throw new Error('JW_ADAPTERS sets the list of adapters');
+        throw new Error('ADAPTERS sets the list of adapters');
       },
     });
     try {
@@ -276,7 +276,7 @@ describe('adapters enable / disable', () => {
     } finally {
       await control.close();
     }
-    expect(out).toContain('did not apply it: JW_ADAPTERS sets the list of adapters');
+    expect(out).toContain('did not apply it: ADAPTERS sets the list of adapters');
     expect(out).toContain('Restart the router to apply');
   });
 
@@ -328,9 +328,9 @@ describe('adapters enable / disable', () => {
     expect(await enabledFile()).toEqual({ enabled: ['apec'], utilities: [] });
   });
 
-  it('refuses to edit while JW_ADAPTERS is set', async () => {
-    expect(await cli(['adapters', 'enable', 'apec'], { env: { JW_DATA_DIR: dataDir, JW_ADAPTERS: 'linkedin' } })).toBe(EXIT.usage);
-    expect(err).toContain('JW_ADAPTERS is set');
+  it('refuses to edit while ADAPTERS is set', async () => {
+    expect(await cli(['adapters', 'enable', 'apec'], { env: { DATA_DIR: dataDir, ADAPTERS: 'linkedin' } })).toBe(EXIT.usage);
+    expect(err).toContain('ADAPTERS is set');
     await expect(readFile(join(dataDir, 'adapters.json'), 'utf8')).rejects.toThrow();
   });
 
@@ -346,7 +346,7 @@ describe('adapters enable / disable', () => {
   });
 
   it('works without any server configuration (no public base URL needed)', async () => {
-    expect(await cli(['adapters', 'enable', 'apec'], { env: { JW_DATA_DIR: dataDir } })).toBe(EXIT.ok);
+    expect(await cli(['adapters', 'enable', 'apec'], { env: { DATA_DIR: dataDir } })).toBe(EXIT.ok);
   });
 });
 

@@ -127,7 +127,7 @@ export function createStoredJobsTool(store: Store, clock: Clock) {
     name: 'stored_jobs',
     title: 'Stored jobs in a date window (read-only)',
     description:
-      'Read-only. Lists the jobs earlier searches stored in the router database between two dates (default: the last 7 days, by first_seen), newest first, WITHOUT contacting any site. detail=none (default) lists only title, company, place, url and dates; summary or full add text. Add `terms` to see which keywords each job contains and, in stats, how many jobs each keyword and platform brought in per day. Page with limit/offset. Read chosen jobs in full with stored_job_texts. Jobs older than the retention (JW_JOB_RETENTION_DAYS, default 30) are gone.',
+      'Read-only. Lists the jobs earlier searches stored in the router database between two dates (default: the last 7 days, by first_seen), newest first, WITHOUT contacting any site. detail=none (default) lists only title, company, place, url and dates; summary or full add text. Add `terms` to see which keywords each job contains and, in stats, how many jobs each keyword and platform brought in per day. Page with limit/offset. Read chosen jobs in full with stored_job_texts. Jobs older than the retention (JOB_RETENTION_DAYS, default 30) are gone.',
     input,
     output,
     annotations: { readOnlyHint: true, openWorldHint: false, idempotentHint: true },

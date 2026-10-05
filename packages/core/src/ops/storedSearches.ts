@@ -53,7 +53,7 @@ export function createStoredSearchesTool(store: Store, clock: Clock) {
     name: 'stored_searches',
     title: 'Stored search history (read-only)',
     description:
-      'Read-only. For each search keyword used in a window (default: the last 7 days), how many times it ran and how many distinct jobs it listed, returned and found for the first time, from the router database and without contacting any site. Use it to refine the keywords of the routine. List the jobs of one keyword with stored_jobs(found_by=...). Kept for JW_JOB_RETENTION_DAYS (default 30).',
+      'Read-only. For each search keyword used in a window (default: the last 7 days), how many times it ran and how many distinct jobs it listed, returned and found for the first time, from the router database and without contacting any site. Use it to refine the keywords of the routine. List the jobs of one keyword with stored_jobs(found_by=...). Kept for JOB_RETENTION_DAYS (default 30).',
     input,
     output,
     annotations: { readOnlyHint: true, openWorldHint: false, idempotentHint: true },

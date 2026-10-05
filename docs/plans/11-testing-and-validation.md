@@ -20,7 +20,7 @@
 - **Crash recovery**: kill the router mid-call → on restart orphan containers with the label are removed.
 - **Dashboard smoke** (`tests/dashboard/smoke.mjs`, `npm run test:dashboard`, by hand after `npm run build`, not in CI): starts the built router, opens the dashboard with the real CLI, makes MCP calls and checks the pages, the API, the headers and the Host, Origin and CSRF refusals, then closes it (28 checks).
 - **Soak**: 6 h of periodic calls (every 5–20 min) → no growth in router RSS; no leaked tabs/containers; logs clean. Runner: `tests/soak/soak.ts` (plain Node 26, no dependencies, read-only). On the reference host, from the repo root:
-  `docker run --rm --network jobwatch_jobwatch-core -e SOAK_SECRET=<JW_FRONT_SHARED_SECRET> -v "$PWD/tests/soak:/soak:ro" node:26-bookworm-slim node /soak/soak.ts`
+  `docker run --rm --network jobwatch_jobwatch-core -e SOAK_SECRET=<FRONT_SHARED_SECRET> -v "$PWD/tests/soak:/soak:ro" node:26-bookworm-slim node /soak/soak.ts`
   It calls `memory_report` every 5–20 min (add real tools with `SOAK_CALLS`, only once the platform budget is approved), fails on any failing call, on router RSS growth above `SOAK_RSS_MB` (40) between the first and last three samples, and, with `SOAK_DOCKER=1` and the socket mounted, on more than one managed browser container. Exit 0 green, 1 red. Check the router logs for errors afterwards: `docker compose logs router | grep '"level":"error"'`. Result of the 6 h run: **not yet recorded**.
 - **Profile persistence**: stop/start the runtime ≥ 3 times → still logged in (G4).
 

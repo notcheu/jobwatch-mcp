@@ -469,6 +469,45 @@ describe('the call meter for a browser adapter', () => {
     await lease.release();
   });
 
+  it("tells the connection the browser is shared when it is the operator's own", async () => {
+    const options: unknown[] = [];
+    const logger = createLogger({ level: 'silent' });
+    const runtime = new RuntimeManager(
+      backend,
+      {
+        image: 'img',
+        network: 'net',
+        profileVolumePrefix: 'p-',
+        idleTtlS: 120,
+        maxLifetimeS: 1800,
+        queueTimeoutS: 60,
+        memMaxMb: 1500,
+        memHighMb: 1200,
+      },
+      logger,
+    );
+    const provider = createContextProvider({
+      runtime,
+      connect: async (_address, _hosts, connectOptions) => (options.push(connectOptions), connection(idleSession)),
+      logger,
+      createHttp: () => ({}) as HttpClient,
+      pacerOptions: { sleep: async () => undefined },
+      sharedBrowser: true,
+    });
+    const browser = defineAdapter({
+      id: 'site',
+      displayName: 'Site',
+      description: 'A browser adapter.',
+      sdkApi: SDK_API_VERSION,
+      platform: 'site',
+      kind: 'browser',
+      allowedHosts: ['www.example.com'],
+      tools: [],
+    });
+    await (await provider.acquire(browser, 'r1')).release();
+    expect(options).toEqual([{ maxTabs: 1, shared: true }]);
+  });
+
   it('counts every page load, whether or not it succeeds, and the units the adapter reports', async () => {
     let fail = false;
     const session: BrowserSession = {

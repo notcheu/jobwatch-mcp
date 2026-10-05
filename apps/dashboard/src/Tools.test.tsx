@@ -118,11 +118,11 @@ describe('tools and status', () => {
     expect(await screen.findByText(/needs your approval/)).toBeInTheDocument();
   });
 
-  it('disables the switch and says why when JW_ADAPTERS pins the list', async () => {
+  it('disables the switch and says why when ADAPTERS pins the list', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter({ pinned: true })) });
     renderApp('/tools');
     expect(await screen.findByRole('switch', { name: 'Disable Teamtailor' })).toBeDisabled();
-    expect(screen.getByText(/set by JW_ADAPTERS/)).toBeInTheDocument();
+    expect(screen.getByText(/set by ADAPTERS/)).toBeInTheDocument();
   });
 
   it('shows the refusal of the router next to the adapter', async () => {

@@ -94,7 +94,7 @@ describe('opening', () => {
   it('explains an unusable location (a parent that is a regular file, portable: /proc makes recursive mkdir spin on Linux)', async () => {
     const blocker = join(dir, 'blocker');
     await writeFile(blocker, 'not a directory');
-    expect(() => Store.open(join(blocker, 'sub', 'x.sqlite'))).toThrow(/Is JW_DATA_DIR writable\?/);
+    expect(() => Store.open(join(blocker, 'sub', 'x.sqlite'))).toThrow(/Is DATA_DIR writable\?/);
   });
 
   it('refuses a file that is not a database', async () => {

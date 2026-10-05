@@ -83,7 +83,7 @@ export function Settings() {
               </Row>
               <Row
                 label="List of adapters"
-                hint={s.adaptersPinned ? 'Set by JW_ADAPTERS: it cannot be changed from here' : 'Changed from Tools & status'}
+                hint={s.adaptersPinned ? 'Set by ADAPTERS: it cannot be changed from here' : 'Changed from Tools & status'}
               >
                 <Badge variant={s.adaptersPinned ? 'warning' : 'outline'}>{s.adaptersPinned ? 'pinned' : 'editable'}</Badge>
               </Row>

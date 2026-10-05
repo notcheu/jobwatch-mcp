@@ -33,8 +33,10 @@ export interface ContextProviderDeps {
   /** Where adapters remember the jobs they opened. Omitted only in tests: a private in-memory store is used. */
   store?: Store;
   clock?: () => number;
-  /** Most tabs the browser may have open at once (`JW_BROWSER_MAX_TABS`). Default 1 when omitted, as in tests. */
+  /** Most tabs the browser may have open at once (`BROWSER_MAX_TABS`). Default 1 when omitted, as in tests. */
   maxTabs?: number;
+  /** The browser is the operator's own (`local` or `attach` mode): open a tab of our own and leave every other tab alone. */
+  sharedBrowser?: boolean;
 }
 
 /** The platform-scoped view of the store an adapter gets as `ctx.jobs`. */
@@ -145,7 +147,10 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
       const lease = await runtime.lease(adapter.platform, memory ? { memory } : {});
       let connection: Awaited<ReturnType<ConnectBrowser>>;
       try {
-        connection = await deps.connect(lease.handle.address, adapter.allowedHosts, { maxTabs: deps.maxTabs ?? 1 });
+        connection = await deps.connect(lease.handle.address, adapter.allowedHosts, {
+          maxTabs: deps.maxTabs ?? 1,
+          ...(deps.sharedBrowser === true ? { shared: true } : {}),
+        });
       } catch (error) {
         deps.logger.error({ err: error, platform: adapter.platform }, 'browser_connect_failed');
         await lease.release();

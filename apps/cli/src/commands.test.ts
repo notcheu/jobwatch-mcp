@@ -53,9 +53,9 @@ const fakeDocker =
   };
 
 const env = (extra: Record<string, string> = {}): Record<string, string> => ({
-  JW_DATA_DIR: dataDir,
-  JW_BASE_URL: 'https://mcp.example.test',
-  JW_FRONT_SHARED_SECRET: 'x'.repeat(32),
+  DATA_DIR: dataDir,
+  BASE_URL: 'https://mcp.example.test',
+  FRONT_SHARED_SECRET: 'x'.repeat(32),
   ...extra,
 });
 
@@ -146,7 +146,7 @@ describe('doctor', () => {
   });
 
   it('reports invalid configuration', async () => {
-    expect(await cli(['doctor'], { env: env({ JW_BASE_URL: 'not a url' }) })).toBe(2);
+    expect(await cli(['doctor'], { env: env({ BASE_URL: 'not a url' }) })).toBe(2);
     expect(out).toMatch(/FAIL\s+configuration/);
   });
 });

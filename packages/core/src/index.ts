@@ -1,5 +1,7 @@
 /** @jobwatch/core: the engine. Depends on @jobwatch/sdk only; never imports an adapter. */
 export { ConfigError } from './errors';
+export { ENV_NAMES, envSchema, parseEnv } from './env';
+export type { EnvResult, ParsedEnv } from './env';
 export { ADAPTER_ID_PATTERN, describeConfig, loadConfig, loadStorageSettings, parseAdapterList } from './config';
 export type { Config, LoadedConfig, StorageSettings } from './config';
 export { createAdapterLogger, createLogger, sanitizeFields } from './logging';
@@ -40,7 +42,7 @@ export type { PageLike } from './browser/pageSession';
 export { FINGERPRINT_SCRIPT, checkFingerprint } from './browser/fingerprint';
 export type { Fingerprint, FingerprintExpectations, FingerprintResult } from './browser/fingerprint';
 export { DEFAULT_BROWSER_PACING, createPacer } from './browser/pacer';
-export { createBrowserHooks, waitForDevTools } from './browser/hooks';
+export { createAttachHooks, createBrowserHooks, waitForDevTools } from './browser/hooks';
 export type { BrowserHooksOptions, FingerprintMode } from './browser/hooks';
 export { connectBrowser } from './browser/session';
 export { createRegistryHolder, type RegistryHolder, type ReloadResult } from './registryHolder';
@@ -57,6 +59,9 @@ export { DEFAULT_CHARS_PER_TOKEN, estimateTokens, jobTextChars } from './dashboa
 export type { BrowserConnection, ConnectBrowser } from './browser/session';
 export { BackendError } from './runtime/backend';
 export type { ContainerState, RuntimeBackend, RuntimeHandle, RuntimeSpec } from './runtime/backend';
+export { AttachBackend } from './runtime/attachBackend';
+export { LocalBackend, findChrome } from './runtime/localBackend';
+export type { LocalBackendOptions } from './runtime/localBackend';
 export { DockerCliBackend, LOGIN_LABEL, LOGIN_PORT, MANAGED_LABEL, loginRunArgs, runArgs, spawnDocker } from './runtime/dockerCli';
 export type { CliResult, DockerRunner } from './runtime/dockerCli';
 export { RuntimeManager } from './runtime/manager';

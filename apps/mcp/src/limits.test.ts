@@ -104,7 +104,7 @@ describe('circuit breaker over HTTP', () => {
   });
 
   it('is visible in the metrics while open and gone when closed', async () => {
-    server = await boot({ JW_METRICS_ENABLED: 'true' });
+    server = await boot({ METRICS_ENABLED: 'true' });
     const client = await connectClient(server.url);
     behaviour = async () => {
       throw new SessionInvalid();
@@ -161,7 +161,7 @@ describe('persistence across a restart (a real database file)', () => {
   });
 
   const bootOnDisk = (extraEnv: Record<string, string> = {}) =>
-    startTestServer({ JW_DB_PATH: join(dir, 'state', 'jobwatch.sqlite'), ...extraEnv }, ['budgeted'], {
+    startTestServer({ DB_PATH: join(dir, 'state', 'jobwatch.sqlite'), ...extraEnv }, ['budgeted'], {
       installed: { budgeted: async () => budgeted },
       clock: () => now,
     });
@@ -193,10 +193,10 @@ describe('persistence across a restart (a real database file)', () => {
     const blocker = join(dir, 'blocker');
     await writeFile(blocker, 'not a directory');
     await expect(
-      startTestServer({ JW_DB_PATH: join(blocker, 'state', 'jobwatch.sqlite') }, ['budgeted'], {
+      startTestServer({ DB_PATH: join(blocker, 'state', 'jobwatch.sqlite') }, ['budgeted'], {
         installed: { budgeted: async () => budgeted },
       }),
-    ).rejects.toThrow(/Is JW_DATA_DIR writable\?/);
+    ).rejects.toThrow(/Is DATA_DIR writable\?/);
   });
 
   it('closes the database on shutdown so the WAL is flushed', async () => {
@@ -210,11 +210,11 @@ describe('persistence across a restart (a real database file)', () => {
 });
 
 describe('start() is usable without the harness', () => {
-  it('defaults the database to <JW_DATA_DIR>/jobwatch.sqlite', async () => {
+  it('defaults the database to <DATA_DIR>/jobwatch.sqlite', async () => {
     const dir2 = await mkdtemp(join(tmpdir(), 'jw-default-db-'));
     try {
       const running = await start({
-        env: { JW_BASE_URL: 'http://127.0.0.1:18999', JW_AUTH: 'none', JW_LISTEN_HOST: '127.0.0.1', JW_ADAPTERS: '', JW_DATA_DIR: dir2 },
+        env: { BASE_URL: 'http://127.0.0.1:18999', AUTH: 'none', LISTEN_HOST: '127.0.0.1', ADAPTERS: '', DATA_DIR: dir2 },
         version: 't',
         installed: {},
         contexts: fakeContexts,

@@ -20,7 +20,7 @@ export async function doctor(deps: Deps): Promise<number> {
   let config: Config | undefined;
   try {
     config = loadConfig(deps.env).config;
-    add('ok', 'configuration', 'JW_* settings are valid');
+    add('ok', 'configuration', 'the environment settings are valid');
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error;
     add('fail', 'configuration', error.problems.join('; '));

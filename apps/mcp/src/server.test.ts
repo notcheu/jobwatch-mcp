@@ -41,7 +41,7 @@ describe('health and surface', () => {
   });
 
   it('serves nothing else: unknown paths are 404 and /metrics is not on the MCP port', async () => {
-    server = await startTestServer({ JW_METRICS_ENABLED: 'true' });
+    server = await startTestServer({ METRICS_ENABLED: 'true' });
     for (const path of ['/', '/metrics', '/admin', '/.env', '/mcp/extra']) {
       expect((await fetch(new URL(path, server.url))).status, path).toBe(404);
     }
@@ -184,7 +184,7 @@ describe('tools/call over HTTP', () => {
   });
 
   it('keeps every call in memory for the dashboard, with its parameters, and in no log line or database row', async () => {
-    server = await startTestServer({ JW_DASHBOARD_CALL_BUFFER: '100' });
+    server = await startTestServer({ DASHBOARD_CALL_BUFFER: '100' });
     const client = await connectClient(server.url);
     await client.listTools();
     await client.callTool({ name: 'probe_echo', arguments: { word: 'dash-keyword' } });
@@ -251,9 +251,9 @@ describe('tools/call over HTTP', () => {
   });
 });
 
-describe('authentication: JW_AUTH=front with a shared secret', () => {
+describe('authentication: AUTH=front with a shared secret', () => {
   const SHARED = 'front-shared-secret-0123456789';
-  const front = { JW_AUTH: 'front', JW_BASE_URL: 'https://mcp.example.com', JW_FRONT_SHARED_SECRET: SHARED };
+  const front = { AUTH: 'front', BASE_URL: 'https://mcp.example.com', FRONT_SHARED_SECRET: SHARED };
 
   it('refuses a missing, malformed or wrong credential with 401', async () => {
     server = await startTestServer(front);
@@ -295,13 +295,13 @@ describe('authentication: JW_AUTH=front with a shared secret', () => {
   });
 
   it('starts in front mode WITHOUT a shared secret (network isolation) and warns about it', async () => {
-    server = await startTestServer({ JW_AUTH: 'front', JW_BASE_URL: 'https://mcp.example.com' });
-    expect(server.logs()).toContain('JW_FRONT_SHARED_SECRET is not set');
+    server = await startTestServer({ AUTH: 'front', BASE_URL: 'https://mcp.example.com' });
+    expect(server.logs()).toContain('FRONT_SHARED_SECRET is not set');
     expect((await post(server.url, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).status).toBe(200);
   });
 });
 
-describe('authentication: JW_AUTH=none (local development)', () => {
+describe('authentication: AUTH=none (local development)', () => {
   it('refuses a foreign Host header (DNS rebinding) and accepts the loopback host', async () => {
     server = await startTestServer();
     const body = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}';
@@ -315,7 +315,7 @@ describe('authentication: JW_AUTH=none (local development)', () => {
 
   it('warns loudly at startup', async () => {
     server = await startTestServer();
-    expect(server.logs()).toContain('JW_AUTH=none: no authentication');
+    expect(server.logs()).toContain('AUTH=none: no authentication');
   });
 });
 
@@ -326,7 +326,7 @@ describe('metrics listener', () => {
   });
 
   it('serves Prometheus text on its own port and counts calls, without arguments or ids', async () => {
-    server = await startTestServer({ JW_METRICS_ENABLED: 'true' });
+    server = await startTestServer({ METRICS_ENABLED: 'true' });
     const client = await connectClient(server.url);
     await client.callTool({ name: 'probe_echo', arguments: { word: 'secret-word' } });
     await client.callTool({ name: 'probe_login', arguments: {} });
@@ -342,7 +342,7 @@ describe('metrics listener', () => {
   });
 
   it('serves only GET /metrics', async () => {
-    server = await startTestServer({ JW_METRICS_ENABLED: 'true' });
+    server = await startTestServer({ METRICS_ENABLED: 'true' });
     const base = server.metricsUrl as URL;
     expect((await fetch(new URL('/', base))).status).toBe(404);
     expect((await fetch(base, { method: 'POST' })).status).toBe(404);
@@ -355,7 +355,7 @@ describe('lifecycle', () => {
   });
 
   it('fails to start with an invalid configuration, listing the problem', async () => {
-    await expect(startTestServer({ JW_PORT: 'abc' })).rejects.toThrow(/JW_PORT/);
+    await expect(startTestServer({ PORT: 'abc' })).rejects.toThrow(/PORT/);
   });
 
   it('can be closed twice (two shutdown signals) without error', async () => {
@@ -374,7 +374,7 @@ describe('lifecycle', () => {
 
 describe('built-in ops tools over MCP', () => {
   it('memory_report answers over HTTP even when no adapter is enabled, and is recorded and metered', async () => {
-    server = await startTestServer({ JW_METRICS_ENABLED: 'true' }, []);
+    server = await startTestServer({ METRICS_ENABLED: 'true' }, []);
     const client = await connectClient(server.url);
     const result = await client.callTool({ name: 'memory_report', arguments: {} });
     expect(result.isError).toBeFalsy();
@@ -396,7 +396,7 @@ describe('built-in ops tools over MCP', () => {
   });
 
   it('the ops tools are not counted as enabled adapters', async () => {
-    server = await startTestServer({ JW_METRICS_ENABLED: 'true' }, ['probe']);
+    server = await startTestServer({ METRICS_ENABLED: 'true' }, ['probe']);
     expect(await (await fetch(server.metricsUrl as URL)).text()).toContain('jw_enabled_adapters 1');
   });
 });

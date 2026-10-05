@@ -34,7 +34,7 @@ export interface EnabledModules {
   ids: string[];
   adapters: string[];
   utilities: string[];
-  /** Where the list came from. `env` means a list is set by the environment (JW_ADAPTERS or JW_UTILITIES) and the CLI must refuse to edit it. */
+  /** Where the list came from. `env` means a list is set by the environment (ADAPTERS or UTILITIES) and the CLI must refuse to edit it. */
   source: EnabledSource;
 }
 
@@ -66,7 +66,7 @@ export async function readEnabledFile(dataDir: string): Promise<EnabledLists | u
 
 type EnvLists = Pick<Config, 'adaptersFromEnv' | 'dataDir'> & Partial<Pick<Config, 'utilitiesFromEnv'>>;
 
-/** Resolve the effective lists: JW_ADAPTERS and JW_UTILITIES win over the file, the file over the empty default. */
+/** Resolve the effective lists: ADAPTERS and UTILITIES win over the file, the file over the empty default. */
 export async function resolveEnabledModules(config: EnvLists): Promise<EnabledModules> {
   const fromFile =
     config.adaptersFromEnv !== undefined && config.utilitiesFromEnv !== undefined ? undefined : await readEnabledFile(config.dataDir);
@@ -96,7 +96,7 @@ export interface ToggleResult {
 }
 
 /** The variable that pins a group, for messages. */
-export const pinVariable = (group: ModuleGroup): string => (group === 'adapters' ? 'JW_ADAPTERS' : 'JW_UTILITIES');
+export const pinVariable = (group: ModuleGroup): string => (group === 'adapters' ? 'ADAPTERS' : 'UTILITIES');
 
 /** True when the environment pins this group, so the file is not edited. */
 export const isPinned = (config: Pick<EnvLists, 'adaptersFromEnv' | 'utilitiesFromEnv'>, group: ModuleGroup): boolean =>

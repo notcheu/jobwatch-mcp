@@ -13,8 +13,8 @@ import { createBrowserHooks, waitForDevTools } from './hooks';
 import { connectBrowser } from './session';
 import { devtoolsBaseUrl } from './address';
 
-const image = process.env['JW_IT_IMAGE'] ?? '';
-const network = process.env['JW_IT_NETWORK'] ?? '';
+const image = process.env['IT_IMAGE'] ?? '';
+const network = process.env['IT_NETWORK'] ?? '';
 const enabled = image !== '' && network !== '';
 const seccompProfile = '/work/images/browser/chrome-seccomp.json';
 

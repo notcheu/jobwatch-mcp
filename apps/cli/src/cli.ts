@@ -56,8 +56,8 @@ Usage:
   jobwatch doctor                      check configuration, data directory, Docker, image, network, profiles
   jobwatch --help | --version
 
-Settings (environment): JW_DATA_DIR (default /data) holds adapters.json;
-JW_ADAPTERS and JW_UTILITIES (comma lists) override their part of the file and make it read-only.
+Settings (environment): DATA_DIR (default /data) holds adapters.json;
+ADAPTERS and UTILITIES (comma lists) override their part of the file and make it read-only.
 
 Changes take effect after the router restarts: docker compose restart router
 `;
@@ -65,7 +65,7 @@ Changes take effect after the router restarts: docker compose restart router
 /** Exit codes: 0 ok, 1 usage or configuration error, 2 at least one installed adapter is broken. */
 export const EXIT = { ok: 0, usage: 1, broken: 2 } as const;
 
-const RESTART_HINT = 'Restart the router to apply: docker compose -f deploy/compose.yml --env-file deploy/.env restart router';
+const RESTART_HINT = 'Restart the router to apply: docker compose restart router';
 
 function pad(rows: string[][]): string {
   const widths = rows[0]?.map((_cell, column) => Math.max(...rows.map((row) => (row[column] ?? '').length))) ?? [];

@@ -21,7 +21,7 @@ const unauthorized = (res: Response): void => {
 };
 
 /**
- * JW_AUTH=front with a shared secret: the OAuth front must present `Authorization: Bearer <secret>`.
+ * AUTH=front with a shared secret: the OAuth front must present `Authorization: Bearer <secret>`.
  * (babs/mcp-auth-proxy can inject a static upstream Authorization header: VERIFY when the stack is assembled.)
  * Without a secret the router relies on network isolation: it publishes no port and only the front can reach it.
  */
@@ -38,7 +38,7 @@ export function requireSharedSecret(secret: string) {
 }
 
 /**
- * JW_AUTH=none (local development, loopback only): refuse requests whose Host header is not the configured loopback
+ * AUTH=none (local development, loopback only): refuse requests whose Host header is not the configured loopback
  * host. A web page open in the developer's browser could otherwise reach the no-auth server through DNS rebinding.
  */
 export function requireLoopbackHost(allowedHostnames: readonly string[]) {

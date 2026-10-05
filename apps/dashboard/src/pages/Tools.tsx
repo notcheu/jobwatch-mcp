@@ -89,7 +89,7 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
       <CardContent className="space-y-3">
         {adapter.pinned && (
           <p className="text-xs text-muted-foreground">
-            The list of {adapter.role}s is set by {adapter.role === 'adapter' ? 'JW_ADAPTERS' : 'JW_UTILITIES'}: unset it to change it here.
+            The list of {adapter.role}s is set by {adapter.role === 'adapter' ? 'ADAPTERS' : 'UTILITIES'}: unset it to change it here.
           </p>
         )}
         {warnsAboutBudget && !adapter.enabled && (

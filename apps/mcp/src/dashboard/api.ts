@@ -46,7 +46,7 @@ export interface DashboardData {
   breaker: CircuitBreaker;
   registry: () => Registry;
   installed: InstalledModules;
-  /** `JW_ADAPTERS` pins the list of adapters. */
+  /** `ADAPTERS` pins the list of adapters. */
   pinned: boolean;
   runtime: () => RuntimeManager | undefined;
   /** The limits in force, shown read only (no secret in it). */

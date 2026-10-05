@@ -1,6 +1,10 @@
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
+import { join } from 'node:path';
 import {
+  AttachBackend,
   CircuitBreaker,
+  LocalBackend,
+  createAttachHooks,
   ConfigError,
   DockerCliBackend,
   CallLog,
@@ -60,7 +64,7 @@ export interface RunningServer {
   dashboard: DashboardManager;
   /** Present once a browser adapter has been enabled. */
   readonly runtime: RuntimeManager | undefined;
-  /** Re-read the list of enabled adapters and swap the registry without a restart. Refused when `JW_ADAPTERS` pins the list. */
+  /** Re-read the list of enabled adapters and swap the registry without a restart. Refused when `ADAPTERS` pins the list. */
   reloadAdapters(): Promise<ReloadResult>;
   /** The MCP listener. */
   mcp: HttpServer;
@@ -88,7 +92,7 @@ export interface StartOptions {
   connectBrowser?: ConnectBrowser;
   /** Time source for rate limits and breakers; tests pass a controllable one. */
   clock?: Clock;
-  /** Overrides JW_PORT (tests pass 0 for a free port). */
+  /** Overrides PORT (tests pass 0 for a free port). */
   port?: number;
   metricsPort?: number;
   /** Path of the control socket; `false` disables it (tests). Default: `control.sock` in the data directory. */
@@ -131,9 +135,9 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   if (enabled.ids.length === 0)
     logger.warn('No adapters are enabled: only the built-in ops tools are listed. Enable one with `jobwatch adapters enable <id>`.');
   if (config.auth === 'front' && config.frontSharedSecret === undefined) {
-    logger.warn('JW_FRONT_SHARED_SECRET is not set: relying on network isolation, only the OAuth front may reach this port.');
+    logger.warn('FRONT_SHARED_SECRET is not set: relying on network isolation, only the OAuth front may reach this port.');
   }
-  if (config.auth === 'none') logger.warn('JW_AUTH=none: no authentication. Local development only; never expose this port.');
+  if (config.auth === 'none') logger.warn('AUTH=none: no authentication. Local development only; never expose this port.');
 
   const metrics = config.metrics.enabled ? createMetrics({ version: options.version }) : undefined;
   metrics?.setEnabledAdapters(enabledOnly.adapters.length);
@@ -141,7 +145,8 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   // Persistent state. Fails fast (the process exits) when the database cannot be opened: running without a rate limiter or
   // breaker would mean nothing stops us from hammering a platform after a checkpoint.
   const clock = options.clock ?? Date.now;
-  const store = Store.open(config.dbPath, { jobRetentionDays: config.jobRetentionDays });
+  const store = Store.open(config.dbPath, { jobRetentionDays: config.jobRetentionDays }); // applies the pending schema migrations
+  logger.info({ schemaVersion: store.schemaVersion, dbPath: config.dbPath }, 'database_ready');
   const breaker = new CircuitBreaker(store, clock, (platform, row) => {
     metrics?.setBreaker(platform, row?.reason);
     if (row !== undefined)
@@ -169,16 +174,26 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   // The browser runtime exists only when an enabled adapter needs one: a router with HTTP adapters only never touches docker. It is
   // created the first time one is needed, at startup or when an adapter is enabled while the router runs.
   let runtime: RuntimeManager | undefined;
+  // Where the browser comes from: a container (default), a Chrome started on this machine, or one already running that we attach to.
+  const browserBackend = (): RuntimeBackend => {
+    if (config.browserMode === 'attach' && config.browserCdpAddress !== undefined) return new AttachBackend(config.browserCdpAddress);
+    if (config.browserMode === 'local')
+      return new LocalBackend({
+        ...(config.localBrowserPath ? { executable: config.localBrowserPath } : {}),
+        profilesDir: join(config.dataDir, 'browser-profiles'),
+      });
+    return new DockerCliBackend(undefined, config.browserNetwork);
+  };
   const ensureRuntime = async (): Promise<void> => {
     if (runtime !== undefined) return;
     runtime = new RuntimeManager(
-      options.runtimeBackend ?? new DockerCliBackend(undefined, config.browserNetwork),
+      options.runtimeBackend ?? browserBackend(),
       {
         image: config.browserImage,
         network: config.browserNetwork,
         ...(config.browserSeccomp ? { seccompProfile: config.browserSeccomp } : {}),
         profileVolumePrefix: config.profileVolumePrefix,
-        // Handed to the container; the language list is personal and comes from the untracked deploy/.env (05 G8).
+        // Handed to the container; the language list is personal and comes from the untracked .env (05 G8).
         env: {
           CHROME_LANG: config.browserLang,
           ...(config.browserAcceptLangs ? { ACCEPT_LANGS: config.browserAcceptLangs.join(',') } : {}),
@@ -191,12 +206,14 @@ export async function start(options: StartOptions): Promise<RunningServer> {
       },
       logger,
       options.runtimeHooks ??
-        createBrowserHooks({
-          connect: options.connectBrowser ?? connectBrowser,
-          logger,
-          fingerprint: config.fingerprint,
-          expectations: config.browserAcceptLangs ? { languages: config.browserAcceptLangs } : {},
-        }),
+        (config.browserMode !== 'docker'
+          ? createAttachHooks()
+          : createBrowserHooks({
+              connect: options.connectBrowser ?? connectBrowser,
+              logger,
+              fingerprint: config.fingerprint,
+              expectations: config.browserAcceptLangs ? { languages: config.browserAcceptLangs } : {},
+            })),
       (event) => metrics?.recordRuntime(event),
     );
     // Containers left by a previous router (crash, kill -9) would hold RAM and a profile lock. A docker that is not reachable
@@ -214,6 +231,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
       store,
       clock,
       maxTabs: config.maxTabs,
+      sharedBrowser: config.browserMode !== 'docker',
       ...(options.createHttp === undefined ? {} : { createHttp: options.createHttp }),
     });
   // The holder is created after `ops`, which needs it: the ops tools read the live list of enabled adapters through this function.
@@ -315,7 +333,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   /** Hot reload (docs/plans/17-dashboard.md, section 6.4): re-read `adapters.json` and swap the registry. */
   const pinnedByEnv = config.adaptersFromEnv !== undefined || config.utilitiesFromEnv !== undefined;
   const reloadAdapters = async (): Promise<ReloadResult> => {
-    if (pinnedByEnv) throw new Error('JW_ADAPTERS or JW_UTILITIES sets the enabled list; unset it to change it without a restart.');
+    if (pinnedByEnv) throw new Error('ADAPTERS or UTILITIES sets the enabled list; unset it to change it without a restart.');
     const wanted = await resolveEnabledModules(config);
     const result = await holder.reload(wanted.ids);
     logger.info({ enabled: result.enabled, added: result.addedAdapters, removed: result.removedAdapters }, 'adapters_reloaded');

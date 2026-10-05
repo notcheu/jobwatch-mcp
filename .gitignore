@@ -87,6 +87,8 @@ web_modules/
 .env.test.local
 .env.production.local
 .env.local
+# committed: the secret-free defaults of `npm run dev`
+!/.env.local
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -143,6 +145,8 @@ dist
 deploy/.env
 secrets/
 data/
+# data of `npm run dev` / `npm run start`
+.data/
 profiles/
 
 # Nx

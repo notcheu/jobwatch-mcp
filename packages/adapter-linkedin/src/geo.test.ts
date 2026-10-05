@@ -49,13 +49,13 @@ describe('resolvePlace', () => {
     const c = make();
     c.memory.entries.set('linkedin.geo:home', JSON.stringify({ id: '555000', label: 'Home', by: 'operator' }));
     expect(await resolvePlace(c.ctx, 'Home', {})).toEqual({ geo: '555000' });
-    expect(await resolvePlace(c.ctx, 'home', { JW_LINKEDIN_GEO_ALIASES: 'home=999000' })).toEqual({ geo: '999000' });
+    expect(await resolvePlace(c.ctx, 'home', { LINKEDIN_GEO_ALIASES: 'home=999000' })).toEqual({ geo: '999000' });
     expect(lookups(c)).toBe(0);
   });
 
   it('uses the default location of the operator when the call gives none', async () => {
     const c = make(berlin);
-    expect((await resolvePlace(c.ctx, undefined, { JW_DEFAULT_LOCATION: 'Berlin' })).geo).toBe('103035651');
+    expect((await resolvePlace(c.ctx, undefined, { LINKEDIN_DEFAULT_LOCATION: 'Berlin' })).geo).toBe('103035651');
   });
 
   it('falls back to the name, soft, when LinkedIn answers badly, finds nothing or is not valid JSON', async () => {
@@ -80,6 +80,6 @@ describe('resolvePlace', () => {
   });
 
   it('refuses without a place, saying what to set', async () => {
-    await expect(resolvePlace(make().ctx, undefined, {})).rejects.toThrow(/JW_DEFAULT_LOCATION/);
+    await expect(resolvePlace(make().ctx, undefined, {})).rejects.toThrow(/LINKEDIN_DEFAULT_LOCATION/);
   });
 });

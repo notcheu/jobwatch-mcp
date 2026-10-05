@@ -81,10 +81,10 @@ describe('browser runtime wiring', () => {
     const backend = new FakeBackend();
     server = await startTestServer(
       {
-        JW_BROWSER_IMAGE: 'registry.example.com/jobwatch-browser:154',
-        JW_BROWSER_NETWORK: 'my-net',
-        JW_BROWSER_SECCOMP: '/etc/jobwatch/seccomp.json',
-        JW_PROFILE_VOLUME_PREFIX: 'prof-',
+        BROWSER_IMAGE: 'registry.example.com/jobwatch-browser:154',
+        BROWSER_NETWORK: 'my-net',
+        BROWSER_SECCOMP: '/etc/jobwatch/seccomp.json',
+        BROWSER_PROFILE_VOLUME_PREFIX: 'prof-',
       },
       ['browsery'],
       { installed, runtimeBackend: backend, ...noHooks },
@@ -101,7 +101,7 @@ describe('browser runtime wiring', () => {
 
   it('feeds runtime events into the metrics', async () => {
     const backend = new FakeBackend();
-    server = await startTestServer({ JW_METRICS_ENABLED: 'true' }, ['browsery'], { installed, runtimeBackend: backend, ...noHooks });
+    server = await startTestServer({ METRICS_ENABLED: 'true' }, ['browsery'], { installed, runtimeBackend: backend, ...noHooks });
     const lease = await server.running.runtime?.lease('browsery');
     let text = await (await fetch(server.metricsUrl as URL)).text();
     expect(text).toContain('jw_runtime_state{platform="browsery",state="busy"} 1');
@@ -133,7 +133,7 @@ describe('browser tools end to end through the real provider (fake CDP)', () => 
       disconnect: async () => void steps.push('disconnect'),
     };
     const seen: string[] = [];
-    server = await startTestServer({ JW_METRICS_ENABLED: 'true' }, ['browsery'], {
+    server = await startTestServer({ METRICS_ENABLED: 'true' }, ['browsery'], {
       installed,
       runtimeBackend: backend,
       ...noHooks,
@@ -157,7 +157,7 @@ describe('browser tools end to end through the real provider (fake CDP)', () => 
 
   it('passes the browser language settings to the container and the fingerprint expectation', async () => {
     const backend = new FakeBackend();
-    server = await startTestServer({ JW_BROWSER_LANG: 'sv-SE', JW_BROWSER_ACCEPT_LANGS: 'fr-FR,en-GB,sv-SE' }, ['browsery'], {
+    server = await startTestServer({ BROWSER_LANG: 'sv-SE', BROWSER_ACCEPT_LANGS: 'fr-FR,en-GB,sv-SE' }, ['browsery'], {
       installed,
       runtimeBackend: backend,
       ...noHooks,

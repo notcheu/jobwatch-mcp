@@ -23,16 +23,16 @@ describe('ids and urls', () => {
     expect(() => geoParam('a\nb')).toThrow(RangeError);
   });
 
-  it('has no place built in: the argument, else JW_DEFAULT_LOCATION, else a refusal that says what to set', () => {
+  it('has no place built in: the argument, else LINKEDIN_DEFAULT_LOCATION, else a refusal that says what to set', () => {
     expect(resolveGeo('Austin, Texas', {})).toBe('Austin, Texas');
-    expect(resolveGeo(undefined, { JW_DEFAULT_LOCATION: 'Lisbon' })).toBe('Lisbon');
-    expect(resolveGeo('Madrid', { JW_DEFAULT_LOCATION: 'Lisbon' })).toBe('Madrid');
-    expect(() => resolveGeo(undefined, {})).toThrow(/JW_DEFAULT_LOCATION/);
+    expect(resolveGeo(undefined, { LINKEDIN_DEFAULT_LOCATION: 'Lisbon' })).toBe('Lisbon');
+    expect(resolveGeo('Madrid', { LINKEDIN_DEFAULT_LOCATION: 'Lisbon' })).toBe('Madrid');
+    expect(() => resolveGeo(undefined, {})).toThrow(/LINKEDIN_DEFAULT_LOCATION/);
     expect(() => resolveGeo('  ', {})).toThrow(JobwatchError);
   });
 
-  it('knows only the aliases the operator gives (JW_LINKEDIN_GEO_ALIASES)', () => {
-    const env = { JW_LINKEDIN_GEO_ALIASES: 'home=104246759, Nordics = 111222333, broken, bad=12' };
+  it('knows only the aliases the operator gives (LINKEDIN_GEO_ALIASES)', () => {
+    const env = { LINKEDIN_GEO_ALIASES: 'home=104246759, Nordics = 111222333, broken, bad=12' };
     expect(resolveGeo('home', env)).toBe('104246759');
     expect(resolveGeo('NORDICS', env)).toBe('111222333');
     expect(resolveGeo('bad', env)).toBe('bad'); // not a geoId: kept as a place name

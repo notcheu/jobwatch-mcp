@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Smoke test of the BUILT router and dashboard (docs/plans/17-dashboard.md, section 9). Run by hand after `npm run build`; it is not in
-// CI. It starts dist/apps/mcp/main.js on free ports with JW_AUTH=none, makes MCP calls, opens the dashboard with the real CLI, checks
+// CI. It starts dist/apps/mcp/main.js on free ports with AUTH=none, makes MCP calls, opens the dashboard with the real CLI, checks
 // the pages, the API, the security headers and the Host/Origin/CSRF refusals, then closes everything.
 //   npm run build && node tests/dashboard/smoke.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -41,14 +41,14 @@ const mcpPort = await freePort();
 const dashPort = await freePort();
 const env = {
   ...process.env,
-  JW_BASE_URL: `http://127.0.0.1:${mcpPort}`,
-  JW_AUTH: 'none',
-  JW_LISTEN_HOST: '127.0.0.1',
-  JW_PORT: String(mcpPort),
-  JW_DATA_DIR: dir,
-  JW_DASHBOARD_PORT: String(dashPort),
-  JW_DASHBOARD_STATIC_DIR: join(root, 'dist/apps/dashboard'),
-  JW_DASHBOARD_URL: `http://127.0.0.1:${dashPort}/dashboard/`,
+  BASE_URL: `http://127.0.0.1:${mcpPort}`,
+  AUTH: 'none',
+  LISTEN_HOST: '127.0.0.1',
+  PORT: String(mcpPort),
+  DATA_DIR: dir,
+  DASHBOARD_PORT: String(dashPort),
+  DASHBOARD_STATIC_DIR: join(root, 'dist/apps/dashboard'),
+  DASHBOARD_URL: `http://127.0.0.1:${dashPort}/dashboard/`,
 };
 const router = spawn('node', [join(root, 'dist/apps/mcp/main.js')], { env, stdio: 'ignore' });
 const cli = (...args) => spawnSync('node', [join(root, 'dist/apps/cli/main.js'), ...args], { env, encoding: 'utf8' });
