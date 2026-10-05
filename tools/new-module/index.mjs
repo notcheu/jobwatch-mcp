@@ -85,7 +85,7 @@ if (!values['no-install']) {
   };
   run('npm install --no-audit --no-fund (links the new workspace package)', ['npm', 'install', '--no-audit', '--no-fund']);
   run('write the first catalog snapshot', ['npx', 'vitest', 'run', '--root', join('packages', dirName)], {
-    JW_UPDATE_CATALOG: '1',
+    UPDATE_CATALOG: '1',
   });
 }
 console.log(`

@@ -21,7 +21,7 @@
     "test:dashboard": "node tests/dashboard/smoke.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "catalog:gen": "JW_UPDATE_CATALOG=1 nx run-many -t test -p 'tag:type:adapter' --skip-nx-cache",
+    "catalog:gen": "UPDATE_CATALOG=1 nx run-many -t test -p 'tag:type:adapter' --skip-nx-cache",
     "new:adapter": "node tools/new-module/index.mjs adapter",
     "new:utility": "node tools/new-module/index.mjs utility",
     "dev": "node tools/dev.mjs",

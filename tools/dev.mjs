@@ -1,5 +1,5 @@
 // `npm run dev`: bundles apps/mcp with esbuild in watch mode and (re)starts it on every rebuild, with the variables of ./.env.local (the shell wins).
-// Data lives in ./.data unless JW_DATA_DIR says otherwise. The database schema is migrated by the server at every boot.
+// Data lives in ./.data unless DATA_DIR says otherwise. The database schema is migrated by the server at every boot.
 // No Docker and no OAuth front: see .env.local. Same bundle options as the `build` script of apps/mcp.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';

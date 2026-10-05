@@ -38,9 +38,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates tini \
  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
-    JW_PORT=8080 \
-    JW_DASHBOARD_STATIC_DIR=/app/dashboard \
-    JW_BROWSER_SECCOMP=/etc/jobwatch/chrome-seccomp.json
+    PORT=8080 \
+    DASHBOARD_STATIC_DIR=/app/dashboard \
+    BROWSER_SECCOMP=/etc/jobwatch/chrome-seccomp.json
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist/apps/mcp ./dist/mcp
@@ -53,11 +53,11 @@ RUN printf '#!/bin/sh\nexec node /app/dist/cli/main.js "$@"\n' > /usr/local/bin/
 # State lives in /data (mounted volume). Create it owned by the runtime user: a named volume copies this ownership on first use,
 # so `jobwatch adapters enable` can write adapters.json. (A bind mount keeps the host owner: see deploy/compose.yml, VERIFY on the reference host.)
 RUN mkdir -p /data && chown node:node /data
-ENV JW_DATA_DIR=/data
+ENV DATA_DIR=/data
 # uid/gid 1000 ("node"); the rest of the filesystem is read-only at run time.
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.JW_PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/mcp/main.js"]

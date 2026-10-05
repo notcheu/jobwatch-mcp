@@ -56,8 +56,8 @@ Usage:
   jobwatch doctor                      check configuration, data directory, Docker, image, network, profiles
   jobwatch --help | --version
 
-Settings (environment): JW_DATA_DIR (default /data) holds adapters.json;
-JW_ADAPTERS and JW_UTILITIES (comma lists) override their part of the file and make it read-only.
+Settings (environment): DATA_DIR (default /data) holds adapters.json;
+ADAPTERS and UTILITIES (comma lists) override their part of the file and make it read-only.
 
 Changes take effect after the router restarts: docker compose restart router
 `;

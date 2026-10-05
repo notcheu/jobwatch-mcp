@@ -59,7 +59,7 @@ flowchart LR
   BLI -- "allowlisted hosts only" --> Sites
   BAP -- "allowlisted hosts only" --> Sites
   Router -- "plain fetch, no container" --> ATS
-  Prom -. "scrape :9464/metrics<br/>if JW_METRICS_ENABLED=true" .-> Router
+  Prom -. "scrape :9464/metrics<br/>if METRICS_ENABLED=true" .-> Router
   Router -. "JSON logs on stdout,<br/>shipped by Alloy/Promtail" .-> Loki
   Prom --> Graf
   Loki --> Graf
@@ -265,7 +265,7 @@ flowchart TB
     AA["adapter-apec"]
     AT["adapter-ats"]
   end
-  Cfg[("data/adapters.json<br/>enabled: [linkedin, ...]<br/>or env JW_ADAPTERS")]
+  Cfg[("data/adapters.json<br/>enabled: [linkedin, ...]<br/>or env ADAPTERS")]
 
   MCP --> Core
   MCP --> Installed

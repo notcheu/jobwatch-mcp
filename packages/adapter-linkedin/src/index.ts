@@ -78,7 +78,7 @@ const jobSchema = z.object({
   last_seen: z
     .string()
     .describe(
-      'Last time the job was seen, read or listed on a search page. Stored jobs are evicted after JW_JOB_RETENTION_DAYS without a sighting.',
+      'Last time the job was seen, read or listed on a search page. Stored jobs are evicted after JOB_RETENTION_DAYS without a sighting.',
     ),
   ...hints,
 });
@@ -94,7 +94,7 @@ const searchInput = z
   .object({
     keywords: z.string().trim().min(1).max(200).describe('Search keywords, e.g. "full stack engineer".'),
     geo: geo.describe(
-      'Where to search: a place name LinkedIn understands ("Berlin, Germany", "Austin, Texas", "Remote"), or a numeric LinkedIn geoId. Omit it to use the operator\'s default location (JW_DEFAULT_LOCATION).',
+      'Where to search: a place name LinkedIn understands ("Berlin, Germany", "Austin, Texas", "Remote"), or a numeric LinkedIn geoId. Omit it to use the operator\'s default location (DEFAULT_LOCATION).',
     ),
     posted_within: z
       .enum(POSTED_WITHIN)
@@ -199,12 +199,12 @@ const annotations = { readOnlyHint: true, openWorldHint: true, idempotentHint: t
 const OPEN_BUDGET_MS = 200_000;
 
 export interface LinkedinOptions {
-  /** `classic` (default) or `ai`, the two search pages LinkedIn serves. Env `JW_LINKEDIN_LAYOUT` selects it at load time. */
+  /** `classic` (default) or `ai`, the two search pages LinkedIn serves. Env `LINKEDIN_LAYOUT` selects it at load time. */
   layout?: 'classic' | 'ai';
 }
 
 function pickLayout(options: LinkedinOptions): SearchLayout {
-  const wanted = options.layout ?? (process.env['JW_LINKEDIN_LAYOUT'] === 'ai' ? 'ai' : 'classic');
+  const wanted = options.layout ?? (process.env['LINKEDIN_LAYOUT'] === 'ai' ? 'ai' : 'classic');
   return wanted === 'ai' ? aiSearchResultsLayout : classicLayout;
 }
 

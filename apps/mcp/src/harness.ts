@@ -30,12 +30,12 @@ export async function startTestServer(
     },
   });
   const merged = {
-    JW_BASE_URL: 'http://127.0.0.1:18999',
-    JW_AUTH: 'none',
-    JW_LISTEN_HOST: '127.0.0.1',
-    JW_ADAPTERS: enabled.join(','),
-    JW_DATA_DIR: '/nonexistent-never-read',
-    JW_DB_PATH: ':memory:',
+    BASE_URL: 'http://127.0.0.1:18999',
+    AUTH: 'none',
+    LISTEN_HOST: '127.0.0.1',
+    ADAPTERS: enabled.join(','),
+    DATA_DIR: '/nonexistent-never-read',
+    DB_PATH: ':memory:',
     ...env,
   };
   const running = await start({
@@ -53,7 +53,7 @@ export async function startTestServer(
   const metricsAddress = running.metrics?.address() as AddressInfo | null | undefined;
   return {
     running,
-    // The URL host must match JW_BASE_URL's hostname for JW_AUTH=none (Host header guard), so use the same literal.
+    // The URL host must match BASE_URL's hostname for AUTH=none (Host header guard), so use the same literal.
     url: new URL(`http://127.0.0.1:${address.port}/mcp`),
     metricsUrl: metricsAddress ? new URL(`http://127.0.0.1:${metricsAddress.port}/metrics`) : undefined,
     logs: () => buffer,

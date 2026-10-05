@@ -1,81 +1,11 @@
-import { z } from '@jobwatch/sdk';
 import { ConfigError } from './errors';
+import { envSchema, parseEnv, type ParsedEnv } from './env';
 
-/** Ids of adapters, as used in adapters.json and JW_ADAPTERS. Same pattern as `validateAdapter`. */
+/** Ids of adapters, as used in adapters.json and ADAPTERS. Same pattern as `validateAdapter`. */
 export const ADAPTER_ID_PATTERN = /^[a-z][a-z0-9-]{1,31}$/;
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const isLoopbackUrl = (url: URL): boolean => LOOPBACK_HOSTS.has(url.hostname);
-
-const integer = (min: number, max: number, fallback: number) => z.coerce.number().int().min(min).max(max).default(fallback);
-const flag = z.enum(['true', 'false']).transform((value) => value === 'true');
-
-/** Every JW_* variable the router reads (docs/plans/03-router-spec.md, "Configuration"). */
-const envSchema = z.object({
-  JW_BASE_URL: z.url({
-    protocol: /^https?$/,
-    error: (issue) =>
-      issue.input === undefined
-        ? 'is required: the public URL, e.g. https://mcp.example.com'
-        : 'must be an http(s) URL, e.g. https://mcp.example.com',
-  }),
-  JW_AUTH: z.enum(['front', 'none']).default('front'),
-  JW_FRONT_SHARED_SECRET: z.string().min(16).optional(),
-  JW_LISTEN_HOST: z.string().min(1).default('0.0.0.0'),
-  JW_PORT: integer(1024, 65535, 8080),
-  JW_RUNTIME: z.enum(['docker', 'systemd-scope']).default('docker'),
-  JW_BROWSER_IMAGE: z.string().min(1).default('localhost/jobwatch-browser:1'),
-  JW_BROWSER_NETWORK: z
-    .string()
-    .regex(/^[a-z0-9][a-z0-9_.-]*$/)
-    .default('jobwatch-browsers'),
-  JW_DEFAULT_LOCATION: z.string().trim().max(100).optional(),
-  JW_LINKEDIN_GEO_ALIASES: z.string().max(2000).optional(),
-  JW_BROWSER_SECCOMP: z.string().startsWith('/').optional(),
-  JW_BROWSER_LANG: z
-    .string()
-    .regex(/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/)
-    .default('fr-FR'),
-  JW_BROWSER_ACCEPT_LANGS: z
-    .string()
-    .regex(/^[A-Za-z0-9,;=.-]{2,512}$/)
-    .optional(),
-  JW_BROWSER_MAX_TABS: z.coerce.number().int().min(1).default(3),
-  JW_LOCAL_CHROME: flag.default(false),
-  JW_LOCAL_CHROME_PATH: z.string().min(1).optional(),
-  JW_CDP_URL: z.string().min(1).optional(),
-  JW_DASHBOARD_PORT: integer(1024, 65535, 8090),
-  JW_DASHBOARD_URL: z.url().optional(),
-  JW_DASHBOARD_STATIC_DIR: z.string().min(1).optional(),
-  JW_DASHBOARD_IDLE_S: integer(60, 86_400, 1800),
-  JW_DASHBOARD_SESSION_MAX_S: integer(300, 604_800, 28_800),
-  JW_DASHBOARD_WRITE_WINDOW_S: integer(0, 86_400, 600),
-  JW_DASHBOARD_OIDC_ISSUER: z.url().default('https://accounts.google.com'),
-  JW_DASHBOARD_OIDC_CLIENT_ID: z.string().min(1).max(300).optional(),
-  JW_DASHBOARD_OIDC_CLIENT_SECRET: z.string().min(1).max(300).optional(),
-  JW_DASHBOARD_CALL_BUFFER: integer(100, 20_000, 2000),
-  JW_TOKEN_CHARS_PER_TOKEN: z.coerce.number().min(1).max(10).default(3.5),
-  JW_FINGERPRINT: z.enum(['enforce', 'warn', 'off']).default('enforce'),
-  JW_PROFILE_VOLUME_PREFIX: z
-    .string()
-    .regex(/^[a-z0-9][a-z0-9_.-]*$/)
-    .default('jw-profile-'),
-  JW_DATA_DIR: z.string().min(1).default('/data'),
-  JW_DB_PATH: z.string().min(1).optional(),
-  JW_JOB_RETENTION_DAYS: integer(1, 3650, 30),
-  JW_ADAPTERS: z.string().optional(),
-  JW_UTILITIES: z.string().optional(),
-  JW_IDLE_TTL_S: integer(10, 3600, 120),
-  JW_MAX_LIFETIME_S: integer(60, 86_400, 1800),
-  JW_QUEUE_TIMEOUT_S: integer(1, 600, 60),
-  JW_MEM_HIGH_MB: integer(256, 16_384, 1200),
-  JW_MEM_MAX_MB: integer(256, 16_384, 1500),
-  JW_LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-  JW_METRICS_ENABLED: flag.default(false),
-  JW_METRICS_PORT: integer(1024, 65535, 9464),
-});
-
-type ParsedEnv = z.infer<typeof envSchema>;
 
 export interface Config {
   baseUrl: string;
@@ -96,21 +26,21 @@ export interface Config {
   browserAcceptLangs: readonly string[] | undefined;
   /**
    * Where the browser comes from. `docker`: a container per platform (default). `local`: Chrome started on this machine
-   * (`JW_LOCAL_CHROME`). `attach`: an already running Chrome reached over DevTools (`JW_CDP_URL`, which wins over `JW_LOCAL_CHROME`).
+   * (`LOCAL_CHROME`). `attach`: an already running Chrome reached over DevTools (`CDP_URL`, which wins over `LOCAL_CHROME`).
    */
   browserMode: 'docker' | 'local' | 'attach';
-  /** `JW_LOCAL_CHROME_PATH`: the Chrome executable of `local` mode; unset = look in the usual places. */
+  /** `LOCAL_CHROME_PATH`: the Chrome executable of `local` mode; unset = look in the usual places. */
   localBrowserPath: string | undefined;
   /** `ip:port` of the DevTools of the browser to attach to; set in `attach` mode only. Always loopback. */
   browserCdpAddress: string | undefined;
-  /** Most tabs the browser may have open at once (`JW_BROWSER_MAX_TABS`, default 3, no upper limit). 1 = single tab: `openTab` refuses. */
+  /** Most tabs the browser may have open at once (`BROWSER_MAX_TABS`, default 3, no upper limit). 1 = single tab: `openTab` refuses. */
   maxTabs: number;
   /** The operator dashboard (docs/plans/17-dashboard.md). Off until `jobwatch dashboard start`. */
   dashboard: {
     port: number;
-    /** Where the operator opens it (`JW_DASHBOARD_URL`); default `<JW_BASE_URL origin>/dashboard/`. */
+    /** Where the operator opens it (`DASHBOARD_URL`); default `<BASE_URL origin>/dashboard/`. */
     url: string;
-    /** The built interface (`JW_DASHBOARD_STATIC_DIR`); without it a plain page says only the API is up. */
+    /** The built interface (`DASHBOARD_STATIC_DIR`); without it a plain page says only the API is up. */
     staticDir: string | undefined;
     /** The dashboard stops itself after this many seconds without a request. */
     idleS: number;
@@ -121,9 +51,9 @@ export interface Config {
     /** Undefined when no Google client is configured; the dashboard then refuses to start unless the router runs without auth. */
     oidc: { issuer: string; clientId: string; clientSecret: string } | undefined;
   };
-  /** Calls kept in memory for the dashboard (`JW_DASHBOARD_CALL_BUFFER`). */
+  /** Calls kept in memory for the dashboard (`DASHBOARD_CALL_BUFFER`). */
   callBuffer: number;
-  /** Characters per token for the estimate of what a result costs Claude (`JW_TOKEN_CHARS_PER_TOKEN`). */
+  /** Characters per token for the estimate of what a result costs Claude (`TOKEN_CHARS_PER_TOKEN`). */
   charsPerToken: number;
   /** `enforce`: refuse to use a browser that fails its startup fingerprint check. */
   fingerprint: 'enforce' | 'warn' | 'off';
@@ -133,27 +63,27 @@ export interface Config {
   dbPath: string;
   /** Days a stored job posting is kept after it was last seen (read or listed on a search page); older ones are evicted (at start and every six hours). */
   jobRetentionDays: number;
-  /** From JW_ADAPTERS. When defined it overrides adapters.json and the CLI refuses to edit the file. */
+  /** From ADAPTERS. When defined it overrides adapters.json and the CLI refuses to edit the file. */
   adaptersFromEnv: readonly string[] | undefined;
-  /** From JW_UTILITIES. Same rule, for the utilities (tools that fetch no jobs). */
+  /** From UTILITIES. Same rule, for the utilities (tools that fetch no jobs). */
   utilitiesFromEnv: readonly string[] | undefined;
   idleTtlS: number;
   maxLifetimeS: number;
   queueTimeoutS: number;
   memHighMb: number;
   memMaxMb: number;
-  logLevel: ParsedEnv['JW_LOG_LEVEL'];
+  logLevel: ParsedEnv['LOG_LEVEL'];
   metrics: { enabled: boolean; port: number };
 }
 
 export interface LoadedConfig {
   config: Config;
-  /** Non-fatal notes, e.g. unknown JW_* variables (usually typos). */
+  /** Non-fatal notes, e.g. a variable that still has its old `JW_` prefix. */
   warnings: string[];
 }
 
-/** Parse `JW_ADAPTERS` (or `JW_UTILITIES`). Empty string means "explicitly none enabled". Returns problems instead of throwing. */
-export function parseAdapterList(raw: string, variable = 'JW_ADAPTERS'): { ids: string[]; problems: string[] } {
+/** Parse `ADAPTERS` (or `UTILITIES`). Empty string means "explicitly none enabled". Returns problems instead of throwing. */
+export function parseAdapterList(raw: string, variable = 'ADAPTERS'): { ids: string[]; problems: string[] } {
   const ids: string[] = [];
   const problems: string[] = [];
   for (const part of raw.split(',')) {
@@ -187,109 +117,103 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
   const problems: string[] = [];
   const warnings: string[] = [];
 
-  // An empty value means "not set" (docker compose passes `VAR=` for unset interpolations).
-  const present = Object.fromEntries(
-    Object.entries(env).filter(([key, value]) => key.startsWith('JW_') && value !== undefined && value !== ''),
-  );
-  const result = envSchema.safeParse(present);
-  if (!result.success) {
-    for (const issue of result.error.issues) problems.push(`${issue.path.join('.') || 'config'}: ${issue.message}`);
-    throw new ConfigError(problems);
-  }
+  const result = parseEnv(env);
+  if (!result.ok) throw new ConfigError(result.problems);
   const parsed = result.data;
+  warnings.push(...result.warnings);
 
-  for (const key of Object.keys(present)) {
-    if (!(key in envSchema.shape)) warnings.push(`${key} is not a known setting and is ignored (typo?)`);
-  }
-
-  const baseUrl = new URL(parsed.JW_BASE_URL);
+  const baseUrl = new URL(parsed.BASE_URL);
   if (baseUrl.protocol === 'http:' && !isLoopbackUrl(baseUrl))
-    problems.push('JW_BASE_URL: http is only allowed for localhost, 127.0.0.1 or [::1]; use https');
-  if (parsed.JW_AUTH === 'none' && !isLoopbackUrl(baseUrl)) {
+    problems.push('BASE_URL: http is only allowed for localhost, 127.0.0.1 or [::1]; use https');
+  if (parsed.AUTH === 'none' && !isLoopbackUrl(baseUrl)) {
     problems.push(
-      'JW_AUTH=none is only allowed when JW_BASE_URL is a loopback address (local development); the public deployment must use the OAuth front',
+      'AUTH=none is only allowed when BASE_URL is a loopback address (local development); the public deployment must use the OAuth front',
     );
   }
-  if (parsed.JW_MEM_HIGH_MB >= parsed.JW_MEM_MAX_MB) problems.push('JW_MEM_HIGH_MB must be lower than JW_MEM_MAX_MB');
-  if (parsed.JW_METRICS_ENABLED && parsed.JW_METRICS_PORT === parsed.JW_PORT)
-    problems.push('JW_METRICS_PORT must differ from JW_PORT: metrics are never served on the MCP port');
+  if (parsed.MEM_HIGH_MB >= parsed.MEM_MAX_MB) problems.push('MEM_HIGH_MB must be lower than MEM_MAX_MB');
+  if (parsed.METRICS_ENABLED && parsed.METRICS_PORT === parsed.PORT)
+    problems.push('METRICS_PORT must differ from PORT: metrics are never served on the MCP port');
 
   let browserCdpAddress: string | undefined;
-  if (parsed.JW_CDP_URL !== undefined) {
-    browserCdpAddress = parseCdpUrl(parsed.JW_CDP_URL);
-    if (browserCdpAddress === undefined) problems.push('JW_CDP_URL: must be a loopback http URL with a port, e.g. http://127.0.0.1:9222');
-    if (parsed.JW_LOCAL_CHROME) warnings.push('JW_LOCAL_CHROME is ignored because JW_CDP_URL is set: the running Chrome is used');
+  if (parsed.CDP_URL !== undefined) {
+    browserCdpAddress = parseCdpUrl(parsed.CDP_URL);
+    if (browserCdpAddress === undefined) problems.push('CDP_URL: must be a loopback http URL with a port, e.g. http://127.0.0.1:9222');
+    if (parsed.LOCAL_CHROME) warnings.push('LOCAL_CHROME is ignored because CDP_URL is set: the running Chrome is used');
   }
-  if (parsed.JW_LOCAL_CHROME_PATH !== undefined && !parsed.JW_LOCAL_CHROME && parsed.JW_CDP_URL === undefined)
-    warnings.push('JW_LOCAL_CHROME_PATH is ignored unless JW_LOCAL_CHROME=true');
+  if (parsed.LOCAL_CHROME_PATH !== undefined && !parsed.LOCAL_CHROME && parsed.CDP_URL === undefined)
+    warnings.push('LOCAL_CHROME_PATH is ignored unless LOCAL_CHROME=true');
 
   let adaptersFromEnv: string[] | undefined;
-  if (env['JW_ADAPTERS'] !== undefined) {
-    const list = parseAdapterList(env['JW_ADAPTERS']);
+  if (env['ADAPTERS'] !== undefined) {
+    const list = parseAdapterList(env['ADAPTERS']);
     problems.push(...list.problems);
     adaptersFromEnv = list.ids;
   }
   let utilitiesFromEnv: string[] | undefined;
-  if (env['JW_UTILITIES'] !== undefined) {
-    const list = parseAdapterList(env['JW_UTILITIES'], 'JW_UTILITIES');
+  if (env['UTILITIES'] !== undefined) {
+    const list = parseAdapterList(env['UTILITIES'], 'UTILITIES');
     problems.push(...list.problems);
     utilitiesFromEnv = list.ids;
   }
 
   if (problems.length > 0) throw new ConfigError(problems);
 
+  // The dashboard signs in with its own Google client when it has one, else with the connector's (the OAuth front's) client.
+  const dashboardClientId = parsed.DASHBOARD_OIDC_CLIENT_ID ?? parsed.OIDC_CLIENT_ID;
+  const dashboardClientSecret = parsed.DASHBOARD_OIDC_CLIENT_SECRET ?? parsed.OIDC_CLIENT_SECRET;
+
   return {
     warnings,
     config: {
       baseUrl: baseUrl.origin + baseUrl.pathname.replace(/\/$/, ''),
-      auth: parsed.JW_AUTH,
-      frontSharedSecret: parsed.JW_FRONT_SHARED_SECRET,
-      listenHost: parsed.JW_LISTEN_HOST,
-      port: parsed.JW_PORT,
-      runtime: parsed.JW_RUNTIME,
-      browserImage: parsed.JW_BROWSER_IMAGE,
-      browserNetwork: parsed.JW_BROWSER_NETWORK,
-      browserSeccomp: parsed.JW_BROWSER_SECCOMP,
-      browserLang: parsed.JW_BROWSER_LANG,
-      browserAcceptLangs: parsed.JW_BROWSER_ACCEPT_LANGS?.split(',')
+      auth: parsed.AUTH,
+      frontSharedSecret: parsed.FRONT_SHARED_SECRET,
+      listenHost: parsed.LISTEN_HOST,
+      port: parsed.PORT,
+      runtime: parsed.RUNTIME,
+      browserImage: parsed.BROWSER_IMAGE,
+      browserNetwork: parsed.BROWSER_NETWORK,
+      browserSeccomp: parsed.BROWSER_SECCOMP,
+      browserLang: parsed.BROWSER_LANG,
+      browserAcceptLangs: parsed.BROWSER_ACCEPT_LANGS?.split(',')
         .map((l) => l.trim())
         .filter(Boolean),
-      browserMode: browserCdpAddress !== undefined ? 'attach' : parsed.JW_LOCAL_CHROME ? 'local' : 'docker',
-      localBrowserPath: parsed.JW_LOCAL_CHROME_PATH,
+      browserMode: browserCdpAddress !== undefined ? 'attach' : parsed.LOCAL_CHROME ? 'local' : 'docker',
+      localBrowserPath: parsed.LOCAL_CHROME_PATH,
       browserCdpAddress,
-      maxTabs: parsed.JW_BROWSER_MAX_TABS,
+      maxTabs: parsed.BROWSER_MAX_TABS,
       dashboard: {
-        port: parsed.JW_DASHBOARD_PORT,
-        url: parsed.JW_DASHBOARD_URL ?? `${baseUrl.origin}/dashboard/`,
-        staticDir: parsed.JW_DASHBOARD_STATIC_DIR,
-        idleS: parsed.JW_DASHBOARD_IDLE_S,
-        sessionMaxS: parsed.JW_DASHBOARD_SESSION_MAX_S,
-        writeWindowS: parsed.JW_DASHBOARD_WRITE_WINDOW_S,
+        port: parsed.DASHBOARD_PORT,
+        url: parsed.DASHBOARD_URL ?? `${baseUrl.origin}/dashboard/`,
+        staticDir: parsed.DASHBOARD_STATIC_DIR,
+        idleS: parsed.DASHBOARD_IDLE_S,
+        sessionMaxS: parsed.DASHBOARD_SESSION_MAX_S,
+        writeWindowS: parsed.DASHBOARD_WRITE_WINDOW_S,
         oidc:
-          parsed.JW_DASHBOARD_OIDC_CLIENT_ID !== undefined && parsed.JW_DASHBOARD_OIDC_CLIENT_SECRET !== undefined
+          dashboardClientId !== undefined && dashboardClientSecret !== undefined
             ? {
-                issuer: parsed.JW_DASHBOARD_OIDC_ISSUER,
-                clientId: parsed.JW_DASHBOARD_OIDC_CLIENT_ID,
-                clientSecret: parsed.JW_DASHBOARD_OIDC_CLIENT_SECRET,
+                issuer: parsed.DASHBOARD_OIDC_ISSUER ?? parsed.OIDC_ISSUER_URL ?? 'https://accounts.google.com',
+                clientId: dashboardClientId,
+                clientSecret: dashboardClientSecret,
               }
             : undefined,
       },
-      callBuffer: parsed.JW_DASHBOARD_CALL_BUFFER,
-      charsPerToken: parsed.JW_TOKEN_CHARS_PER_TOKEN,
-      fingerprint: parsed.JW_FINGERPRINT,
-      profileVolumePrefix: parsed.JW_PROFILE_VOLUME_PREFIX,
-      dataDir: parsed.JW_DATA_DIR,
-      jobRetentionDays: parsed.JW_JOB_RETENTION_DAYS,
-      dbPath: parsed.JW_DB_PATH ?? `${parsed.JW_DATA_DIR.replace(/\/+$/, '')}/jobwatch.sqlite`,
+      callBuffer: parsed.DASHBOARD_CALL_BUFFER,
+      charsPerToken: parsed.TOKEN_CHARS_PER_TOKEN,
+      fingerprint: parsed.FINGERPRINT,
+      profileVolumePrefix: parsed.PROFILE_VOLUME_PREFIX,
+      dataDir: parsed.DATA_DIR,
+      jobRetentionDays: parsed.JOB_RETENTION_DAYS,
+      dbPath: parsed.DB_PATH ?? `${parsed.DATA_DIR.replace(/\/+$/, '')}/jobwatch.sqlite`,
       adaptersFromEnv,
       utilitiesFromEnv,
-      idleTtlS: parsed.JW_IDLE_TTL_S,
-      maxLifetimeS: parsed.JW_MAX_LIFETIME_S,
-      queueTimeoutS: parsed.JW_QUEUE_TIMEOUT_S,
-      memHighMb: parsed.JW_MEM_HIGH_MB,
-      memMaxMb: parsed.JW_MEM_MAX_MB,
-      logLevel: parsed.JW_LOG_LEVEL,
-      metrics: { enabled: parsed.JW_METRICS_ENABLED, port: parsed.JW_METRICS_PORT },
+      idleTtlS: parsed.IDLE_TTL_S,
+      maxLifetimeS: parsed.MAX_LIFETIME_S,
+      queueTimeoutS: parsed.QUEUE_TIMEOUT_S,
+      memHighMb: parsed.MEM_HIGH_MB,
+      memMaxMb: parsed.MEM_MAX_MB,
+      logLevel: parsed.LOG_LEVEL,
+      metrics: { enabled: parsed.METRICS_ENABLED, port: parsed.METRICS_PORT },
     },
   };
 }
@@ -297,33 +221,33 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
 /** The only settings the CLI needs. It must work without the public base URL, which only the server requires. */
 export interface StorageSettings {
   dataDir: string;
-  /** From JW_ADAPTERS; when defined it overrides adapters.json. */
+  /** From ADAPTERS; when defined it overrides adapters.json. */
   adaptersFromEnv: readonly string[] | undefined;
-  /** From JW_UTILITIES; when defined it overrides the `utilities` of adapters.json. */
+  /** From UTILITIES; when defined it overrides the `utilities` of adapters.json. */
   utilitiesFromEnv: readonly string[] | undefined;
 }
 
-const storageSchema = z.object({ JW_DATA_DIR: z.string().min(1).default('/data') });
+const storageSchema = envSchema.pick({ DATA_DIR: true });
 
-/** Parse JW_DATA_DIR, JW_ADAPTERS and JW_UTILITIES only. Throws `ConfigError`; same rules as `loadConfig` for these two variables. */
+/** Parse DATA_DIR, ADAPTERS and UTILITIES only. Throws `ConfigError`; same rules as `loadConfig` for these two variables. */
 export function loadStorageSettings(env: Readonly<Record<string, string | undefined>>): StorageSettings {
   const problems: string[] = [];
-  const result = storageSchema.safeParse({ JW_DATA_DIR: env['JW_DATA_DIR'] === '' ? undefined : env['JW_DATA_DIR'] });
+  const result = storageSchema.safeParse({ DATA_DIR: env['DATA_DIR'] === '' ? undefined : env['DATA_DIR'] });
   if (!result.success) problems.push(...result.error.issues.map((issue) => `${issue.path.join('.') || 'config'}: ${issue.message}`));
   let adaptersFromEnv: string[] | undefined;
-  if (env['JW_ADAPTERS'] !== undefined) {
-    const list = parseAdapterList(env['JW_ADAPTERS']);
+  if (env['ADAPTERS'] !== undefined) {
+    const list = parseAdapterList(env['ADAPTERS']);
     problems.push(...list.problems);
     adaptersFromEnv = list.ids;
   }
   let utilitiesFromEnv: string[] | undefined;
-  if (env['JW_UTILITIES'] !== undefined) {
-    const list = parseAdapterList(env['JW_UTILITIES'], 'JW_UTILITIES');
+  if (env['UTILITIES'] !== undefined) {
+    const list = parseAdapterList(env['UTILITIES'], 'UTILITIES');
     problems.push(...list.problems);
     utilitiesFromEnv = list.ids;
   }
   if (problems.length > 0 || !result.success) throw new ConfigError(problems);
-  return { dataDir: result.data.JW_DATA_DIR, adaptersFromEnv, utilitiesFromEnv };
+  return { dataDir: result.data.DATA_DIR, adaptersFromEnv, utilitiesFromEnv };
 }
 
 /** A copy of the configuration that is safe to log or print (secrets replaced). */

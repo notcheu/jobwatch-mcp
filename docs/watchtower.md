@@ -6,20 +6,22 @@ The router container carries the label `com.centurylinklabs.watchtower.enable=tr
 docker compose pull router && docker compose up -d router
 ```
 
+The router image is named `jobwatch-router:latest` in `compose.yml`. If you pull it from a private registry, prefix it there (`image: registry.example.com/jobwatch-router:latest`) in your copy of the file, after `docker login`.
+
 ## Watchtower as a compose service
 
-Add this service to your `compose.yml`, with `JW_WATCHTOWER_IMAGE` set in `.env` to the image you chose (pin it by digest):
+Add this service to your `compose.yml`, with `WATCHTOWER_IMAGE` set in `.env` to the image you chose (pin it by digest):
 
 ```yaml
   watchtower:
-    image: ${JW_WATCHTOWER_IMAGE}
+    image: ${WATCHTOWER_IMAGE}
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
       WATCHTOWER_LABEL_ENABLE: "true"          # only the labelled router is updated
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_SCHEDULE: "0 30 4 * * *"      # 04:30 daily (6-field cron)
     volumes:
-      - "${JW_DOCKER_SOCKET:-${XDG_RUNTIME_DIR}/docker.sock}:/var/run/docker.sock"
+      - "${DOCKER_SOCKET:-${XDG_RUNTIME_DIR}/docker.sock}:/var/run/docker.sock"
       - "${HOME}/.docker/config.json:/config.json:ro"    # registry credentials from `docker login`
     networks: [ jobwatch-core ]
     restart: unless-stopped

@@ -143,7 +143,7 @@ export const toolStateSchema = z
     role: z.enum(['adapter', 'utility']),
     kind: z.enum(['browser', 'http']),
     enabled: z.boolean(),
-    /** Present when JW_ADAPTERS pins the list: the switch is disabled and says why. */
+    /** Present when ADAPTERS pins the list: the switch is disabled and says why. */
     pinned: z.boolean(),
     hosts: z.array(z.string()),
     tools: z.array(z.object({ name: z.string(), title: z.string(), costMax: z.number(), params: z.array(z.string()) }).strict()),

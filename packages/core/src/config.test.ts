@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { describeConfig, loadConfig, loadStorageSettings, parseAdapterList } from './config';
 import { ConfigError } from './errors';
 
-const base = { JW_BASE_URL: 'https://mcp.example.com' };
+const base = { BASE_URL: 'https://mcp.example.com' };
 const problemsOf = (env: Record<string, string>): readonly string[] => {
   try {
     loadConfig(env);
@@ -36,82 +36,83 @@ describe('loadConfig defaults', () => {
   });
 
   it('refuses to start without a base URL, saying what to set', () => {
-    expect(problemsOf({})).toEqual(['JW_BASE_URL: is required: the public URL, e.g. https://mcp.example.com']);
-    expect(problemsOf({ JW_BASE_URL: 'not a url' })).toEqual(['JW_BASE_URL: must be an http(s) URL, e.g. https://mcp.example.com']);
-    expect(problemsOf({ JW_BASE_URL: 'ftp://mcp.example.com' })).toEqual([
-      'JW_BASE_URL: must be an http(s) URL, e.g. https://mcp.example.com',
-    ]);
+    expect(problemsOf({})).toEqual(['BASE_URL: is required: the public URL, e.g. https://mcp.example.com']);
+    expect(problemsOf({ BASE_URL: 'not a url' })).toEqual(['BASE_URL: must be an http(s) URL, e.g. https://mcp.example.com']);
+    expect(problemsOf({ BASE_URL: 'ftp://mcp.example.com' })).toEqual(['BASE_URL: must be an http(s) URL, e.g. https://mcp.example.com']);
   });
 
   it('treats empty values like unset (docker compose passes VAR= for missing interpolations)', () => {
-    const { config } = loadConfig({ ...base, JW_PORT: '', JW_LOG_LEVEL: '', JW_FRONT_SHARED_SECRET: '' });
+    const { config } = loadConfig({ ...base, PORT: '', LOG_LEVEL: '', FRONT_SHARED_SECRET: '' });
     expect(config.port).toBe(8080);
     expect(config.frontSharedSecret).toBeUndefined();
   });
 
   it('normalises the base URL (no trailing slash)', () => {
-    expect(loadConfig({ JW_BASE_URL: 'https://mcp.example.com/' }).config.baseUrl).toBe('https://mcp.example.com');
+    expect(loadConfig({ BASE_URL: 'https://mcp.example.com/' }).config.baseUrl).toBe('https://mcp.example.com');
   });
 });
 
 describe('loadConfig validation', () => {
   it('coerces and bounds numbers', () => {
-    expect(loadConfig({ ...base, JW_PORT: '18931', JW_MEM_MAX_MB: '2000' }).config).toMatchObject({ port: 18931, memMaxMb: 2000 });
+    expect(loadConfig({ ...base, PORT: '18931', MEM_MAX_MB: '2000' }).config).toMatchObject({ port: 18931, memMaxMb: 2000 });
     for (const [key, value] of [
-      ['JW_PORT', '80'],
-      ['JW_PORT', 'abc'],
-      ['JW_IDLE_TTL_S', '5'],
-      ['JW_MEM_MAX_MB', '100000'],
-      ['JW_QUEUE_TIMEOUT_S', '1.5'],
+      ['PORT', '80'],
+      ['PORT', 'abc'],
+      ['IDLE_TTL_S', '5'],
+      ['MEM_MAX_MB', '100000'],
+      ['QUEUE_TIMEOUT_S', '1.5'],
     ] as const) {
       expect(problemsOf({ ...base, [key]: value }), `${key}=${value}`).not.toEqual([]);
     }
   });
 
   it('rejects an unknown log level or runtime', () => {
-    expect(problemsOf({ ...base, JW_LOG_LEVEL: 'loud' })).not.toEqual([]);
-    expect(problemsOf({ ...base, JW_RUNTIME: 'podman' })).not.toEqual([]);
+    expect(problemsOf({ ...base, LOG_LEVEL: 'loud' })).not.toEqual([]);
+    expect(problemsOf({ ...base, RUNTIME: 'podman' })).not.toEqual([]);
   });
 
   it('requires the high memory mark to be below the hard cap', () => {
-    expect(problemsOf({ ...base, JW_MEM_HIGH_MB: '1500', JW_MEM_MAX_MB: '1500' })).toContain(
-      'JW_MEM_HIGH_MB must be lower than JW_MEM_MAX_MB',
-    );
+    expect(problemsOf({ ...base, MEM_HIGH_MB: '1500', MEM_MAX_MB: '1500' })).toContain('MEM_HIGH_MB must be lower than MEM_MAX_MB');
   });
 
   it('never serves metrics on the MCP port', () => {
-    expect(problemsOf({ ...base, JW_METRICS_ENABLED: 'true', JW_PORT: '9000', JW_METRICS_PORT: '9000' })).toContainEqual(
-      expect.stringContaining('JW_METRICS_PORT must differ'),
+    expect(problemsOf({ ...base, METRICS_ENABLED: 'true', PORT: '9000', METRICS_PORT: '9000' })).toContainEqual(
+      expect.stringContaining('METRICS_PORT must differ'),
     );
-    expect(problemsOf({ ...base, JW_METRICS_ENABLED: 'false', JW_PORT: '9000', JW_METRICS_PORT: '9000' })).toEqual([]);
+    expect(problemsOf({ ...base, METRICS_ENABLED: 'false', PORT: '9000', METRICS_PORT: '9000' })).toEqual([]);
   });
 
   it('requires a long enough shared secret', () => {
-    expect(problemsOf({ ...base, JW_FRONT_SHARED_SECRET: 'short' })).not.toEqual([]);
+    expect(problemsOf({ ...base, FRONT_SHARED_SECRET: 'short' })).not.toEqual([]);
   });
 
   it('collects every problem at once', () => {
-    expect(problemsOf({ JW_PORT: 'x', JW_LOG_LEVEL: 'loud', JW_MEM_HIGH_MB: '10' }).length).toBeGreaterThanOrEqual(4);
+    expect(problemsOf({ PORT: 'x', LOG_LEVEL: 'loud', MEM_HIGH_MB: '10' }).length).toBeGreaterThanOrEqual(4);
   });
 
-  it('warns about unknown JW_ variables and ignores other variables', () => {
-    const { warnings } = loadConfig({ ...base, JW_PROT: '1', PATH: '/usr/bin' });
-    expect(warnings).toEqual(['JW_PROT is not a known setting and is ignored (typo?)']);
+  it('ignores the variables of other tools', () => {
+    expect(loadConfig({ ...base, PATH: '/usr/bin', HOME: '/root' }).warnings).toEqual([]);
+  });
+
+  it('reports a variable that still has the old JW_ prefix, and does not read it', () => {
+    const { config, warnings } = loadConfig({ ...base, JW_PORT: '9000' });
+    expect(config.port).toBe(8080);
+    expect(warnings).toEqual(['JW_PORT is not read any more: the JW_ prefix was dropped (PORT)']);
   });
 });
 
 describe('transport and authentication rules', () => {
   it('refuses plain http for a public hostname', () => {
-    expect(problemsOf({ JW_BASE_URL: 'http://mcp.example.com' })).toContainEqual(
+    expect(problemsOf({ BASE_URL: 'http://mcp.example.com' })).toContainEqual(
       expect.stringContaining('http is only allowed for localhost'),
     );
   });
 
-  it('allows JW_AUTH=none only with a loopback base URL', () => {
-    expect(loadConfig({ JW_BASE_URL: 'http://127.0.0.1:18932', JW_AUTH: 'none' }).config.auth).toBe('none');
-    expect(loadConfig({ JW_BASE_URL: 'http://localhost:8080', JW_AUTH: 'none' }).config.auth).toBe('none');
-    expect(problemsOf({ ...base, JW_AUTH: 'none' })).toContainEqual(expect.stringContaining('JW_AUTH=none is only allowed'));
-    expect(problemsOf({ JW_BASE_URL: 'https://127.0.0.1.evil.com', JW_AUTH: 'none' })).not.toEqual([]);
+  it('allows AUTH=none only with a loopback base URL', () => {
+    expect(loadConfig({ BASE_URL: 'http://127.0.0.1:18932', AUTH: 'none' }).config.auth).toBe('none');
+    expect(loadConfig({ BASE_URL: 'http://localhost:8080', AUTH: 'none' }).config.auth).toBe('none');
+    expect(problemsOf({ ...base, AUTH: 'none' })).toContainEqual(expect.stringContaining('AUTH=none is only allowed'));
+    expect(problemsOf({ BASE_URL: 'https://127.0.0.1.evil.com', AUTH: 'none' })).not.toEqual([]);
   });
 });
 
@@ -122,29 +123,28 @@ describe('browser runtime settings', () => {
 
   it('accepts an absolute seccomp path and a network name, and rejects relative paths and odd names', () => {
     expect(
-      loadConfig({ ...base, JW_BROWSER_SECCOMP: '/etc/jobwatch/chrome-seccomp.json', JW_BROWSER_NETWORK: 'jobwatch_jobwatch-browsers' })
-        .config,
+      loadConfig({ ...base, BROWSER_SECCOMP: '/etc/jobwatch/chrome-seccomp.json', BROWSER_NETWORK: 'jobwatch_jobwatch-browsers' }).config,
     ).toMatchObject({
       browserSeccomp: '/etc/jobwatch/chrome-seccomp.json',
       browserNetwork: 'jobwatch_jobwatch-browsers',
     });
-    expect(problemsOf({ ...base, JW_BROWSER_SECCOMP: 'relative.json' })).not.toEqual([]);
-    expect(problemsOf({ ...base, JW_BROWSER_NETWORK: 'bad name --x' })).not.toEqual([]);
+    expect(problemsOf({ ...base, BROWSER_SECCOMP: 'relative.json' })).not.toEqual([]);
+    expect(problemsOf({ ...base, BROWSER_NETWORK: 'bad name --x' })).not.toEqual([]);
   });
 });
 
-describe('JW_ADAPTERS', () => {
+describe('ADAPTERS', () => {
   it('parses a comma list; an empty string means explicitly none', () => {
-    expect(loadConfig({ ...base, JW_ADAPTERS: 'linkedin, apec' }).config.adaptersFromEnv).toEqual(['linkedin', 'apec']);
-    expect(loadConfig({ ...base, JW_ADAPTERS: '' }).config.adaptersFromEnv).toEqual([]);
+    expect(loadConfig({ ...base, ADAPTERS: 'linkedin, apec' }).config.adaptersFromEnv).toEqual(['linkedin', 'apec']);
+    expect(loadConfig({ ...base, ADAPTERS: '' }).config.adaptersFromEnv).toEqual([]);
     expect(loadConfig(base).config.adaptersFromEnv).toBeUndefined();
   });
 
   it('rejects invalid and duplicate ids', () => {
     expect(parseAdapterList('linkedin,Linkedin').problems).toHaveLength(1);
-    expect(parseAdapterList('linkedin,linkedin').problems).toEqual(['JW_ADAPTERS: "linkedin" is listed twice']);
+    expect(parseAdapterList('linkedin,linkedin').problems).toEqual(['ADAPTERS: "linkedin" is listed twice']);
     expect(parseAdapterList('../etc').problems).toHaveLength(1);
-    expect(problemsOf({ ...base, JW_ADAPTERS: 'a b' })).not.toEqual([]);
+    expect(problemsOf({ ...base, ADAPTERS: 'a b' })).not.toEqual([]);
   });
 });
 
@@ -152,7 +152,7 @@ describe('secrets never leak', () => {
   const secret = 's3cr3t-shared-value-123';
 
   it('describeConfig redacts the shared secret', () => {
-    const { config } = loadConfig({ ...base, JW_FRONT_SHARED_SECRET: secret });
+    const { config } = loadConfig({ ...base, FRONT_SHARED_SECRET: secret });
     expect(JSON.stringify(describeConfig(config))).not.toContain(secret);
     expect(describeConfig(config)['frontSharedSecret']).toBe('[redacted]');
   });
@@ -160,13 +160,13 @@ describe('secrets never leak', () => {
   it('error messages carry variable names and reasons, not values', () => {
     const message = (() => {
       try {
-        loadConfig({ ...base, JW_FRONT_SHARED_SECRET: 'tooshort-secret', JW_PORT: 'not-a-number-value' });
+        loadConfig({ ...base, FRONT_SHARED_SECRET: 'tooshort-secret', PORT: 'not-a-number-value' });
       } catch (error) {
         return (error as Error).message;
       }
       return '';
     })();
-    expect(message).toContain('JW_FRONT_SHARED_SECRET');
+    expect(message).toContain('FRONT_SHARED_SECRET');
     expect(message).not.toContain('tooshort-secret');
     expect(message).not.toContain('not-a-number-value');
   });
@@ -178,20 +178,20 @@ describe('loadStorageSettings (what the CLI needs)', () => {
   });
 
   it('reads the data directory and the adapter list', () => {
-    expect(loadStorageSettings({ JW_DATA_DIR: './data', JW_ADAPTERS: 'linkedin,apec' })).toEqual({
+    expect(loadStorageSettings({ DATA_DIR: './data', ADAPTERS: 'linkedin,apec' })).toEqual({
       dataDir: './data',
       adaptersFromEnv: ['linkedin', 'apec'],
     });
-    expect(loadStorageSettings({ JW_DATA_DIR: '', JW_ADAPTERS: '' })).toEqual({ dataDir: '/data', adaptersFromEnv: [] });
+    expect(loadStorageSettings({ DATA_DIR: '', ADAPTERS: '' })).toEqual({ dataDir: '/data', adaptersFromEnv: [] });
   });
 
   it('rejects an invalid adapter list with the same rules as the server', () => {
-    expect(() => loadStorageSettings({ JW_ADAPTERS: '../etc' })).toThrow(ConfigError);
-    expect(() => loadStorageSettings({ JW_ADAPTERS: 'ab,ab' })).toThrow(/listed twice/);
+    expect(() => loadStorageSettings({ ADAPTERS: '../etc' })).toThrow(ConfigError);
+    expect(() => loadStorageSettings({ ADAPTERS: 'ab,ab' })).toThrow(/listed twice/);
   });
 
   it('ignores every other variable, including invalid ones the server would refuse', () => {
-    expect(loadStorageSettings({ JW_PORT: 'nope', JW_BASE_URL: 'ftp://x' })).toEqual({ dataDir: '/data', adaptersFromEnv: undefined });
+    expect(loadStorageSettings({ PORT: 'nope', BASE_URL: 'ftp://x' })).toEqual({ dataDir: '/data', adaptersFromEnv: undefined });
   });
 });
 
@@ -200,14 +200,14 @@ describe('multi-tab', () => {
     expect(loadConfig(base).config.maxTabs).toBe(3);
   });
 
-  it('JW_BROWSER_MAX_TABS sets the limit: 1 is a single tab, more than 1 is multi-tab, no upper limit', () => {
-    expect(loadConfig({ ...base, JW_BROWSER_MAX_TABS: '1' }).config.maxTabs).toBe(1);
-    expect(loadConfig({ ...base, JW_BROWSER_MAX_TABS: '8' }).config.maxTabs).toBe(8);
-    expect(loadConfig({ ...base, JW_BROWSER_MAX_TABS: '500' }).config.maxTabs).toBe(500);
+  it('BROWSER_MAX_TABS sets the limit: 1 is a single tab, more than 1 is multi-tab, no upper limit', () => {
+    expect(loadConfig({ ...base, BROWSER_MAX_TABS: '1' }).config.maxTabs).toBe(1);
+    expect(loadConfig({ ...base, BROWSER_MAX_TABS: '8' }).config.maxTabs).toBe(8);
+    expect(loadConfig({ ...base, BROWSER_MAX_TABS: '500' }).config.maxTabs).toBe(500);
   });
 
   it('refuses 0, a negative number and a non-integer', () => {
-    for (const value of ['0', '-2', '2.5', 'many']) expect(problemsOf({ ...base, JW_BROWSER_MAX_TABS: value }), value).toHaveLength(1);
+    for (const value of ['0', '-2', '2.5', 'many']) expect(problemsOf({ ...base, BROWSER_MAX_TABS: value }), value).toHaveLength(1);
   });
 });
 
@@ -218,20 +218,37 @@ describe('dashboard keys', () => {
   });
 
   it('takes the buffer size (100 to 20000) and a ratio (1 to 10)', () => {
-    const { config } = loadConfig({ ...base, JW_DASHBOARD_CALL_BUFFER: '500', JW_TOKEN_CHARS_PER_TOKEN: '4' });
+    const { config } = loadConfig({ ...base, DASHBOARD_CALL_BUFFER: '500', TOKEN_CHARS_PER_TOKEN: '4' });
     expect([config.callBuffer, config.charsPerToken]).toEqual([500, 4]);
-    expect(problemsOf({ ...base, JW_DASHBOARD_CALL_BUFFER: '5' })).toHaveLength(1);
-    expect(problemsOf({ ...base, JW_TOKEN_CHARS_PER_TOKEN: '0' })).toHaveLength(1);
+    expect(problemsOf({ ...base, DASHBOARD_CALL_BUFFER: '5' })).toHaveLength(1);
+    expect(problemsOf({ ...base, TOKEN_CHARS_PER_TOKEN: '0' })).toHaveLength(1);
   });
 });
 
 describe('dashboard sign-in config', () => {
   it('has no Google client unless both id and secret are given, and never prints the secret', () => {
     expect(loadConfig(base).config.dashboard.oidc).toBeUndefined();
-    expect(loadConfig({ ...base, JW_DASHBOARD_OIDC_CLIENT_ID: 'id-only' }).config.dashboard.oidc).toBeUndefined();
-    const { config } = loadConfig({ ...base, JW_DASHBOARD_OIDC_CLIENT_ID: 'the-id', JW_DASHBOARD_OIDC_CLIENT_SECRET: 'the-secret-value' });
+    expect(loadConfig({ ...base, DASHBOARD_OIDC_CLIENT_ID: 'id-only' }).config.dashboard.oidc).toBeUndefined();
+    const { config } = loadConfig({ ...base, DASHBOARD_OIDC_CLIENT_ID: 'the-id', DASHBOARD_OIDC_CLIENT_SECRET: 'the-secret-value' });
     expect(config.dashboard.oidc).toEqual({ issuer: 'https://accounts.google.com', clientId: 'the-id', clientSecret: 'the-secret-value' });
     expect(JSON.stringify(describeConfig(config))).not.toContain('the-secret-value');
+  });
+
+  it("signs in with the OAuth front's client unless the dashboard has one of its own", () => {
+    const front = {
+      ...base,
+      OIDC_CLIENT_ID: 'front-id',
+      OIDC_CLIENT_SECRET: 'front-secret-value',
+      OIDC_ISSUER_URL: 'https://idp.example.com',
+    };
+    expect(loadConfig(front).config.dashboard.oidc).toEqual({
+      issuer: 'https://idp.example.com',
+      clientId: 'front-id',
+      clientSecret: 'front-secret-value',
+    });
+    const own = loadConfig({ ...front, DASHBOARD_OIDC_CLIENT_ID: 'own-id', DASHBOARD_OIDC_CLIENT_SECRET: 'own-secret-value' });
+    expect(own.config.dashboard.oidc).toMatchObject({ clientId: 'own-id', clientSecret: 'own-secret-value' });
+    expect(JSON.stringify(describeConfig(own.config))).not.toContain('own-secret-value');
   });
 
   it('has the timers of the plan by default: 30 minutes idle, 8 hours session, 10 minutes for writes', () => {
@@ -245,32 +262,30 @@ describe('browser mode', () => {
     expect(loadConfig(base).config).toMatchObject({ browserMode: 'docker', browserCdpAddress: undefined });
   });
 
-  it('starts a local Chrome with JW_LOCAL_CHROME', () => {
-    expect(loadConfig({ ...base, JW_LOCAL_CHROME: 'true' }).config.browserMode).toBe('local');
+  it('starts a local Chrome with LOCAL_CHROME', () => {
+    expect(loadConfig({ ...base, LOCAL_CHROME: 'true' }).config.browserMode).toBe('local');
   });
 
-  it('attaches to a running Chrome with JW_CDP_URL, localhost included', () => {
-    expect(loadConfig({ ...base, JW_CDP_URL: 'http://127.0.0.1:9222' }).config).toMatchObject({
+  it('attaches to a running Chrome with CDP_URL, localhost included', () => {
+    expect(loadConfig({ ...base, CDP_URL: 'http://127.0.0.1:9222' }).config).toMatchObject({
       browserMode: 'attach',
       browserCdpAddress: '127.0.0.1:9222',
     });
-    expect(loadConfig({ ...base, JW_CDP_URL: 'http://localhost:9333' }).config.browserCdpAddress).toBe('127.0.0.1:9333');
+    expect(loadConfig({ ...base, CDP_URL: 'http://localhost:9333' }).config.browserCdpAddress).toBe('127.0.0.1:9333');
   });
 
   it('refuses a DevTools URL that is not loopback, has no port or is not http', () => {
     for (const url of ['http://192.168.1.5:9222', 'http://example.com:9222', 'http://127.0.0.1', 'https://127.0.0.1:9222', 'nonsense'])
-      expect(problemsOf({ ...base, JW_CDP_URL: url }), url).toEqual([expect.stringContaining('JW_CDP_URL')]);
+      expect(problemsOf({ ...base, CDP_URL: url }), url).toEqual([expect.stringContaining('CDP_URL')]);
   });
 
   it('attaches when both are set: the running Chrome wins, with a warning', () => {
-    const { config, warnings } = loadConfig({ ...base, JW_LOCAL_CHROME: 'true', JW_CDP_URL: 'http://127.0.0.1:9222' });
+    const { config, warnings } = loadConfig({ ...base, LOCAL_CHROME: 'true', CDP_URL: 'http://127.0.0.1:9222' });
     expect(config.browserMode).toBe('attach');
-    expect(warnings).toEqual([expect.stringContaining('JW_LOCAL_CHROME is ignored')]);
+    expect(warnings).toEqual([expect.stringContaining('LOCAL_CHROME is ignored')]);
   });
 
   it('warns about a Chrome path that nothing uses', () => {
-    expect(loadConfig({ ...base, JW_LOCAL_CHROME_PATH: '/usr/bin/chrome' }).warnings).toEqual([
-      expect.stringContaining('JW_LOCAL_CHROME_PATH'),
-    ]);
+    expect(loadConfig({ ...base, LOCAL_CHROME_PATH: '/usr/bin/chrome' }).warnings).toEqual([expect.stringContaining('LOCAL_CHROME_PATH')]);
   });
 });

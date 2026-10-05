@@ -79,17 +79,17 @@ import { chromium } from "playwright-core";
 // containerIp from `docker inspect` (connect by IP, never by name: G2). Verified in spike S6 (playwright-core 1.63.0, Chrome 154).
 const browser = await chromium.connectOverCDP(`http://${containerIp}:9222`);
 const ctx = browser.contexts()[0];             // the profile's default context (persistent profile)
-const page = ctx.pages()[0];                   // the primary tab; extra tabs only through session.openTab(), up to JW_BROWSER_MAX_TABS
+const page = ctx.pages()[0];                   // the primary tab; extra tabs only through session.openTab(), up to BROWSER_MAX_TABS
 await page.route("**/*", allowlistRouter);     // abort requests to non-allowlisted hosts
 // ...                                         // adapter: goto + evaluate
 await page.goto("about:blank");                // always; park the tab, never close it (frees renderer memory)
 // runtime stop:
 const cdp = await browser.newBrowserCDPSession(); await cdp.send("Browser.close");
 ```
-Rules: never call `browser.close()` expecting it to quit Chrome; one primary tab (see `06-…` Tab policy and Multi-tab): never `newPage` except through the guarded `session.openTab()`, up to `JW_BROWSER_MAX_TABS`, never close the primary tab; the watchdog closes any stray page (popups, `target=_blank`) and, at the end of a call, every tab but the primary. Navigation only to URLs built by the adapter from validated arguments (host allowlist from the catalog).
+Rules: never call `browser.close()` expecting it to quit Chrome; one primary tab (see `06-…` Tab policy and Multi-tab): never `newPage` except through the guarded `session.openTab()`, up to `BROWSER_MAX_TABS`, never close the primary tab; the watchdog closes any stray page (popups, `target=_blank`) and, at the end of a call, every tab but the primary. Navigation only to URLs built by the adapter from validated arguments (host allowlist from the catalog).
 
 ## Navigation policy and fingerprint implementation (step 6, decided 2026-10-01)
-The adapter's `allowedHosts` are enforced on `BrowserSession.goto` and again on every document or frame navigation the page makes by itself; sub-resources are not filtered (see `03-router-spec.md`, step 6). The startup self-check is implemented in `packages/core/src/browser/fingerprint.ts` and is `enforce` by default (`JW_FINGERPRINT`).
+The adapter's `allowedHosts` are enforced on `BrowserSession.goto` and again on every document or frame navigation the page makes by itself; sub-resources are not filtered (see `03-router-spec.md`, step 6). The startup self-check is implemented in `packages/core/src/browser/fingerprint.ts` and is `enforce` by default (`FINGERPRINT`).
 
 ## Startup fingerprint self-check (`packages/core/src/browser/fingerprint.ts`)
 After a runtime becomes ready, on `about:blank` evaluate and compare to a baseline JSON captured from the real Mac Chrome:
@@ -106,6 +106,6 @@ The login viewer is never exposed publicly and never started by a tool call.
 - Profiles are sensitive (cookies): mode 0700, excluded from git, backups encrypted or skipped.
 - After a Chrome major upgrade run the fingerprint check and `session_status` before trusting runs.
 
-## Browser not in a container (`JW_LOCAL_CHROME`, `JW_CDP_URL`)
+## Browser not in a container (`LOCAL_CHROME`, `CDP_URL`)
 
-For development on the operator's own machine the runtime can run without Docker. `JW_LOCAL_CHROME=true` selects `LocalBackend` (starts a headful Chrome with `--remote-debugging-port=0` and a profile directory per platform, reads the port from `DevToolsActivePort`); `JW_CDP_URL` (loopback only, wins over `JW_LOCAL_CHROME`) selects `AttachBackend` (nothing is started or stopped, DevTools is only probed). Both plug into `RuntimeManager` as ordinary `RuntimeBackend`s with `createAttachHooks` (no fingerprint check, no `Browser.close`, no memory shedding). `connectBrowser` is then called with `shared: true`: it opens a tab of its own, routes and closes only the tabs it opened (a popup of one of its tabs included), leaves cookies alone, never quits the browser and closes its tab at the end of the call, so the operator's tabs are never touched. The memory cap and the per-platform memory budgets do not apply (`memoryBytes` is 0). The container stays the default and the only supported mode for the deployed server.
+For development on the operator's own machine the runtime can run without Docker. `LOCAL_CHROME=true` selects `LocalBackend` (starts a headful Chrome with `--remote-debugging-port=0` and a profile directory per platform, reads the port from `DevToolsActivePort`); `CDP_URL` (loopback only, wins over `LOCAL_CHROME`) selects `AttachBackend` (nothing is started or stopped, DevTools is only probed). Both plug into `RuntimeManager` as ordinary `RuntimeBackend`s with `createAttachHooks` (no fingerprint check, no `Browser.close`, no memory shedding). `connectBrowser` is then called with `shared: true`: it opens a tab of its own, routes and closes only the tabs it opened (a popup of one of its tabs included), leaves cookies alone, never quits the browser and closes its tab at the end of the call, so the operator's tabs are never touched. The memory cap and the per-platform memory budgets do not apply (`memoryBytes` is 0). The container stays the default and the only supported mode for the deployed server.

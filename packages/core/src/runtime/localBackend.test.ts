@@ -52,6 +52,6 @@ describe('LocalBackend', () => {
   it('says so when there is no Chrome', async () => {
     const backend = new LocalBackend({ executable: join(dir, 'missing'), profilesDir: join(dir, 'profiles') });
     await expect(backend.start(spec)).rejects.toThrow(BackendError);
-    await expect(backend.start(spec)).rejects.toThrow('JW_LOCAL_CHROME_PATH');
+    await expect(backend.start(spec)).rejects.toThrow('LOCAL_CHROME_PATH');
   });
 });

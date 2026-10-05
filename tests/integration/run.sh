@@ -16,9 +16,9 @@ cleanup() {
   docker volume ls -q --filter name=jw-it- | xargs -r docker volume rm >/dev/null 2>&1 || true
 }
 trap cleanup EXIT; cleanup
-# JW_IT_PREBUILT=<image> reuses an image you already have (no registry access needed); otherwise the image is built.
-if [ -n "${JW_IT_PREBUILT:-}" ]; then
-  echo "== using the prebuilt browser image $JW_IT_PREBUILT"; docker tag "$JW_IT_PREBUILT" jobwatch-browser:it
+# IT_PREBUILT=<image> reuses an image you already have (no registry access needed); otherwise the image is built.
+if [ -n "${IT_PREBUILT:-}" ]; then
+  echo "== using the prebuilt browser image $IT_PREBUILT"; docker tag "$IT_PREBUILT" jobwatch-browser:it
 else
   echo "== building the browser image"; docker build -q -t jobwatch-browser:it images/browser >/dev/null
 fi
@@ -26,5 +26,5 @@ echo "== building the test runner (installs dependencies; the test network has n
 docker network create --internal "$NET" >/dev/null
 echo "== running the integration test"
 docker run --rm --network "$NET" -v "$SOCK:/var/run/docker.sock" \
-  -e JW_IT_IMAGE=jobwatch-browser:it -e JW_IT_NETWORK="$NET" jw-it-runner \
+  -e IT_IMAGE=jobwatch-browser:it -e IT_NETWORK="$NET" jw-it-runner \
   bash -c 'cd packages/core && npx vitest run --config vitest.integration.config.ts'

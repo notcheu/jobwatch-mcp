@@ -17,7 +17,7 @@ export interface GotoOptions {
  * The ONLY browser surface adapters see. Implemented once over Playwright/CDP in `@jobwatch/core`
  * (the single file importing playwright-core), so swapping Playwright for Patchright or raw CDP never touches an adapter.
  * There is exactly one tab by default (docs/plans/06-memory-and-lifecycle-policy.md): `goto` navigates it and nothing can open
- * another. `openTab()` adds tabs only when the operator allows more than one (`JW_BROWSER_MAX_TABS`, default 3), up to `maxTabs`.
+ * another. `openTab()` adds tabs only when the operator allows more than one (`BROWSER_MAX_TABS`, default 3), up to `maxTabs`.
  */
 export interface BrowserSession {
   /** Navigate the single tab. Throws `HostNotAllowedError` unless the URL passes `isUrlAllowed` for the adapter. */
@@ -113,7 +113,7 @@ export interface StoredJob extends NewJob {
 
 /**
  * The adapter's memory of jobs it already opened, scoped to its platform by the engine (an adapter cannot read another
- * platform's rows). Stored jobs are evicted after `JW_JOB_RETENTION_DAYS`; a later search then treats them as new again.
+ * platform's rows). Stored jobs are evicted after `JOB_RETENTION_DAYS`; a later search then treats them as new again.
  * Convention (LinkedIn, `docs/plans/07-adapter-linkedin.md`): store a job as soon as its page was read and its title was accepted, whether or
  * not its description then matched the caller's terms. A stored job is never read from the page again: it is judged from here,
  * with whatever terms the next call brings. Do not store what you only saw on a search card: that read is free to repeat.

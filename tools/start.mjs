@@ -1,5 +1,5 @@
 // `npm run start`: runs the built server (`npm run build` first) with the variables of ./.env.local, overridden by ./.env, then by the shell.
-// Data lives in ./.data unless JW_DATA_DIR says otherwise. The database schema is migrated by the server at boot.
+// Data lives in ./.data unless DATA_DIR says otherwise. The database schema is migrated by the server at boot.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { localEnv } from './lib/localEnv.mjs';

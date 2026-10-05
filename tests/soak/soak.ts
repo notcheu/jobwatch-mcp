@@ -2,12 +2,12 @@
  * Soak test of a RUNNING router (docs/plans/11-testing-and-validation.md: 6 h of periodic calls, no growth in router RSS, no leaked
  * containers, logs clean). Plain Node 26 (types are stripped), no dependencies, read-only: it only calls the tools you list.
  *
- *   docker run --rm --network jobwatch_jobwatch-core -e SOAK_SECRET=<JW_FRONT_SHARED_SECRET> \
+ *   docker run --rm --network jobwatch_jobwatch-core -e SOAK_SECRET=<FRONT_SHARED_SECRET> \
  *     -v "$PWD/tests/soak:/soak:ro" node:26-bookworm-slim node /soak/soak.ts
  *
  * Settings (environment):
  *   SOAK_URL         default http://router:8080/mcp
- *   SOAK_SECRET      Bearer token the router expects (JW_FRONT_SHARED_SECRET); empty only for JW_AUTH=none
+ *   SOAK_SECRET      Bearer token the router expects (FRONT_SHARED_SECRET); empty only for AUTH=none
  *   SOAK_HOURS       default 6 (SOAK_SECONDS overrides, for a quick check)
  *   SOAK_MIN_S/MAX_S pause between rounds, random in [min, max]; default 300 and 1200
  *   SOAK_CALLS       semicolon list of `tool` or `tool=<json args>`; default `memory_report`. The first round always runs

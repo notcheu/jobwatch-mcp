@@ -64,7 +64,7 @@ export interface RunningServer {
   dashboard: DashboardManager;
   /** Present once a browser adapter has been enabled. */
   readonly runtime: RuntimeManager | undefined;
-  /** Re-read the list of enabled adapters and swap the registry without a restart. Refused when `JW_ADAPTERS` pins the list. */
+  /** Re-read the list of enabled adapters and swap the registry without a restart. Refused when `ADAPTERS` pins the list. */
   reloadAdapters(): Promise<ReloadResult>;
   /** The MCP listener. */
   mcp: HttpServer;
@@ -92,7 +92,7 @@ export interface StartOptions {
   connectBrowser?: ConnectBrowser;
   /** Time source for rate limits and breakers; tests pass a controllable one. */
   clock?: Clock;
-  /** Overrides JW_PORT (tests pass 0 for a free port). */
+  /** Overrides PORT (tests pass 0 for a free port). */
   port?: number;
   metricsPort?: number;
   /** Path of the control socket; `false` disables it (tests). Default: `control.sock` in the data directory. */
@@ -135,9 +135,9 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   if (enabled.ids.length === 0)
     logger.warn('No adapters are enabled: only the built-in ops tools are listed. Enable one with `jobwatch adapters enable <id>`.');
   if (config.auth === 'front' && config.frontSharedSecret === undefined) {
-    logger.warn('JW_FRONT_SHARED_SECRET is not set: relying on network isolation, only the OAuth front may reach this port.');
+    logger.warn('FRONT_SHARED_SECRET is not set: relying on network isolation, only the OAuth front may reach this port.');
   }
-  if (config.auth === 'none') logger.warn('JW_AUTH=none: no authentication. Local development only; never expose this port.');
+  if (config.auth === 'none') logger.warn('AUTH=none: no authentication. Local development only; never expose this port.');
 
   const metrics = config.metrics.enabled ? createMetrics({ version: options.version }) : undefined;
   metrics?.setEnabledAdapters(enabledOnly.adapters.length);
@@ -333,7 +333,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   /** Hot reload (docs/plans/17-dashboard.md, section 6.4): re-read `adapters.json` and swap the registry. */
   const pinnedByEnv = config.adaptersFromEnv !== undefined || config.utilitiesFromEnv !== undefined;
   const reloadAdapters = async (): Promise<ReloadResult> => {
-    if (pinnedByEnv) throw new Error('JW_ADAPTERS or JW_UTILITIES sets the enabled list; unset it to change it without a restart.');
+    if (pinnedByEnv) throw new Error('ADAPTERS or UTILITIES sets the enabled list; unset it to change it without a restart.');
     const wanted = await resolveEnabledModules(config);
     const result = await holder.reload(wanted.ids);
     logger.info({ enabled: result.enabled, added: result.addedAdapters, removed: result.removedAdapters }, 'adapters_reloaded');

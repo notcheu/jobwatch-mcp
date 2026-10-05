@@ -26,11 +26,11 @@ const enable = (ids: string[]) => writeFile(join(dir, 'adapters.json'), JSON.str
 const boot = async (env: Record<string, string> = {}) => {
   running = await start({
     env: {
-      JW_BASE_URL: 'http://127.0.0.1:18999',
-      JW_AUTH: 'none',
-      JW_LISTEN_HOST: '127.0.0.1',
-      JW_DATA_DIR: dir,
-      JW_DB_PATH: ':memory:',
+      BASE_URL: 'http://127.0.0.1:18999',
+      AUTH: 'none',
+      LISTEN_HOST: '127.0.0.1',
+      DATA_DIR: dir,
+      DB_PATH: ':memory:',
       ...env,
     },
     version: 'test',
@@ -73,9 +73,9 @@ describe('hot reload of adapters', () => {
     expect(await toolNames(url)).toContain('probe_echo');
   });
 
-  it('is refused while JW_ADAPTERS pins the list', async () => {
-    const { server } = await boot({ JW_ADAPTERS: 'probe' });
-    await expect(server.reloadAdapters()).rejects.toThrow('JW_ADAPTERS');
+  it('is refused while ADAPTERS pins the list', async () => {
+    const { server } = await boot({ ADAPTERS: 'probe' });
+    await expect(server.reloadAdapters()).rejects.toThrow('ADAPTERS');
   });
 
   it('can be triggered through the control socket in the data directory', async () => {
@@ -110,7 +110,7 @@ describe('the dashboard through the control socket', () => {
   it('is closed at startup, opens on dashboard.start, answers, and closes on dashboard.stop', async () => {
     await enable(['probe']);
     const port = await freePort();
-    await boot({ JW_DASHBOARD_PORT: String(port) });
+    await boot({ DASHBOARD_PORT: String(port) });
     const socket = controlSocketPath(dir);
     expect(await sendControl(socket, { command: 'dashboard.status' })).toMatchObject({ ok: true, running: false });
     await expect(fetch(`http://127.0.0.1:${port}/dashboard/api/v1/me`)).rejects.toThrow();
@@ -130,7 +130,7 @@ describe('the dashboard through the control socket', () => {
   it('shows a call made through MCP in the dashboard, with its parameters in the detail only', async () => {
     await enable(['probe']);
     const port = await freePort();
-    const { url } = await boot({ JW_DASHBOARD_PORT: String(port) });
+    const { url } = await boot({ DASHBOARD_PORT: String(port) });
     await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
     const client = await connectClient(url);
     await client.listTools();
@@ -150,7 +150,7 @@ describe('the dashboard through the control socket', () => {
   it('is closed with the router', async () => {
     await enable(['probe']);
     const port = await freePort();
-    await boot({ JW_DASHBOARD_PORT: String(port) });
+    await boot({ DASHBOARD_PORT: String(port) });
     await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
     await running?.close(500);
     running = undefined;
@@ -190,7 +190,7 @@ describe('changing adapters from the dashboard', () => {
   it('enables an adapter: the file is written, the registry reloaded and Claude would see the tools on its next list', async () => {
     await enable(['probe']);
     const port = await freePort();
-    const { url } = await boot({ JW_DASHBOARD_PORT: String(port) });
+    const { url } = await boot({ DASHBOARD_PORT: String(port) });
     await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
     expect(await toolNames(url)).not.toContain('other_ping');
 
@@ -208,16 +208,16 @@ describe('changing adapters from the dashboard', () => {
   it('refuses an adapter that is not installed and writes nothing', async () => {
     await enable(['probe']);
     const port = await freePort();
-    await boot({ JW_DASHBOARD_PORT: String(port) });
+    await boot({ DASHBOARD_PORT: String(port) });
     await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
     const answer = await send(port, 'PUT', '/dashboard/api/v1/adapters/nothing-here', { enabled: true });
     expect(answer.status).toBe(404);
     expect(JSON.parse(await readFile(join(dir, 'adapters.json'), 'utf8'))).toEqual({ enabled: ['probe'] });
   });
 
-  it('refuses while JW_ADAPTERS pins the list', async () => {
+  it('refuses while ADAPTERS pins the list', async () => {
     const port = await freePort();
-    await boot({ JW_DASHBOARD_PORT: String(port), JW_ADAPTERS: 'probe' });
+    await boot({ DASHBOARD_PORT: String(port), ADAPTERS: 'probe' });
     await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
     const answer = await send(port, 'PUT', '/dashboard/api/v1/adapters/other', { enabled: true });
     expect(answer).toMatchObject({ status: 409, body: { error: 'pinned' } });
@@ -226,7 +226,7 @@ describe('changing adapters from the dashboard', () => {
   it('refuses a change without the CSRF header or the right Origin', async () => {
     await enable(['probe']);
     const port = await freePort();
-    await boot({ JW_DASHBOARD_PORT: String(port) });
+    await boot({ DASHBOARD_PORT: String(port) });
     await sendControl(controlSocketPath(dir), { command: 'dashboard.start' });
     const bare = await fetch(`http://127.0.0.1:${port}/dashboard/api/v1/adapters/other`, {
       method: 'PUT',
@@ -246,11 +246,11 @@ describe('places through the control socket (jobwatch linkedin-geo)', () => {
     await enable(['probe', 'linkedin-geo']);
     running = await start({
       env: {
-        JW_BASE_URL: 'http://127.0.0.1:18999',
-        JW_AUTH: 'none',
-        JW_LISTEN_HOST: '127.0.0.1',
-        JW_DATA_DIR: dir,
-        JW_DB_PATH: ':memory:',
+        BASE_URL: 'http://127.0.0.1:18999',
+        AUTH: 'none',
+        LISTEN_HOST: '127.0.0.1',
+        DATA_DIR: dir,
+        DB_PATH: ':memory:',
       },
       version: 'test',
       installed: { ...installedFixtures, 'linkedin-geo': installedUtilities['linkedin-geo'] },
@@ -291,11 +291,11 @@ describe('places through the control socket (jobwatch linkedin-geo)', () => {
     const socket = await (async () => {
       running = await start({
         env: {
-          JW_BASE_URL: 'http://127.0.0.1:18999',
-          JW_AUTH: 'none',
-          JW_LISTEN_HOST: '127.0.0.1',
-          JW_DATA_DIR: dir,
-          JW_DB_PATH: ':memory:',
+          BASE_URL: 'http://127.0.0.1:18999',
+          AUTH: 'none',
+          LISTEN_HOST: '127.0.0.1',
+          DATA_DIR: dir,
+          DB_PATH: ':memory:',
         },
         version: 'test',
         installed: installedFixtures,

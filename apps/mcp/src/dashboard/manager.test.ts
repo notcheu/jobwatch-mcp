@@ -115,7 +115,7 @@ describe('DashboardManager', () => {
 
   it('refuses to start where sign-in is required but no Google client is set', async () => {
     const m = await build({ authRequired: true });
-    await expect(m.start()).rejects.toThrow('JW_DASHBOARD_OIDC_CLIENT_ID');
+    await expect(m.start()).rejects.toThrow('DASHBOARD_OIDC_CLIENT_ID');
     expect(m.running).toBe(false);
   });
 

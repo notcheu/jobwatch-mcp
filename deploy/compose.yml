@@ -1,4 +1,6 @@
 # Self-contained: copy this file next to a `.env` file (Compose reads it by itself) and run `docker compose up -d`. Data lands in ./data.
+# Every setting lives in `.env` (see .env.example): the front and the router get the whole file as their environment, so this file only
+# holds what is tied to its own layout (images, networks, the Docker socket, what is published).
 # Always-on services only. Browser containers are spawned by the router (label jobwatch.managed=true).
 # Your reverse proxy sends https://mcp.example.com to the single published MCP port below (docs/reverse-proxy.md).
 # Runs on Linux (Ubuntu, rootless Docker) and on macOS (Docker Desktop, arm64) for development: see compose.dev.yml and docs/plans/10-deployment.md.
@@ -10,21 +12,14 @@ networks:
   jobwatch-browsers: { internal: false }     # router <-> spawned browsers; egress is OPEN until the Phase 4 allowlist proxy (09, 14)
 services:
   front:                                     # OAuth 2.1 authorization server + reverse proxy (decision D7: babs/mcp-auth-proxy)
-    image: ${JW_FRONT_IMAGE:-ghcr.io/babs/mcp-auth-proxy:1.4.1}   # pin by digest once verified (S1)
+    image: ${FRONT_IMAGE:-ghcr.io/babs/mcp-auth-proxy:1.4.1}   # pin by digest once verified (S1)
+    env_file: [ { path: .env, required: false } ]   # PROXY_BASE_URL, UPSTREAM_MCP_URL, OIDC_*, TOKEN_SIGNING_SECRET, TRUSTED_PROXY_CIDRS, LISTEN_ADDR, METRICS_ADDR
     environment:
-      PROXY_BASE_URL: ${JW_BASE_URL:-http://127.0.0.1:18931}                 # https://mcp.example.com
-      UPSTREAM_MCP_URL: http://router:8080/mcp       # path is the public mount AND is forwarded verbatim
-      OIDC_ISSUER_URL: https://accounts.google.com   # the only IdP; access is limited to the owner by the Google app's "Testing" mode (see 10)
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}      # from .env (never commit it). VERIFY whether a *_FILE variant exists
-      TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:-}  # openssl rand -base64 48 (64 chars, no padding); keep identical across restarts
       REDIS_URL: redis://redis:6379/0
-      TRUSTED_PROXY_CIDRS: ${JW_PROXY_CIDR:-172.17.0.1/32}   # address(es) of your reverse proxy as seen by this container (default: the Docker gateway, for a proxy on the host); needed for X-Forwarded-* and rate limits
-      # LISTEN_ADDR defaults to :8080; metrics/readyz listen on 127.0.0.1:9090 inside the container (not published)
     depends_on:
       redis: { condition: service_healthy }
     ports:
-      - "${JW_BIND:-127.0.0.1}:${JW_HOST_PORT:-18931}:8080"   # the ONLY published MCP port; Nginx proxy_pass target
+      - "${BIND:-127.0.0.1}:${PORT:-18931}:${PORT:-18931}"   # the ONLY published MCP port (the front's LISTEN_ADDR uses the same PORT); the reverse proxy's target
     networks: [ jobwatch-core ]
     mem_limit: 128m
     read_only: true
@@ -32,7 +27,7 @@ services:
     security_opt: [ "no-new-privileges:true" ]
     restart: unless-stopped
   redis:                                     # replay defence for the front (single-use codes, refresh rotation)
-    image: ${JW_REDIS_IMAGE:-redis:7-alpine}
+    image: redis:7-alpine
     user: "999:999"                          # the image's own redis user: its root entrypoint needs SETUID/SETGID, which cap_drop ALL removes (tested)
     command: [ "redis-server", "--appendonly", "yes", "--maxmemory", "32mb", "--maxmemory-policy", "noeviction" ]
     volumes: [ "redis-data:/data" ]          # named volume (a host directory would not be writable by uid 999 under rootless Docker)
@@ -47,39 +42,25 @@ services:
     security_opt: [ "no-new-privileges:true" ]
     restart: unless-stopped
   router:
-    image: ${JW_REGISTRY}/jobwatch-router:${JW_TAG:-latest}    # pushed by CI (.github/workflows/docker-publish.yml)
+    image: jobwatch-router:latest            # pushed by CI (.github/workflows/docker-publish.yml), or built with `docker build -t jobwatch-router:latest .`
     labels:
       - "com.centurylinklabs.watchtower.enable=true"   # only read by Watchtower, if you run it (docs/watchtower.md)
-    user: "0:0"                              # CONFIRMED on the reference host: under rootless Docker uid 0 in the container IS mcpuser on the host. uid 1000 could not write ./data (EACCES) nor would it open the socket. Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
+    env_file: [ { path: .env, required: false } ]   # every router setting: see .env.example and docs/environment-variables.md
+    user: "0:0"                              # CONFIRMED on the reference host: under rootless Docker uid 0 in the container IS mcpuser on the host. uid 1000 could not write ./data nor would it open the socket. Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
     read_only: true
     tmpfs: [ "/tmp:rw,size=64m" ]
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
-    environment:
-      JW_BASE_URL: ${JW_BASE_URL:-http://127.0.0.1:18931}
-      JW_RUNTIME: docker
-      JW_BROWSER_IMAGE: ${JW_BROWSER_IMAGE:-jobwatch-browser:latest}
-      JW_BROWSER_NETWORK: jobwatch_jobwatch-browsers   # compose names networks <project>_<name>; the project is `jobwatch`
-      JW_DEFAULT_LOCATION: ${JW_DEFAULT_LOCATION:-}
-      JW_LINKEDIN_GEO_ALIASES: ${JW_LINKEDIN_GEO_ALIASES:-}
-      JW_BROWSER_LANG: ${JW_BROWSER_LANG:-fr-FR}
-      JW_BROWSER_MAX_TABS: ${JW_BROWSER_MAX_TABS:-3}   # most tabs open at once; 1 = a single tab, more than 1 lets adapters call session.openTab()
-      JW_BROWSER_ACCEPT_LANGS: ${JW_BROWSER_ACCEPT_LANGS:-}   # personal list copied from your everyday browser: set it in .env
+    environment:                             # tied to this file's layout, so not in .env
+      RUNTIME: docker
+      BROWSER_NETWORK: jobwatch_jobwatch-browsers   # compose names networks <project>_<name>; the project is `jobwatch`
       DOCKER_HOST: unix:///var/run/docker.sock          # mcpuser's ROOTLESS socket, mounted below
-      JW_JOB_RETENTION_DAYS: ${JW_JOB_RETENTION_DAYS:-30}
-      JW_METRICS_ENABLED: ${JW_METRICS_ENABLED:-false}  # true => Prometheus /metrics on 9464
-      JW_METRICS_PORT: 9464
-      # The operator dashboard (docs/plans/17-dashboard.md): off until `jobwatch dashboard start`. It signs in with Google, by default with
-      # the connector's OAuth client; add https://<domain>/dashboard/auth/callback to that client's redirect URIs in Google Cloud Console.
-      JW_DASHBOARD_OIDC_CLIENT_ID: ${JW_DASHBOARD_OIDC_CLIENT_ID:-${OIDC_CLIENT_ID:-}}
-      JW_DASHBOARD_OIDC_CLIENT_SECRET: ${JW_DASHBOARD_OIDC_CLIENT_SECRET:-${OIDC_CLIENT_SECRET:-}}
-      JW_DASHBOARD_IDLE_S: ${JW_DASHBOARD_IDLE_S:-1800}
     volumes:
-      - "${JW_DOCKER_SOCKET:-${XDG_RUNTIME_DIR}/docker.sock}:/var/run/docker.sock"   # Linux rootless: $XDG_RUNTIME_DIR/docker.sock; Docker Desktop (macOS): /var/run/docker.sock
+      - "${DOCKER_SOCKET:-${XDG_RUNTIME_DIR}/docker.sock}:/var/run/docker.sock"   # Linux rootless: $XDG_RUNTIME_DIR/docker.sock; Docker Desktop (macOS): /var/run/docker.sock
       - "./data:/data"             # owned by mcpuser = uid 0 in the container (hence user "0:0" above)
       # Browser profiles are named Docker volumes (jw-profile-<platform>) created by the router: no host paths, so the same file works on Linux and macOS.
     ports:
-      - "${JW_DASHBOARD_BIND:-127.0.0.1}:${JW_DASHBOARD_HOST_PORT:-18933}:8090"   # the dashboard, for Nginx (/dashboard); nothing listens until it is started
-      - "${JW_METRICS_BIND:-127.0.0.1}:${JW_METRICS_PORT:-9464}:9464"   # Prometheus scrape target; nothing listens unless metrics are enabled
-    networks: [ jobwatch-core, jobwatch-browsers ]   # MCP port is not published: only the front reaches it
+      - "${DASHBOARD_BIND:-127.0.0.1}:${DASHBOARD_PORT:-18933}:${DASHBOARD_PORT:-18933}"   # the dashboard, for the reverse proxy (/dashboard); nothing listens until it is started
+      - "${METRICS_BIND:-127.0.0.1}:${METRICS_PORT:-9464}:${METRICS_PORT:-9464}"   # Prometheus scrape target; nothing listens unless metrics are enabled
+    networks: [ jobwatch-core, jobwatch-browsers ]   # the MCP port is not published: only the front reaches it
     restart: unless-stopped

@@ -70,7 +70,7 @@ export class DashboardManager {
     const { settings } = this;
     if (settings.authRequired && settings.oidc === undefined)
       throw new Error(
-        "Signing in needs a Google client: set JW_DASHBOARD_OIDC_CLIENT_ID and JW_DASHBOARD_OIDC_CLIENT_SECRET (compose passes the connector's OIDC_CLIENT_ID and OIDC_CLIENT_SECRET by default), and add the redirect URI " +
+        "Signing in needs a Google client: set DASHBOARD_OIDC_CLIENT_ID and DASHBOARD_OIDC_CLIENT_SECRET (compose passes the connector's OIDC_CLIENT_ID and OIDC_CLIENT_SECRET by default), and add the redirect URI " +
           `${settings.publicOrigin}/dashboard/auth/callback to that client.`,
       );
     this.idleMs = Math.max(60, Math.round(options.ttlMinutes === undefined ? settings.idleS : options.ttlMinutes * 60)) * 1000;

@@ -1,5 +1,7 @@
 /** @jobwatch/core: the engine. Depends on @jobwatch/sdk only; never imports an adapter. */
 export { ConfigError } from './errors';
+export { ENV_NAMES, envSchema, parseEnv } from './env';
+export type { EnvResult, ParsedEnv } from './env';
 export { ADAPTER_ID_PATTERN, describeConfig, loadConfig, loadStorageSettings, parseAdapterList } from './config';
 export type { Config, LoadedConfig, StorageSettings } from './config';
 export { createAdapterLogger, createLogger, sanitizeFields } from './logging';

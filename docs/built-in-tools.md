@@ -1,6 +1,6 @@
 # Built-in tools
 
-`session_status`, `memory_report`, `stored_jobs`, `stored_searches` and `stored_job_texts` are always available. The router remembers the search keywords you used and the jobs each one listed, for `JW_JOB_RETENTION_DAYS`, so that `stored_searches` can tell you which keywords bring jobs in.
+`session_status`, `memory_report`, `stored_jobs`, `stored_searches` and `stored_job_texts` are always available. The router remembers the search keywords you used and the jobs each one listed, for `JOB_RETENTION_DAYS`, so that `stored_searches` can tell you which keywords bring jobs in.
 
 ## Example queries
 

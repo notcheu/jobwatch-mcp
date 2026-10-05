@@ -61,7 +61,7 @@ describe('a broken file is an error, never "nothing enabled"', () => {
 });
 
 describe('resolveEnabledModules precedence', () => {
-  it('lets JW_ADAPTERS win over the file, even when it is empty', async () => {
+  it('lets ADAPTERS win over the file, even when it is empty', async () => {
     await writeEnabledFile(dataDir, { adapters: ['linkedin'], utilities: [] });
     expect(await resolveEnabledModules({ adaptersFromEnv: ['apec'], dataDir })).toEqual({
       ids: ['apec'],
@@ -106,9 +106,9 @@ describe('setModulesEnabled', () => {
     expect(await readEnabledFile(dataDir)).toBeUndefined();
   });
 
-  it('refuses to edit while JW_ADAPTERS overrides the file', async () => {
+  it('refuses to edit while ADAPTERS overrides the file', async () => {
     await expect(setModulesEnabled({ adaptersFromEnv: ['apec'], dataDir }, installed, ['linkedin'], true)).rejects.toThrow(
-      /JW_ADAPTERS is set/,
+      /ADAPTERS is set/,
     );
     expect(await readEnabledFile(dataDir)).toBeUndefined();
   });
@@ -142,7 +142,7 @@ describe('utilities are a group of their own', () => {
     });
   });
 
-  it('is pinned by JW_UTILITIES alone, and the adapters then still come from the file', async () => {
+  it('is pinned by UTILITIES alone, and the adapters then still come from the file', async () => {
     await writeEnabledFile(dataDir, { adapters: ['apec'], utilities: [] });
     const env = { adaptersFromEnv: undefined, utilitiesFromEnv: ['ats-discovery'], dataDir };
     expect(await resolveEnabledModules(env)).toEqual({
@@ -151,7 +151,7 @@ describe('utilities are a group of their own', () => {
       utilities: ['ats-discovery'],
       source: 'env',
     });
-    await expect(setModulesEnabled(env, utilities, ['linkedin-geo'], true, 'utilities')).rejects.toThrow(/JW_UTILITIES is set/);
+    await expect(setModulesEnabled(env, utilities, ['linkedin-geo'], true, 'utilities')).rejects.toThrow(/UTILITIES is set/);
     expect((await setModulesEnabled(env, installed, ['linkedin'], true)).ids).toEqual(['apec', 'linkedin']);
   });
 

@@ -42,7 +42,7 @@ export interface CallRecord {
 /** Retention: the call log keeps 30 days; usage events only need to cover the longest rate window with margin. */
 export const CALL_LOG_RETENTION_MS = 30 * 24 * 3600 * 1000;
 export const USAGE_RETENTION_MS = 2 * 24 * 3600 * 1000;
-/** Stored job postings: kept `JW_JOB_RETENTION_DAYS` (default 30) from the last time they were seen. */
+/** Stored job postings: kept `JOB_RETENTION_DAYS` (default 30) from the last time they were seen. */
 export const DEFAULT_JOB_RETENTION_DAYS = 30;
 export const MAX_JOB_DESCRIPTION_CHARS = 20_000;
 const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -208,7 +208,7 @@ export class Store {
       db = new DatabaseSync(path);
     } catch (cause) {
       throw new StoreError(
-        `Cannot open the database at ${path}: ${cause instanceof Error ? cause.message : String(cause)}. Is JW_DATA_DIR writable?`,
+        `Cannot open the database at ${path}: ${cause instanceof Error ? cause.message : String(cause)}. Is DATA_DIR writable?`,
         { cause },
       );
     }

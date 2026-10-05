@@ -247,7 +247,7 @@ export interface TestContextOptions {
   /** Mirror the adapter's `openHttps`: any public https host is reachable (no DNS check in tests). */
   openHttps?: boolean;
   pages?: Readonly<Record<string, FakePage>>;
-  /** Browser contexts: tabs allowed at once (`JW_BROWSER_MAX_TABS`); 1 = multi-tab off, the default. */
+  /** Browser contexts: tabs allowed at once (`BROWSER_MAX_TABS`); 1 = multi-tab off, the default. */
   maxTabs?: number;
   routes?: readonly FakeHttpRoute[];
 }
