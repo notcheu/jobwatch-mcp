@@ -1,4 +1,4 @@
-import type { AdapterModule } from './adapter';
+import type { McpModule } from './adapter';
 import { inputJsonSchema, outputJsonSchema, type JsonSchema } from './schema';
 
 /** One tool as exposed by `tools/list`, in the snapshot format of docs/plans/04-catalog-and-tool-schemas.md. */
@@ -23,7 +23,7 @@ export interface CatalogEntry {
   open_https?: boolean;
 }
 
-export function buildCatalog(adapter: AdapterModule): CatalogEntry[] {
+export function buildCatalog(adapter: McpModule): CatalogEntry[] {
   return adapter.tools.map((tool) => ({
     name: tool.name,
     title: tool.title,

@@ -1,7 +1,7 @@
-import type { AdapterModule } from '@jobwatch/sdk';
+import type { McpModule } from '@jobwatch/sdk';
 
 /** Same shape as `InstalledAdapters` in @jobwatch/core (structural typing; this package may not depend on core). */
-export type InstalledMap = Readonly<Record<string, () => Promise<AdapterModule>>>;
+export type InstalledMap = Readonly<Record<string, () => Promise<McpModule>>>;
 
 /**
  * THE INSTALLED ADAPTERS: the single place that lists adapter packages. A line is added by `npm run new:adapter -- <id>`
@@ -13,11 +13,11 @@ export const installed = {
   // <installed:begin>
   apec: () => import('@jobwatch/adapter-apec').then((m) => m.default),
   ashby: () => import('@jobwatch/adapter-ashby').then((m) => m.default),
-  'ats-discovery': () => import('@jobwatch/adapter-ats-discovery').then((m) => m.default),
+  'ats-discovery': () => import('@jobwatch/utility-ats-discovery').then((m) => m.default),
   greenhouse: () => import('@jobwatch/adapter-greenhouse').then((m) => m.default),
   lever: () => import('@jobwatch/adapter-lever').then((m) => m.default),
   linkedin: () => import('@jobwatch/adapter-linkedin').then((m) => m.default),
-  'linkedin-geo': () => import('@jobwatch/adapter-linkedin-geo').then((m) => m.default),
+  'linkedin-geo': () => import('@jobwatch/utility-linkedin-geo').then((m) => m.default),
   teamtailor: () => import('@jobwatch/adapter-teamtailor').then((m) => m.default),
   wttj: () => import('@jobwatch/adapter-wttj').then((m) => m.default),
   // <installed:end>

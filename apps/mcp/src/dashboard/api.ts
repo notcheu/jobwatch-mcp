@@ -289,6 +289,7 @@ export async function getTools(data: DashboardData): Promise<Tools> {
       id: entry.id,
       displayName: entry.summary.displayName,
       platform,
+      role: entry.summary.role,
       kind: entry.summary.kind,
       enabled: isOn,
       pinned: data.pinned,

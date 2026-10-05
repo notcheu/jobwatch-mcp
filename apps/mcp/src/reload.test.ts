@@ -197,7 +197,7 @@ describe('changing adapters from the dashboard', () => {
     const answer = await send(port, 'PUT', '/dashboard/api/v1/adapters/other', { enabled: true });
     expect(answer.status).toBe(200);
     expect(answer.body).toMatchObject({ id: 'other', enabled: true, reconnectNeeded: true, addedTools: ['other_ping'] });
-    expect(JSON.parse(await readFile(join(dir, 'adapters.json'), 'utf8'))).toEqual({ enabled: ['other', 'probe'] });
+    expect(JSON.parse(await readFile(join(dir, 'adapters.json'), 'utf8'))).toEqual({ enabled: ['other', 'probe'], utilities: [] });
     expect(await toolNames(url)).toContain('other_ping');
 
     const off = await send(port, 'PUT', '/dashboard/api/v1/adapters/other', { enabled: false });

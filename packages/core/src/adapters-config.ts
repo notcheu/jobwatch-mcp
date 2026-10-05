@@ -5,22 +5,36 @@ import { ADAPTER_ID_PATTERN, type Config } from './config';
 import { ConfigError } from './errors';
 
 /**
- * Which installed adapters the router plugs in. Stored in `<dataDir>/adapters.json`:
- * `{ "enabled": ["linkedin"] }`. A fresh install has no file, which means NOTHING is enabled
+ * Which installed modules the router plugs in. Stored in `<dataDir>/adapters.json`:
+ * `{ "enabled": ["linkedin"], "utilities": ["linkedin-geo"] }`: `enabled` lists the adapters (they fetch jobs), `utilities` the
+ * utilities (helper tools). A fresh install has no file, which means NOTHING is enabled
  * (the LinkedIn usage budget must be approved before it is switched on, see docs/plans/09-security.md).
  */
 export const ADAPTERS_FILE = 'adapters.json';
 
+/** The two kinds of module that can be enabled, as the CLI groups them. */
+export type ModuleGroup = 'adapters' | 'utilities';
+
+export interface EnabledLists {
+  adapters: string[];
+  utilities: string[];
+}
+
+const idList = z.array(z.string().regex(ADAPTER_ID_PATTERN)).max(64);
 const fileSchema = z
-  .object({ enabled: z.array(z.string().regex(ADAPTER_ID_PATTERN)).max(64) })
+  .object({ enabled: idList, utilities: idList.default([]) })
   .strict()
-  .refine((value) => new Set(value.enabled).size === value.enabled.length, { message: 'enabled lists an adapter twice' });
+  .refine((value) => new Set(value.enabled).size === value.enabled.length, { message: 'enabled lists an adapter twice' })
+  .refine((value) => new Set(value.utilities).size === value.utilities.length, { message: 'utilities lists a utility twice' });
 
 export type EnabledSource = 'env' | 'file' | 'default';
 
 export interface EnabledAdapters {
+  /** Every enabled module, adapters and utilities: what the registry loads. */
   ids: string[];
-  /** Where the list came from. `env` means the CLI must refuse to edit the file (JW_ADAPTERS wins). */
+  adapters: string[];
+  utilities: string[];
+  /** Where the list came from. `env` means a list is set by the environment (JW_ADAPTERS or JW_UTILITIES) and the CLI must refuse to edit it. */
   source: EnabledSource;
 }
 
@@ -29,7 +43,7 @@ export function adaptersFilePath(dataDir: string): string {
 }
 
 /** Read the file. Missing file = nothing enabled. A present but unreadable or invalid file is an error, never "nothing". */
-export async function readEnabledFile(dataDir: string): Promise<string[] | undefined> {
+export async function readEnabledFile(dataDir: string): Promise<EnabledLists | undefined> {
   const path = adaptersFilePath(dataDir);
   let raw: string;
   try {
@@ -47,20 +61,27 @@ export async function readEnabledFile(dataDir: string): Promise<string[] | undef
   const parsed = fileSchema.safeParse(json);
   if (!parsed.success)
     throw new ConfigError(parsed.error.issues.map((issue) => `${path}: ${issue.path.join('.') || 'file'}: ${issue.message}`));
-  return parsed.data.enabled;
+  return { adapters: parsed.data.enabled, utilities: parsed.data.utilities };
 }
 
-/** Resolve the effective list: JW_ADAPTERS wins over the file, the file over the empty default. */
-export async function resolveEnabledAdapters(config: Pick<Config, 'adaptersFromEnv' | 'dataDir'>): Promise<EnabledAdapters> {
-  if (config.adaptersFromEnv !== undefined) return { ids: [...config.adaptersFromEnv], source: 'env' };
-  const fromFile = await readEnabledFile(config.dataDir);
-  return fromFile === undefined ? { ids: [], source: 'default' } : { ids: fromFile, source: 'file' };
+type EnvLists = Pick<Config, 'adaptersFromEnv' | 'dataDir'> & Partial<Pick<Config, 'utilitiesFromEnv'>>;
+
+/** Resolve the effective lists: JW_ADAPTERS and JW_UTILITIES win over the file, the file over the empty default. */
+export async function resolveEnabledAdapters(config: EnvLists): Promise<EnabledAdapters> {
+  const fromFile =
+    config.adaptersFromEnv !== undefined && config.utilitiesFromEnv !== undefined ? undefined : await readEnabledFile(config.dataDir);
+  const adapters = config.adaptersFromEnv !== undefined ? [...config.adaptersFromEnv] : (fromFile?.adapters ?? []);
+  const utilities = config.utilitiesFromEnv !== undefined ? [...config.utilitiesFromEnv] : (fromFile?.utilities ?? []);
+  const source: EnabledSource =
+    config.adaptersFromEnv !== undefined || config.utilitiesFromEnv !== undefined ? 'env' : fromFile === undefined ? 'default' : 'file';
+  return { ids: [...new Set([...adapters, ...utilities])], adapters, utilities, source };
 }
 
 /** Write atomically (temp file in the same directory, then rename), sorted and de-duplicated. */
-export async function writeEnabledFile(dataDir: string, ids: readonly string[]): Promise<void> {
+export async function writeEnabledFile(dataDir: string, lists: EnabledLists): Promise<void> {
   const path = adaptersFilePath(dataDir);
-  const content = `${JSON.stringify({ enabled: [...new Set(ids)].sort() }, null, 2)}\n`;
+  const sorted = (ids: readonly string[]): string[] => [...new Set(ids)].sort();
+  const content = `${JSON.stringify({ enabled: sorted(lists.adapters), utilities: sorted(lists.utilities) }, null, 2)}\n`;
   await mkdir(dirname(path), { recursive: true });
   const temp = `${path}.${process.pid}.tmp`;
   await writeFile(temp, content, { mode: 0o644 });
@@ -68,25 +89,36 @@ export async function writeEnabledFile(dataDir: string, ids: readonly string[]):
 }
 
 export interface ToggleResult {
-  /** The list after the change. */
+  /** The list of that group after the change. */
   ids: string[];
   /** Ids that were actually added or removed (unchanged ones are not listed). */
   changed: string[];
 }
 
+/** The variable that pins a group, for messages. */
+export const pinVariable = (group: ModuleGroup): string => (group === 'adapters' ? 'JW_ADAPTERS' : 'JW_UTILITIES');
+
+/** True when the environment pins this group, so the file is not edited. */
+export const isPinned = (config: Pick<EnvLists, 'adaptersFromEnv' | 'utilitiesFromEnv'>, group: ModuleGroup): boolean =>
+  (group === 'adapters' ? config.adaptersFromEnv : config.utilitiesFromEnv) !== undefined;
+
 /**
- * Enable or disable adapters in the file. Enabling refuses ids that are not installed. Disabling accepts any id, so an
- * operator can always remove a stale entry (an adapter deleted from the code but still listed would stop the router
- * from starting). Refuses to edit while JW_ADAPTERS is set, because the environment would silently override the result.
+ * Enable or disable modules of one group in the file. Enabling refuses ids that are not installed (`installedIds` is the ids of
+ * that group). Disabling accepts any id, so an operator can always remove a stale entry (a module deleted from the code but still
+ * listed would stop the router from starting). Refuses to edit while the group's variable is set, because the environment would
+ * silently override the result.
  */
 export async function setAdaptersEnabled(
-  config: Pick<Config, 'adaptersFromEnv' | 'dataDir'>,
+  config: EnvLists,
   installedIds: readonly string[],
   requested: readonly string[],
   enable: boolean,
+  group: ModuleGroup = 'adapters',
 ): Promise<ToggleResult> {
-  if (config.adaptersFromEnv !== undefined) {
-    throw new ConfigError(['JW_ADAPTERS is set in the environment and overrides adapters.json: unset it, or edit JW_ADAPTERS instead']);
+  if (isPinned(config, group)) {
+    throw new ConfigError([
+      `${pinVariable(group)} is set in the environment and overrides ${ADAPTERS_FILE}: unset it, or edit ${pinVariable(group)} instead`,
+    ]);
   }
   const unknown = enable ? requested.filter((id) => !installedIds.includes(id)) : [];
   if (unknown.length > 0) {
@@ -94,8 +126,8 @@ export async function setAdaptersEnabled(
       `not installed: ${unknown.join(', ')} (installed: ${installedIds.length === 0 ? 'none' : installedIds.join(', ')})`,
     ]);
   }
-  const current = (await readEnabledFile(config.dataDir)) ?? [];
-  const next = new Set(current);
+  const lists = (await readEnabledFile(config.dataDir)) ?? { adapters: [], utilities: [] };
+  const next = new Set(lists[group]);
   const changed: string[] = [];
   for (const id of requested) {
     if (enable && !next.has(id)) {
@@ -106,6 +138,11 @@ export async function setAdaptersEnabled(
     }
   }
   const ids = [...next].sort();
-  if (changed.length > 0) await writeEnabledFile(config.dataDir, ids);
+  // a utility enabled before the groups existed sits in `enabled`: disabling it removes it from there too
+  const other: ModuleGroup = group === 'adapters' ? 'utilities' : 'adapters';
+  const stray = enable ? [] : requested.filter((id) => lists[other].includes(id));
+  if (changed.length > 0 || stray.length > 0)
+    await writeEnabledFile(config.dataDir, { ...lists, [group]: ids, [other]: lists[other].filter((id) => !stray.includes(id)) });
+  if (stray.length > 0) changed.push(...stray.filter((id) => !changed.includes(id)));
   return { ids, changed };
 }

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SDK_API_VERSION, defineAdapter, defineBrowserTool, defineHttpTool, z, type AdapterModule } from '@jobwatch/sdk';
+import { SDK_API_VERSION, defineAdapter, defineBrowserTool, defineHttpTool, defineUtility, z, type AdapterModule } from '@jobwatch/sdk';
 import type { InstalledAdapters } from '@jobwatch/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EXIT, run, type Deps } from './cli';
@@ -64,7 +64,28 @@ const linkedin: AdapterModule = defineAdapter({
   ],
 });
 
-const table: InstalledAdapters = { linkedin: async () => linkedin, apec: async () => apec };
+const geo = defineUtility({
+  id: 'linkedin-geo',
+  displayName: 'LinkedIn locations',
+  description: 'Places.',
+  sdkApi: SDK_API_VERSION,
+  platform: 'linkedin-geo',
+  allowedHosts: ['www.linkedin.com'],
+  tools: [
+    defineHttpTool({
+      name: 'linkedin_locations',
+      title: 'Locations (read-only)',
+      description: 'Finds places. Read-only, no side effects.',
+      input,
+      output,
+      annotations,
+      limits,
+      handler: async () => ({ data: { ok: true }, warnings: [] }),
+    }),
+  ],
+});
+
+const table: InstalledAdapters = { linkedin: async () => linkedin, apec: async () => apec, 'linkedin-geo': async () => geo };
 
 let dataDir: string;
 let out: string;
@@ -259,7 +280,7 @@ describe('adapters enable / disable', () => {
 
   it('enables, writes the file, and tells the operator to restart the router', async () => {
     expect(await cli(['adapters', 'enable', 'linkedin'])).toBe(EXIT.ok);
-    expect(await enabledFile()).toEqual({ enabled: ['linkedin'] });
+    expect(await enabledFile()).toEqual({ enabled: ['linkedin'], utilities: [] });
     expect(out).toContain('Enabled: linkedin');
     expect(out).toContain('Enabled now: linkedin');
     expect(out).toContain('Restart the router to apply');
@@ -267,7 +288,7 @@ describe('adapters enable / disable', () => {
 
   it('enables several at once, de-duplicates, and keeps the file sorted', async () => {
     await cli(['adapters', 'enable', 'linkedin', 'apec', 'apec']);
-    expect(await enabledFile()).toEqual({ enabled: ['apec', 'linkedin'] });
+    expect(await enabledFile()).toEqual({ enabled: ['apec', 'linkedin'], utilities: [] });
   });
 
   it('is idempotent: enabling twice changes nothing and does not ask for a restart', async () => {
@@ -282,7 +303,7 @@ describe('adapters enable / disable', () => {
     await cli(['adapters', 'enable', 'apec', 'linkedin']);
     out = '';
     expect(await cli(['adapters', 'disable', 'linkedin', 'apec'])).toBe(EXIT.ok);
-    expect(await enabledFile()).toEqual({ enabled: [] });
+    expect(await enabledFile()).toEqual({ enabled: [], utilities: [] });
     expect(out).toContain('Disabled: linkedin, apec');
     expect(out).toContain('Enabled now: none');
     out = '';
@@ -302,7 +323,7 @@ describe('adapters enable / disable', () => {
   it('can always disable a stale entry', async () => {
     await writeFile(join(dataDir, 'adapters.json'), '{"enabled":["apec","removed"]}');
     expect(await cli(['adapters', 'disable', 'removed'])).toBe(EXIT.ok);
-    expect(await enabledFile()).toEqual({ enabled: ['apec'] });
+    expect(await enabledFile()).toEqual({ enabled: ['apec'], utilities: [] });
   });
 
   it('refuses to edit while JW_ADAPTERS is set', async () => {
@@ -504,5 +525,29 @@ describe('linkedin-geo', () => {
       expect(await cli(args), args.join(' ')).toBe(1);
       expect(err).toContain('Usage:');
     }
+  });
+});
+
+describe('utilities are listed and enabled apart from the adapters', () => {
+  it('keeps each kind out of the other list', async () => {
+    expect(await cli(['adapters', 'list'])).toBe(EXIT.ok);
+    expect(out).toContain('apec');
+    expect(out).not.toContain('linkedin-geo');
+    out = '';
+    expect(await cli(['utilities', 'list'])).toBe(EXIT.ok);
+    expect(out).toContain('linkedin-geo');
+    expect(out).not.toContain('apec');
+  });
+
+  it('writes a utility to its own list and refuses the wrong command, naming the right one', async () => {
+    expect(await cli(['utilities', 'enable', 'linkedin-geo'])).toBe(EXIT.ok);
+    expect(await enabledFile()).toEqual({ enabled: [], utilities: ['linkedin-geo'] });
+    expect(await cli(['adapters', 'enable', 'linkedin-geo'])).toBe(EXIT.usage);
+    expect(err).toContain('linkedin-geo is a utility: use `jobwatch utilities`');
+    expect(await cli(['utilities', 'enable', 'apec'])).toBe(EXIT.usage);
+    expect(err).toContain('apec is an adapter');
+    expect(await enabledFile()).toEqual({ enabled: [], utilities: ['linkedin-geo'] });
+    expect(await cli(['utilities', 'disable', 'linkedin-geo'])).toBe(EXIT.ok);
+    expect(await enabledFile()).toEqual({ enabled: [], utilities: [] });
   });
 });

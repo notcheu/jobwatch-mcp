@@ -1,4 +1,4 @@
-import type { AdapterModule, BaseContext, ErasedTool, JobwatchError } from '@jobwatch/sdk';
+import type { McpModule, BaseContext, ErasedTool, JobwatchError } from '@jobwatch/sdk';
 import type { Admission, CallGuard } from '../call';
 import type { CircuitBreaker } from './breaker';
 import { effectiveRate } from './policy';
@@ -12,7 +12,7 @@ import type { RateLimiter, UsageTicket } from './ratelimit';
  */
 export function createGuard(limiter: RateLimiter, breaker: CircuitBreaker): CallGuard {
   return {
-    admit(adapter: AdapterModule, tool: ErasedTool<BaseContext>, args: unknown): Admission {
+    admit(adapter: McpModule, tool: ErasedTool<BaseContext>, args: unknown): Admission {
       breaker.check(adapter.platform);
       const keys = budgetKeys(tool, args);
       // The platform budget and one budget per company board, all or nothing: a board that is out of room refuses the call and
@@ -33,7 +33,7 @@ export function createGuard(limiter: RateLimiter, breaker: CircuitBreaker): Call
         },
       };
     },
-    failed(adapter: AdapterModule, error: JobwatchError): void {
+    failed(adapter: McpModule, error: JobwatchError): void {
       if (error.code === 'needs_login') breaker.open(adapter.platform, 'needs_login');
       else if (error.code === 'checkpoint') breaker.open(adapter.platform, 'checkpoint');
     },
@@ -90,7 +90,7 @@ export function budgetKeys(tool: ErasedTool<BaseContext>, args: unknown): string
 }
 
 /** Policy lookup for a set of loaded adapters: unknown platforms fall back to the strictest default. */
-export function policyFor(adapters: readonly AdapterModule[]) {
+export function policyFor(adapters: readonly McpModule[]) {
   const byPlatform = new Map(adapters.map((adapter) => [adapter.platform, effectiveRate(adapter)] as const));
   const byKey = new Map(adapters.map((adapter) => [adapter.platform, adapter.keyRate ?? effectiveRate(adapter)] as const));
   return (platform: string) => {

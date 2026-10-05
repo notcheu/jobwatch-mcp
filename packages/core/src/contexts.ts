@@ -1,6 +1,6 @@
 import {
   JobwatchError,
-  type AdapterModule,
+  type McpModule,
   type BaseContext,
   type BrowserAdapterContext,
   type BrowserSession,
@@ -94,7 +94,7 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
     },
   });
 
-  const httpFor = (adapter: AdapterModule): HttpClient => {
+  const httpFor = (adapter: McpModule): HttpClient => {
     let client = httpClients.get(adapter.id);
     if (client === undefined) {
       const openHttps = adapter.kind === 'http' && adapter.openHttps === true;
@@ -109,7 +109,7 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
     }
     return client;
   };
-  const pacerFor = (adapter: AdapterModule) => {
+  const pacerFor = (adapter: McpModule) => {
     let pacer = pacers.get(adapter.id);
     if (pacer === undefined) {
       pacer = createPacer(adapter.pacing ?? (adapter.kind === 'browser' ? DEFAULT_BROWSER_PACING : NO_PACING), deps.pacerOptions);

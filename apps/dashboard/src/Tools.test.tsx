@@ -10,6 +10,7 @@ const adapter = (over: Record<string, unknown> = {}) => ({
   id: 'teamtailor',
   displayName: 'Teamtailor',
   platform: 'teamtailor',
+  role: 'adapter',
   kind: 'http',
   enabled: true,
   pinned: false,
@@ -27,6 +28,7 @@ const linkedin = adapter({
   id: 'linkedin',
   displayName: 'LinkedIn',
   platform: 'linkedin',
+  role: 'adapter',
   kind: 'browser',
   enabled: false,
   hosts: ['www.linkedin.com'],
@@ -52,7 +54,7 @@ describe('tools and status', () => {
     await screen.findByText('Teamtailor');
     const enabled = screen.getByRole('region', { name: 'Enabled adapters' });
     const disabled = screen.getByRole('region', { name: 'Disabled adapters' });
-    expect(within(enabled).getByRole('heading', { name: 'Enabled (1)' })).toBeInTheDocument();
+    expect(within(enabled).getByRole('heading', { name: 'Adapters enabled (1)' })).toBeInTheDocument();
     expect(within(enabled).getByText('Teamtailor')).toBeInTheDocument();
     expect(within(enabled).getByText('HTTP')).toBeInTheDocument();
     expect(within(enabled).getByText(/teamtailor_jobs/)).toBeInTheDocument();
@@ -80,6 +82,7 @@ describe('tools and status', () => {
           id: 'linkedin',
           displayName: 'LinkedIn',
           platform: 'linkedin',
+          role: 'adapter',
           kind: 'browser',
           session: { state: 'needs_login', checkedAt: NOW, note: 'LinkedIn shows the sign-in page.' },
           breaker: { reason: 'needs_login', until: null },

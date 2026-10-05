@@ -66,7 +66,7 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
         <div className="space-y-1">
           <CardTitle className="text-sm normal-case tracking-normal text-foreground">{adapter.displayName}</CardTitle>
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="secondary">{adapter.kind === 'browser' ? 'browser' : 'HTTP'}</Badge>
+            <Badge variant="secondary">{adapter.role === 'utility' ? 'utility' : adapter.kind === 'browser' ? 'browser' : 'HTTP'}</Badge>
             <Badge variant={adapter.enabled ? 'success' : 'outline'}>{adapter.enabled ? 'enabled' : 'disabled'}</Badge>
             {adapter.session !== null && (
               <Badge variant={SESSION_BADGE[adapter.session.state].variant} title={adapter.session.note ?? undefined}>
@@ -88,7 +88,9 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
       </CardHeader>
       <CardContent className="space-y-3">
         {adapter.pinned && (
-          <p className="text-xs text-muted-foreground">The list of adapters is set by JW_ADAPTERS: unset it to change it here.</p>
+          <p className="text-xs text-muted-foreground">
+            The list of {adapter.role}s is set by {adapter.role === 'adapter' ? 'JW_ADAPTERS' : 'JW_UTILITIES'}: unset it to change it here.
+          </p>
         )}
         {warnsAboutBudget && !adapter.enabled && (
           <p className="flex items-start gap-1.5 text-xs text-warning">
@@ -175,8 +177,9 @@ export function Tools() {
   });
 
   const adapters = tools.data?.adapters ?? [];
-  const on = adapters.filter((adapter) => adapter.enabled);
-  const off = adapters.filter((adapter) => !adapter.enabled);
+  const on = adapters.filter((adapter) => adapter.role === 'adapter' && adapter.enabled);
+  const off = adapters.filter((adapter) => adapter.role === 'adapter' && !adapter.enabled);
+  const utilities = adapters.filter((adapter) => adapter.role === 'utility');
   const runtime = tools.data?.runtime;
 
   return (
@@ -250,7 +253,7 @@ export function Tools() {
       </Card>
 
       <section aria-label="Enabled adapters" className="space-y-3">
-        <h2 className="text-sm font-semibold">Enabled ({on.length})</h2>
+        <h2 className="text-sm font-semibold">Adapters enabled ({on.length})</h2>
         {on.length === 0 && <p className="text-sm text-muted-foreground">No adapter is enabled. Turn one on below.</p>}
         <div className="grid gap-4 xl:grid-cols-2">
           {on.map((adapter) => (
@@ -259,9 +262,18 @@ export function Tools() {
         </div>
       </section>
       <section aria-label="Disabled adapters" className="space-y-3">
-        <h2 className="text-sm font-semibold">Disabled ({off.length})</h2>
+        <h2 className="text-sm font-semibold">Adapters disabled ({off.length})</h2>
         <div className="grid gap-4 xl:grid-cols-2">
           {off.map((adapter) => (
+            <AdapterCard key={adapter.id} adapter={adapter} onChanged={setNotice} onReauth={() => setReauth(true)} />
+          ))}
+        </div>
+      </section>
+      <section aria-label="Utilities" className="space-y-3">
+        <h2 className="text-sm font-semibold">Utilities ({utilities.length})</h2>
+        <p className="text-xs text-muted-foreground">Helper tools that fetch no jobs. Each has its own budget.</p>
+        <div className="grid gap-4 xl:grid-cols-2">
+          {utilities.map((adapter) => (
             <AdapterCard key={adapter.id} adapter={adapter} onChanged={setNotice} onReauth={() => setReauth(true)} />
           ))}
         </div>

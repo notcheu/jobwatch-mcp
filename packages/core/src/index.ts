@@ -7,12 +7,14 @@ export type { EngineLogger, LoggerOptions } from './logging';
 export {
   ADAPTERS_FILE,
   adaptersFilePath,
+  isPinned,
+  pinVariable,
   readEnabledFile,
   resolveEnabledAdapters,
   setAdaptersEnabled,
   writeEnabledFile,
 } from './adapters-config';
-export type { EnabledAdapters, EnabledSource, ToggleResult } from './adapters-config';
+export type { EnabledAdapters, EnabledLists, EnabledSource, ModuleGroup, ToggleResult } from './adapters-config';
 export { RegistryError, listTools, loadAdapters } from './registry';
 export type { InstalledAdapters, ListedTool, RegisteredTool, Registry } from './registry';
 export { MAX_PARAMS_BYTES, UnknownToolError, argsHash, callTool, noRuntime, paramsForHistory } from './call';

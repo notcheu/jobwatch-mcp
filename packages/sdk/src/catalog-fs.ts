@@ -4,11 +4,11 @@
  */
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AdapterModule } from './adapter';
+import type { McpModule } from './adapter';
 import { buildCatalog, catalogFileName, stableStringify } from './catalog';
 
 /** Write one JSON file per tool into `dir` and delete stale `*.json` files of removed tools. */
-export async function writeCatalogSnapshot(adapter: AdapterModule, dir: string): Promise<string[]> {
+export async function writeCatalogSnapshot(adapter: McpModule, dir: string): Promise<string[]> {
   await mkdir(dir, { recursive: true });
   const entries = buildCatalog(adapter);
   const wanted = new Set(entries.map((entry) => catalogFileName(entry.name)));
@@ -26,7 +26,7 @@ export interface SnapshotDiff {
 }
 
 /** Compare the committed snapshot in `dir` with what the adapter defines now. Empty arrays everywhere = in sync. */
-export async function diffCatalogSnapshot(adapter: AdapterModule, dir: string): Promise<SnapshotDiff> {
+export async function diffCatalogSnapshot(adapter: McpModule, dir: string): Promise<SnapshotDiff> {
   const entries = buildCatalog(adapter);
   const wanted = new Map(entries.map((entry) => [catalogFileName(entry.name), stableStringify(entry)]));
   const existing = await readdir(dir).then(

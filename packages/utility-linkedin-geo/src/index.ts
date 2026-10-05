@@ -2,7 +2,7 @@ import {
   JobwatchError,
   SDK_API_VERSION,
   bestLocation,
-  defineAdapter,
+  defineUtility,
   defineHttpTool,
   forgetLocation,
   lookupLocations,
@@ -108,13 +108,13 @@ export const locations = defineHttpTool({
   },
 });
 
-export default defineAdapter({
+export default defineUtility({
   id: 'linkedin-geo',
   displayName: 'LinkedIn locations',
-  description: 'Finds the LinkedIn geoId of a place and remembers names for places (read-only on LinkedIn, no login, no browser).',
+  description:
+    'Utility: finds the LinkedIn geoId of a place and remembers names for places (read-only, no login, no browser, fetches no jobs).',
   sdkApi: SDK_API_VERSION,
   platform: 'linkedin-geo',
-  kind: 'http',
   allowedHosts: ['www.linkedin.com'],
   rate: { perHour: 60, perDay: 300 },
   tools: [locations],
