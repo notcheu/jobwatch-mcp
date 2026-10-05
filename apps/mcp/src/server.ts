@@ -406,15 +406,15 @@ export async function start(options: StartOptions): Promise<RunningServer> {
             'dashboard.stop': async () => ({ ...(await dashboard.stop()) }),
             'dashboard.status': async () => ({ ...dashboard.status() }),
             // places: look up, remember and forget names for LinkedIn locations, through the linkedin_locations tool
-            'geo.lookup': (request) => runTool('linkedin_locations', { query: String(request['query'] ?? '') }),
-            'geo.save': (request) =>
+            'linkedin-geo.lookup': (request) => runTool('linkedin_locations', { query: String(request['query'] ?? '') }),
+            'linkedin-geo.save': (request) =>
               runTool('linkedin_locations', {
                 save_as: String(request['alias'] ?? ''),
                 id: String(request['id'] ?? ''),
                 ...(typeof request['label'] === 'string' && request['label'] !== '' ? { label: request['label'] } : {}),
               }),
-            'geo.forget': (request) => runTool('linkedin_locations', { forget: String(request['alias'] ?? '') }),
-            'geo.list': () => runTool('linkedin_locations', { list: true }),
+            'linkedin-geo.forget': (request) => runTool('linkedin_locations', { forget: String(request['alias'] ?? '') }),
+            'linkedin-geo.list': () => runTool('linkedin_locations', { list: true }),
           },
           (error) => logger.warn({ err: error }, 'control_socket_error'),
         ).catch((error: unknown) => {

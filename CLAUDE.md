@@ -54,7 +54,7 @@ npm run test:dashboard      # smoke test of the built router and dashboard (afte
 npm run test:integration    # builds the browser image and drives a REAL browser container (needs docker; never in CI): tests/integration/run.sh
 npm run catalog:gen         # regenerate every adapter's catalog/ snapshot (runs the adapter contract tests in update mode); commit the result
 npm run new:adapter -- <id> [--kind http|browser]   # scaffold a new adapter package, register it in packages/adapters, first snapshot
-npm run jobwatch -- adapters list [--tools] [--json] [<id...>]|enable|disable <id...> | login start|stop <platform> | geo <text> [--save <name>] | dashboard start|stop|status | doctor   # which installed adapters the router plugs in (JW_DATA_DIR=./data for local use)
+npm run jobwatch -- adapters list [--tools] [--json] [<id...>]|enable|disable <id...> | login start|stop <platform> | linkedin-geo <text> [--save <name>] | dashboard start|stop|status | doctor   # which installed adapters the router plugs in (JW_DATA_DIR=./data for local use)
 docker build -t jobwatch-router:dev .   # the router image (multi-arch in CI)
 docker compose -f deploy/compose.yml --env-file deploy/.env up -d      # as mcpuser
 ```

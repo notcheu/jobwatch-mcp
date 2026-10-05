@@ -192,7 +192,7 @@ Signing in uses Google, with the same OAuth client as the connector by default: 
 | `adapters disable <id...>` | Disable adapters. |
 | `login start <platform> [--port 6080]` | Start a visible browser on the platform's profile to sign in by hand (noVNC on loopback). |
 | `login stop <platform>` | Stop it; the profile keeps the session. |
-| `geo <text> [--save <name> [--pick <n>]]`, `geo --list`, `geo --forget <name>` | Find the LinkedIn geoId of a place (the candidates with their ids), remember a name for one, list or forget the remembered names. Needs the `linkedin-geo` adapter. |
+| `linkedin-geo <text> [--save <name> [--pick <n>]]`, `linkedin-geo --list`, `linkedin-geo --forget <name>` | Find the LinkedIn geoId of a place (the candidates with their ids), remember a name for one, list or forget the remembered names. Needs the `linkedin-geo` adapter. |
 | `dashboard start [--ttl <minutes>]` | Open the operator dashboard on the running router (closed by default; it closes after 30 minutes without use). |
 | `dashboard stop` | Close it and end every session. |
 | `dashboard status` | Is it open, where, and when it closes. |
