@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SDK_API_VERSION, defineAdapter, defineBrowserTool, defineHttpTool, defineUtility, z, type AdapterModule } from '@jobwatch/sdk';
-import type { InstalledAdapters } from '@jobwatch/core';
+import type { InstalledAdapters, InstalledUtilities } from '@jobwatch/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EXIT, run, type Deps } from './cli';
 
@@ -85,7 +85,8 @@ const geo = defineUtility({
   ],
 });
 
-const table: InstalledAdapters = { linkedin: async () => linkedin, apec: async () => apec, 'linkedin-geo': async () => geo };
+const table: InstalledAdapters = { linkedin: async () => linkedin, apec: async () => apec };
+const utilitiesTable: InstalledUtilities = { 'linkedin-geo': async () => geo };
 
 let dataDir: string;
 let out: string;
@@ -103,7 +104,8 @@ const cli = (argv: string[], over: Partial<Deps> = {}): Promise<number> =>
   run(argv, {
     io: { out: (t) => (out += t), err: (t) => (err += t) },
     env: { JW_DATA_DIR: dataDir },
-    installed: table,
+    adapters: table,
+    utilities: utilitiesTable,
     version: '9.9.9',
     ...over,
   });
@@ -204,13 +206,13 @@ describe('adapters list', () => {
   });
 
   it('says so when nothing is installed', async () => {
-    expect(await cli(['adapters', 'list'], { installed: {} })).toBe(EXIT.ok);
+    expect(await cli(['adapters', 'list'], { adapters: {} })).toBe(EXIT.ok);
     expect(out).toContain('No adapters are installed.');
   });
 
   it('shows a broken adapter instead of hiding it, and exits 2', async () => {
     const broken: InstalledAdapters = { ...table, ghost: async () => Promise.reject(new Error('Cannot find module')) };
-    expect(await cli(['adapters', 'list'], { installed: broken })).toBe(EXIT.broken);
+    expect(await cli(['adapters', 'list'], { adapters: broken })).toBe(EXIT.broken);
     expect(out).toMatch(/ghost\s+disabled\s+-\s+-\s+BROKEN: Cannot find module/);
     expect(out).toMatch(/apec\s+disabled/);
   });

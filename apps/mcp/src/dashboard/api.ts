@@ -19,13 +19,13 @@ import {
   type Tools,
   type Usage,
 } from '@jobwatch/dashboard-api';
-import { describeInstalled } from '@jobwatch/adapters';
+import { describeInstalledModules } from '@jobwatch/mcp-modules';
 import {
   JOB_SORT_COLUMNS,
   type CallEntry,
   type CallLog,
   type CircuitBreaker,
-  type InstalledAdapters,
+  type InstalledModules,
   type PlatformStatus,
   type RateLimiter,
   type StoredSalary,
@@ -45,7 +45,7 @@ export interface DashboardData {
   limiter: RateLimiter;
   breaker: CircuitBreaker;
   registry: () => Registry;
-  installed: InstalledAdapters;
+  installed: InstalledModules;
   /** `JW_ADAPTERS` pins the list of adapters. */
   pinned: boolean;
   runtime: () => RuntimeManager | undefined;
@@ -267,7 +267,7 @@ export async function getTools(data: DashboardData): Promise<Tools> {
   const enabled = new Set(registry.enabled.map((adapter) => adapter.id));
   const now = data.clock();
   const adapters = [];
-  for (const entry of await describeInstalled(data.installed)) {
+  for (const entry of await describeInstalledModules(data.installed)) {
     const load = data.installed[entry.id];
     if (entry.summary === undefined || load === undefined) continue;
     const catalog = buildCatalog(await load());

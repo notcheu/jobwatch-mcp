@@ -1,12 +1,12 @@
 import { SDK_API_VERSION, defineAdapter, z, defineHttpTool, type AdapterModule } from '@jobwatch/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { alpha, beta, handlerCalls, httpTool } from './__fixtures__/adapters';
-import { RegistryError, listTools, loadAdapters, type InstalledAdapters } from './registry';
+import { RegistryError, listTools, loadModules, type InstalledModules } from './registry';
 
-const installed: InstalledAdapters = { alpha: async () => alpha, beta: async () => beta };
-const problemsOf = async (enabled: string[], table: InstalledAdapters): Promise<readonly string[]> => {
+const installed: InstalledModules = { alpha: async () => alpha, beta: async () => beta };
+const problemsOf = async (enabled: string[], table: InstalledModules): Promise<readonly string[]> => {
   try {
-    await loadAdapters(enabled, table);
+    await loadModules(enabled, table);
   } catch (error) {
     if (error instanceof RegistryError) return error.problems;
     throw error;
@@ -18,10 +18,10 @@ beforeEach(() => {
   handlerCalls.count = 0;
 });
 
-describe('loadAdapters: what gets plugged in', () => {
+describe('loadModules: what gets plugged in', () => {
   it('plugs in nothing when nothing is enabled, and imports nothing', async () => {
     const loader = vi.fn(async () => alpha);
-    const registry = await loadAdapters([], { alpha: loader });
+    const registry = await loadModules([], { alpha: loader });
     expect(registry.adapters).toEqual([]);
     expect([...registry.tools.keys()]).toEqual([]);
     expect(loader).not.toHaveBeenCalled();
@@ -30,21 +30,21 @@ describe('loadAdapters: what gets plugged in', () => {
   it('imports only the enabled adapters', async () => {
     const alphaLoader = vi.fn(async () => alpha);
     const betaLoader = vi.fn(async () => beta);
-    const registry = await loadAdapters(['beta'], { alpha: alphaLoader, beta: betaLoader });
+    const registry = await loadModules(['beta'], { alpha: alphaLoader, beta: betaLoader });
     expect(registry.adapters.map((a) => a.id)).toEqual(['beta']);
     expect(alphaLoader).not.toHaveBeenCalled();
     expect(betaLoader).toHaveBeenCalledOnce();
   });
 
   it('indexes every tool by name with its adapter, keeping the requested order', async () => {
-    const registry = await loadAdapters(['beta', 'alpha'], installed);
+    const registry = await loadModules(['beta', 'alpha'], installed);
     expect(registry.adapters.map((a) => a.id)).toEqual(['beta', 'alpha']);
     expect([...registry.tools.keys()]).toEqual(['beta_search', 'alpha_search', 'alpha_job']);
     expect(registry.tools.get('alpha_job')?.adapter.id).toBe('alpha');
   });
 });
 
-describe('loadAdapters: fail fast', () => {
+describe('loadModules: fail fast', () => {
   it('rejects an enabled id that is not installed and lists what is', async () => {
     expect(await problemsOf(['gamma'], installed)).toEqual(['"gamma" is enabled but not installed (installed: alpha, beta)']);
   });
@@ -99,7 +99,7 @@ describe('loadAdapters: fail fast', () => {
 
   it('allows two adapters of the same kind to share a platform', async () => {
     const sibling = defineAdapter({ ...alpha, id: 'alpha-two', tools: [httpTool('alpha_two_search')] }) as AdapterModule;
-    const registry = await loadAdapters(['alpha', 'alpha-two'], { alpha: async () => alpha, 'alpha-two': async () => sibling });
+    const registry = await loadModules(['alpha', 'alpha-two'], { alpha: async () => alpha, 'alpha-two': async () => sibling });
     expect(registry.adapters).toHaveLength(2);
   });
 
@@ -107,7 +107,7 @@ describe('loadAdapters: fail fast', () => {
     const problems = await problemsOf(['gamma', 'delta'], installed);
     expect(problems).toHaveLength(2);
     try {
-      await loadAdapters(['gamma', 'delta'], installed);
+      await loadModules(['gamma', 'delta'], installed);
     } catch (error) {
       expect((error as Error).message).toMatch(/^Cannot load adapters:\n {2}- "gamma".*\n {2}- "delta"/);
     }
@@ -116,15 +116,15 @@ describe('loadAdapters: fail fast', () => {
 
 describe('listTools (answers tools/list)', () => {
   it('lists only the enabled adapters tools, in a stable order', async () => {
-    const registry = await loadAdapters(['alpha', 'beta'], installed);
+    const registry = await loadModules(['alpha', 'beta'], installed);
     expect(listTools(registry).map((tool) => tool.name)).toEqual(['alpha_search', 'alpha_job', 'beta_search']);
-    expect(listTools(await loadAdapters(['beta'], installed)).map((tool) => tool.name)).toEqual(['beta_search']);
-    expect(listTools(await loadAdapters([], installed))).toEqual([]);
+    expect(listTools(await loadModules(['beta'], installed)).map((tool) => tool.name)).toEqual(['beta_search']);
+    expect(listTools(await loadModules([], installed))).toEqual([]);
   });
 
   it('is pure data: it never runs a handler, a session check or a loader', async () => {
     const loader = vi.fn(async () => alpha);
-    const registry = await loadAdapters(['alpha'], { alpha: loader });
+    const registry = await loadModules(['alpha'], { alpha: loader });
     loader.mockClear();
     listTools(registry);
     listTools(registry);
@@ -133,7 +133,7 @@ describe('listTools (answers tools/list)', () => {
   });
 
   it('exposes schemas and annotations, and nothing about hosts, limits or the platform', async () => {
-    const [tool] = listTools(await loadAdapters(['alpha'], installed));
+    const [tool] = listTools(await loadModules(['alpha'], installed));
     expect(Object.keys(tool ?? {}).sort()).toEqual(['annotations', 'description', 'inputSchema', 'name', 'outputSchema', 'title']);
     expect(tool?.annotations).toEqual({ readOnlyHint: true, openWorldHint: true, idempotentHint: true });
     expect(tool?.inputSchema).toMatchObject({ type: 'object', additionalProperties: false });
@@ -141,7 +141,7 @@ describe('listTools (answers tools/list)', () => {
   });
 
   it('serialises to JSON the MCP SDK can send', async () => {
-    const tools = listTools(await loadAdapters(['alpha', 'beta'], installed));
+    const tools = listTools(await loadModules(['alpha', 'beta'], installed));
     expect(JSON.parse(JSON.stringify(tools))).toEqual(tools);
   });
 });
@@ -169,7 +169,7 @@ describe('an adapter added later needs no engine change', () => {
         }),
       ],
     });
-    const registry = await loadAdapters(['gamma'], { gamma: async () => gamma });
+    const registry = await loadModules(['gamma'], { gamma: async () => gamma });
     expect(listTools(registry).map((tool) => tool.name)).toEqual(['gamma_ping']);
   });
 });

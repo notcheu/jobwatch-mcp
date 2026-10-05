@@ -1,6 +1,6 @@
 import { SDK_API_VERSION, defineAdapter, defineHttpTool, z, type AdapterModule } from '@jobwatch/sdk';
 import { describe, expect, it } from 'vitest';
-import { loadAdapters } from './registry';
+import { loadModules } from './registry';
 import { createRegistryHolder } from './registryHolder';
 
 const annotations = { readOnlyHint: true, openWorldHint: false, idempotentHint: true } as const;
@@ -28,7 +28,7 @@ const adapter = (id: string, tools: string[]): AdapterModule =>
   });
 
 const table = { aa: async () => adapter('aa', ['aa_one', 'aa_two']), bb: async () => adapter('bb', ['bb_one']) };
-const load = (ids: readonly string[]) => loadAdapters(ids, table);
+const load = (ids: readonly string[]) => loadModules(ids, table);
 
 describe('RegistryHolder', () => {
   it('serves the current registry through a view that follows a reload, and reports what changed', async () => {

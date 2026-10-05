@@ -26,22 +26,24 @@ jobwatch-mcp/
                                            BrowserSession, HttpClient, SearchLayout, error classes, SDK_API_VERSION.
                                            Subpath @jobwatch/sdk/testkit: FakeBrowserSession, contract-test runner.
                                            Light dependencies (zod only).
-    core/               @jobwatch/core     THE ENGINE: config, registry (loadAdapters), handleCall pipeline, limits
+    core/               @jobwatch/core     THE ENGINE: config, registry (loadModules), handleCall pipeline, limits
                                            (ratelimit, breaker), store (SQLite), runtime (RuntimeBackend, DockerCliBackend,
                                            manager, watchdog), browser (session.ts over CDP, cdp.ts, fingerprint.ts),
                                            obs (pino, prom-client), built-in ops tools (session_status, memory_report).
                                            Depends on sdk only.
-    adapters/           @jobwatch/adapters THE INSTALLED LIST: one static map  name -> () => import("@jobwatch/adapter-<name>")
-                                           plus metadata. The single registration point shared by the server and the CLI.
+    mcp-modules/        @jobwatch/mcp-modules THE INSTALLED LISTS: two static maps, `installedAdapters` and `installedUtilities`
+                                           (name -> () => import("@jobwatch/adapter-<name>" or "@jobwatch/utility-<name>")), plus
+                                           `installedModules` (both) and the describe functions. The single registration point
+                                           shared by the server and the CLI.
     adapter-linkedin/   @jobwatch/adapter-linkedin   index.ts (defineAdapter), layouts/classic.ts, layouts/aiSearchResults.ts,
                                            parse.ts, selectors.ts, extract.js, fixtures/, catalog/ (generated snapshot), tests
     adapter-ats/ adapter-apec/ adapter-wttj/         same shape, added in later phases
   apps/
-    mcp/                @jobwatch/mcp      composition root: reads config, asks @jobwatch/adapters for the ENABLED adapters,
+    mcp/                @jobwatch/mcp      composition root: reads config, asks @jobwatch/mcp-modules for the ENABLED modules,
                                            hands them to core, serves stateless Streamable HTTP, /healthz, /metrics.
                                            The router Dockerfile builds this app.
     cli/                @jobwatch/cli      `jobwatch` binary: adapters list|enable|disable, login start|stop <platform>, doctor
-  tools/new-adapter/                       `npm run new:adapter -- <id> [--kind http|browser]`: scaffolds a new adapter package
+  tools/new-module/                        `npm run new:adapter -- <id> [--kind http|browser]` and `npm run new:utility -- <id>`: scaffold a new adapter or utility package
                                            (a plain Node script, not an Nx plugin generator: no build pipeline for ten small files)
   images/browser/       Dockerfile, entrypoint.sh, chrome-seccomp.json (see 05)
   deploy/               compose.yml, nginx site files (see 10)
@@ -49,10 +51,11 @@ jobwatch-mcp/
   Dockerfile            router image (builds apps/mcp)   .dockerignore
   data/                 runtime state (gitignored): router SQLite, adapters.json
 ```
-Dependency rules, enforced by Nx module boundaries (`@nx/enforce-module-boundaries` with tags `type:sdk`, `type:core`, `type:adapter`, `type:adapters`, `type:app`) and by lint:
+Dependency rules, enforced by Nx module boundaries (`@nx/enforce-module-boundaries` with tags `type:sdk`, `type:core`, `type:adapter`, `type:utility`, `type:modules`, `type:app`) and by lint:
 - `sdk` depends on nothing in the workspace. `core` depends only on `sdk`.
 - **`adapter-*` may depend only on `sdk`.** They cannot import `core`, other adapters, `playwright-core`, `node:sqlite`, or Node's `fs`, `net`, `child_process`, `http(s)` (lint rule `no-restricted-imports`). Network and browser access exist only through `AdapterContext`.
-- `adapters` depends on every `adapter-*` and on `sdk`. `apps/*` may depend on `core`, `sdk` and `adapters`.
+- `utility-*` follow the same rule as `adapter-*`: `sdk` only.
+- `mcp-modules` depends on every `adapter-*`, every `utility-*` and on `sdk`. `apps/*` may depend on `core`, `sdk` and `mcp-modules`.
 - `playwright-core` is imported in exactly one file: `packages/core/src/browser/session.ts`.
 
 ## Engine interfaces (sketch) and where the adapter contract lives
@@ -74,8 +77,8 @@ interface RuntimeBackend {
 
 ## Implemented in `packages/core` (Phase 1, step 3)
 - **`loadConfig(env)`** (`config.ts`): validates every `JW_*` variable with zod, collects all problems at once, never echoes values. Empty values count as unset (docker compose passes `VAR=`). Cross-checks: `http` base URL only for loopback; **`JW_AUTH=none` only with a loopback `JW_BASE_URL`** (a no-auth server can never run behind the public hostname); `JW_MEM_HIGH_MB < JW_MEM_MAX_MB`; the metrics port differs from the MCP port. Unknown `JW_*` variables are reported as warnings (typos). `describeConfig` redacts the shared secret.
-- **Enabled adapters** (`adapters-config.ts`): `<dataDir>/adapters.json`, written atomically (temp file + rename), sorted and de-duplicated. Precedence, per list: `JW_ADAPTERS` / `JW_UTILITIES` > file > nothing. A missing file means nothing enabled; a present but broken file is an error, never "nothing". Enabling refuses ids that are not installed; **disabling always works** so a stale entry (an adapter deleted from the code) can be removed; editing is refused while `JW_ADAPTERS` is set.
-- **`loadAdapters(enabledIds, installed)`** (`registry.ts`): imports only the enabled adapters, runs `validateAdapter` on each, and fails with every problem at once: unknown id, module id different from its key, a loader that throws, duplicate tool names across adapters, two adapters on one platform with different kinds. **`listTools(registry)`** answers `tools/list` from the definitions: pure data, no handler, no container (tested with a handler call counter).
+- **Enabled modules** (`adapters-config.ts`: `resolveEnabledModules`, `setModulesEnabled`): `<dataDir>/adapters.json`, written atomically (temp file + rename), sorted and de-duplicated. Precedence, per list: `JW_ADAPTERS` / `JW_UTILITIES` > file > nothing. A missing file means nothing enabled; a present but broken file is an error, never "nothing". Enabling refuses ids that are not installed; **disabling always works** so a stale entry (an adapter deleted from the code) can be removed; editing is refused while `JW_ADAPTERS` is set.
+- **`loadModules(enabledIds, installed)`** (`registry.ts`): imports only the enabled adapters, runs `validateAdapter` on each, and fails with every problem at once: unknown id, module id different from its key, a loader that throws, duplicate tool names across adapters, two adapters on one platform with different kinds. **`listTools(registry)`** answers `tools/list` from the definitions: pure data, no handler, no container (tested with a handler call counter).
 - **Logging** (`logging.ts`): pino JSON with ISO timestamps; the logger an adapter receives is tagged with its id and sanitizes free-form fields: sensitive keys (`cookie`, `token`, `secret`, `password`, `authorization`, `session`, `api key`, `li_at`) become `[redacted]`, URL values lose query string, userinfo and fragment, nested objects are omitted.
 
 ## Implemented in `apps/mcp` and `apps/cli` (Phase 1, step 4)
@@ -139,7 +142,7 @@ interface RuntimeBackend {
 - **Tests:** unit tests use fakes (`npm test`, about 10 s). `npm run test:integration` (`tests/integration/run.sh`) builds the browser image and runs a router-like container on an internal network against a REAL browser container through the real `docker` CLI; it is not part of CI.
 
 ## Implemented in `packages/core`: built-in ops tools (Phase 1, step 7a)
-- **The `ops` adapter** (`ops/ops.ts`) is built into the engine: `loadAdapters(enabled, installed, builtins)` always loads it, validates it by the same rules as any adapter, and reserves its id. So even on a fresh install with nothing enabled, `tools/list` shows `session_status` and `memory_report` (built-ins first). It has its own platform (`ops`), so an open breaker on LinkedIn never blocks it. `Registry.enabled` holds the selected adapters without the built-ins (metrics and `adapters list` use that).
+- **The `ops` adapter** (`ops/ops.ts`) is built into the engine: `loadModules(enabled, installed, builtins)` always loads it, validates it by the same rules as any adapter, and reserves its id. So even on a fresh install with nothing enabled, `tools/list` shows `session_status` and `memory_report` (built-ins first). It has its own platform (`ops`), so an open breaker on LinkedIn never blocks it. `Registry.enabled` holds the selected adapters without the built-ins (metrics and `adapters list` use that).
 - **`session_status(platform | "all")`**: for every enabled browser adapter with a `sessionCheck`, leases the browser, runs the check, and returns `{platform, logged_in, state: ok|needs_login|checkpoint|unknown, checked_at, cached, note}`. Rules: **a platform whose breaker says `checkpoint` is answered from the breaker without contacting the site** (a pending verification must not be provoked by another page load); only a healthy answer is cached (10 minutes), because after a lost session the user signs in again and expects the next check to see it; `ok` closes a `needs_login` breaker, `needs_login` and `checkpoint` open theirs; a rate limit, timeout, budget or connection failure is `unknown` with the reason, never a verdict on the session; unexpected errors give a generic note. Each real check spends one point of the platform's budget.
 - **`memory_report`**: process memory and uptime, runtime state (platform, uptime, peak MB, queue length), per enabled platform the rate usage and any open breaker, and the last 20 calls (time, tool, outcome, duration). No arguments, hashes, container addresses or names, or paths.
 - A test of the engine's own rules caught the first draft: the `platform` string had a pattern but no `max()`, so the startup check refused the built-in until it was bounded.
@@ -188,16 +191,19 @@ export default defineAdapter({
 Tools are built with `defineHttpTool` (handler context: `{ http, jobs, log, pace }`) or `defineBrowserTool` (adds `session`). The compiler rejects a browser tool inside an HTTP adapter, `readOnlyHint: false`, a handler result that does not match the `output` schema, and any use of `ctx.session` in an HTTP tool (type tests in `packages/sdk/src/validate.test.ts`).
 
 ### Registration and enable / disable
-1. **Installed**: `packages/adapters/src/index.ts` is the one place that lists adapter packages:
+1. **Installed**: `packages/mcp-modules/src/index.ts` is the one place that lists adapter and utility packages, in two maps:
    ```ts
-   export const installed = {
+   export const installedAdapters = {
      linkedin: () => import("@jobwatch/adapter-linkedin").then((m) => m.default),
      apec:     () => import("@jobwatch/adapter-apec").then((m) => m.default),
-   } satisfies Record<string, () => Promise<AdapterModule>>;
+   } satisfies InstalledAdapterMap;
+   export const installedUtilities = {
+     "linkedin-geo": () => import("@jobwatch/utility-linkedin-geo").then((m) => m.default),
+   } satisfies InstalledUtilityMap;
    ```
-   The generator adds the line between the `<installed:begin>` / `<installed:end>` markers, sorted. Both the server and the CLI import this map, so they always agree.
+   `installedModules` is both merged (ids are unique across the two). The generators add a line between the `<adapters:begin>` / `<adapters:end>` or the `<utilities:begin>` / `<utilities:end>` markers, sorted. Both the server and the CLI import these maps, so they always agree. The types and functions are split the same way: `AdapterSummary` / `UtilitySummary` (and `ModuleSummary` for both) in the SDK, `InstalledAdapters` / `InstalledUtilities` / `InstalledModules` in core, `describeInstalledAdapters` / `describeInstalledUtilities` / `describeInstalledModules` in `mcp-modules`. An adapter in the utilities map, or the reverse, is reported as broken.
 2. **Enabled**: which installed modules the router actually plugs in. Stored in `adapters.json` in the data directory (`/data/adapters.json` in the container): `{ "enabled": ["linkedin"], "utilities": ["linkedin-geo"] }`: `enabled` lists adapters, `utilities` lists utilities (a file without `utilities` is valid). Environment overrides: `JW_ADAPTERS=linkedin,apec` and `JW_UTILITIES=linkedin-geo` (each wins over its list in the file; the CLI refuses to edit a list while its variable is set). **Default on a fresh install: nothing enabled**, so only the built-in ops tools are exposed; the LinkedIn adapter must be enabled on purpose (its usage budget needs the owner's approval, `09-security.md`).
-3. **Plugging**: `apps/mcp` calls `loadAdapters(enabledNames, installed)` from core. It imports only the enabled adapters, runs the startup checks below, and builds `tools/list` from them. An unknown name is a startup error. A disabled adapter contributes no tools, its runtime is never started, and its profile volume is untouched.
+3. **Plugging**: `apps/mcp` calls `loadModules(enabledNames, installedModules)` from core. It imports only the enabled adapters, runs the startup checks below, and builds `tools/list` from them. An unknown name is a startup error. A disabled adapter contributes no tools, its runtime is never started, and its profile volume is untouched.
 4. **Changing the set requires a router restart** (`docker compose restart router`); the connector may need to be refreshed in Claude to see the new tool list (VERIFY in Phase 2). Stateless HTTP cannot push `tools/list_changed`.
 
 ### CLI (`jobwatch`, package `apps/cli`)
@@ -229,7 +235,7 @@ The CLI ships inside the router image too, so on the host: `docker compose exec 
 - **Host allowlist (`isUrlAllowed` / `assertUrlAllowed`):** https only, no credentials in the URL, default port only, hostname must EQUAL a listed host (no subdomain or suffix matching, no IP literals). Core's real `BrowserSession` and `HttpClient` must call it on every navigation and request, including redirects; the fakes already do.
 - **Testable offline.** `@jobwatch/sdk/testkit` provides `FakeBrowserSession` (replays saved, **logged-out or synthetic** HTML from the adapter's `fixtures/`, never real logged-in pages), a fake `HttpClient`, and `runAdapterContract(adapter)` which checks the startup rules, the snapshot, and every tool's output against its schema.
 
-Checklist for a new adapter: `npm run new:adapter -- <id>` (creates `packages/adapter-<id>`, adds the line and the dependency to `packages/adapters`, runs `npm install`, formats the files and writes the first catalog snapshot); write tools, fixtures and tests; `npm run catalog:gen` after every change to a tool definition; add its pacing and budget to `07-…`/`08-…`; for a browser adapter, add its profile name to the login CLI; `jobwatch adapters enable <id>` on the host.
+Checklist for a new adapter: `npm run new:adapter -- <id>` (creates `packages/adapter-<id>`, adds the line and the dependency to `packages/mcp-modules`, runs `npm install`, formats the files and writes the first catalog snapshot); write tools, fixtures and tests; `npm run catalog:gen` after every change to a tool definition; add its pacing and budget to `07-…`/`08-…`; for a browser adapter, add its profile name to the login CLI; `jobwatch adapters enable <id>` on the host. A new utility is the same with `npm run new:utility -- <id>` (always HTTP; creates `packages/utility-<id>`, registered in the utilities map; `jobwatch utilities enable <id>`).
 
 ## tools/call flow (pseudo-code)
 ```ts

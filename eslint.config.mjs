@@ -32,8 +32,8 @@ const PLAYWRIGHT = {
   message: 'Only packages/core/src/browser/session.ts may import playwright-core (BrowserSession is the abstraction).',
 };
 const ENGINE = [
-  { name: '@jobwatch/core', message: 'Adapters depend on @jobwatch/sdk only.' },
-  { name: '@jobwatch/adapters', message: 'Adapters depend on @jobwatch/sdk only.' },
+  { name: '@jobwatch/core', message: 'Adapters and utilities depend on @jobwatch/sdk only.' },
+  { name: '@jobwatch/mcp-modules', message: 'Adapters and utilities depend on @jobwatch/sdk only.' },
 ];
 
 export default [
@@ -64,10 +64,10 @@ export default [
             { sourceTag: 'type:core', onlyDependOnLibsWithTags: ['type:sdk'] },
             { sourceTag: 'type:adapter', onlyDependOnLibsWithTags: ['type:sdk'] },
             { sourceTag: 'type:utility', onlyDependOnLibsWithTags: ['type:sdk'] },
-            { sourceTag: 'type:adapters', onlyDependOnLibsWithTags: ['type:sdk', 'type:adapter', 'type:utility'] },
+            { sourceTag: 'type:modules', onlyDependOnLibsWithTags: ['type:sdk', 'type:adapter', 'type:utility'] },
             { sourceTag: 'type:api', onlyDependOnLibsWithTags: [] },
             { sourceTag: 'type:ui', onlyDependOnLibsWithTags: ['type:api'] },
-            { sourceTag: 'type:app', onlyDependOnLibsWithTags: ['type:sdk', 'type:core', 'type:adapters', 'type:api'] },
+            { sourceTag: 'type:app', onlyDependOnLibsWithTags: ['type:sdk', 'type:core', 'type:modules', 'type:api'] },
             { sourceTag: 'type:tool', onlyDependOnLibsWithTags: [] },
           ],
         },
@@ -122,7 +122,7 @@ export default [
               group: [
                 '@jobwatch/core',
                 '@jobwatch/sdk',
-                '@jobwatch/adapters',
+                '@jobwatch/mcp-modules',
                 '@jobwatch/adapter-*',
                 '@jobwatch/utility-*',
                 '@jobwatch/mcp',

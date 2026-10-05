@@ -1,6 +1,6 @@
 import { access, constants } from 'node:fs/promises';
-import { ConfigError, type Config, loadConfig, loadStorageSettings, resolveEnabledAdapters } from '@jobwatch/core';
-import { describeInstalled } from '@jobwatch/adapters';
+import { ConfigError, type Config, loadConfig, loadStorageSettings, resolveEnabledModules } from '@jobwatch/core';
+import { describeInstalledAdapters, describeInstalledUtilities } from '@jobwatch/mcp-modules';
 import type { Deps } from './cli';
 
 type Level = 'ok' | 'warn' | 'fail';
@@ -32,12 +32,20 @@ export async function doctor(deps: Deps): Promise<number> {
     () => add('fail', 'data directory', `${settings.dataDir} is missing or not writable by this user`),
   );
 
-  const entries = await describeInstalled(deps.installed);
+  const entries = await describeInstalledAdapters(deps.adapters);
+  const utilityEntries = await describeInstalledUtilities(deps.utilities);
   for (const entry of entries.filter((candidate) => candidate.error !== undefined))
     add('fail', `adapter ${entry.id}`, `broken: ${entry.error ?? 'unknown'}`);
-  const enabled = (await resolveEnabledAdapters(settings)).ids;
-  for (const id of enabled.filter((candidate) => !(candidate in deps.installed))) add('fail', `adapter ${id}`, 'enabled but not installed');
-  add('ok', 'adapters', `${entries.length} installed, ${enabled.length} enabled`);
+  for (const entry of utilityEntries.filter((candidate) => candidate.error !== undefined))
+    add('fail', `utility ${entry.id}`, `broken: ${entry.error ?? 'unknown'}`);
+  const lists = await resolveEnabledModules(settings);
+  const enabled = lists.adapters;
+  for (const id of lists.adapters.filter((candidate) => !(candidate in deps.adapters)))
+    add('fail', `adapter ${id}`, 'enabled but not installed');
+  for (const id of lists.utilities.filter((candidate) => !(candidate in deps.utilities)))
+    add('fail', `utility ${id}`, 'enabled but not installed');
+  add('ok', 'adapters', `${entries.length} installed, ${lists.adapters.length} enabled`);
+  add('ok', 'utilities', `${utilityEntries.length} installed, ${lists.utilities.length} enabled`);
 
   const platforms = [
     ...new Set(

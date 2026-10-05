@@ -46,7 +46,7 @@ export type {
 export { defineHttpTool, defineBrowserTool } from './tool';
 export type { ToolAnnotations, ToolLimits, AdapterResult, ToolDefinition, ErasedTool } from './tool';
 
-export { defineAdapter, defineUtility, roleOf, summarizeAdapter } from './adapter';
+export { defineAdapter, defineUtility, roleOf, summarizeAdapter, summarizeModule, summarizeUtility } from './adapter';
 export type {
   AdapterModule,
   BrowserAdapter,
@@ -56,9 +56,11 @@ export type {
   McpModule,
   ModuleBase,
   ModuleRole,
+  ModuleSummary,
   Pacing,
   RatePolicy,
   UtilityModule,
+  UtilitySummary,
 } from './adapter';
 
 export { validateAdapter, formatViolations } from './validate';

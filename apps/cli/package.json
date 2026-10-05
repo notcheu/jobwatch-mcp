@@ -5,7 +5,7 @@
   "description": "The `jobwatch` command: list, enable and disable adapters (login and catalog commands arrive in step 8).",
   "type": "module",
   "dependencies": {
-    "@jobwatch/adapters": "*",
+    "@jobwatch/mcp-modules": "*",
     "@jobwatch/core": "*",
     "@jobwatch/sdk": "*"
   },

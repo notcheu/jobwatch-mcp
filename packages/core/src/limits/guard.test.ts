@@ -13,7 +13,7 @@ import {
 import { beforeEach, describe, expect, it } from 'vitest';
 import { callTool, type CallDeps, type ToolOutcome } from '../call';
 import { createLogger } from '../logging';
-import { loadAdapters } from '../registry';
+import { loadModules } from '../registry';
 import { Store } from '../store/store';
 import { CircuitBreaker } from './breaker';
 import { createGuard, policyFor } from './guard';
@@ -78,7 +78,7 @@ async function setup(adapters: AdapterModule[]) {
   store = Store.open(':memory:');
   const breaker = new CircuitBreaker(store, () => now);
   const limiter = new RateLimiter(store, () => now, policyFor(adapters));
-  const registry = await loadAdapters(
+  const registry = await loadModules(
     adapters.map((a) => a.id),
     Object.fromEntries(adapters.map((a) => [a.id, async () => a])),
   );

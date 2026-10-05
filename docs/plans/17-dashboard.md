@@ -162,9 +162,9 @@ Column visibility menu, a search box (`q`), filters for source / board / keyword
 
 ### 6.4 Hot reload of adapters (D7)
 
-Today the registry is built once at startup (`loadAdapters` in `apps/mcp/src/server.ts`) and handed to the MCP server, the guard and the context provider. Hot reload makes it a **replaceable holder**:
+Today the registry is built once at startup (`loadModules` in `apps/mcp/src/server.ts`) and handed to the MCP server, the guard and the context provider. Hot reload makes it a **replaceable holder**:
 
-- `RegistryHolder.current()` returns the live registry; `reload(ids)` builds a new one with `loadAdapters`, validates it fully **before** swapping (a failing adapter leaves the old registry in place and returns the problems), then swaps atomically. The MCP server, `callTool`, the rate-limit policy (`policyFor`) and `memory_report` read through the holder on every request instead of capturing the registry.
+- `RegistryHolder.current()` returns the live registry; `reload(ids)` builds a new one with `loadModules`, validates it fully **before** swapping (a failing adapter leaves the old registry in place and returns the problems), then swaps atomically. The MCP server, `callTool`, the rate-limit policy (`policyFor`) and `memory_report` read through the holder on every request instead of capturing the registry.
 - **A call in flight keeps the registry it started with**; the next request sees the new one. A disabled browser adapter's running lease finishes normally; its runtime then idles out as usual.
 - The server is **stateless** (no sessions, no server-to-client channel), so the router cannot push `notifications/tools/list_changed`. Claude sees the new tool list when its connector refreshes or reconnects; the response of the switch says so (`reconnectNeeded`). This is a property of the stateless design, not of hot reload.
 - The same `reload` is called by the CLI (`jobwatch adapters enable|disable`) through the control socket when the router is running, so the two paths agree; without a router the CLI keeps writing the file as today. `JW_ADAPTERS` still pins the list: reload is refused with the reason.

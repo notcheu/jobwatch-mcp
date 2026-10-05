@@ -5,15 +5,15 @@ import {
   sendControl,
   loadStorageSettings,
   readEnabledFile,
-  resolveEnabledAdapters,
-  setAdaptersEnabled,
+  resolveEnabledModules,
+  setModulesEnabled,
   adaptersFilePath,
   pinVariable,
   type ModuleGroup,
 } from '@jobwatch/core';
-import { describeInstalled, type InstalledEntry } from '@jobwatch/adapters';
+import { describeInstalledAdapters, describeInstalledUtilities, type ModuleEntry } from '@jobwatch/mcp-modules';
 import { buildCatalog, type CatalogEntry, type ModuleRole } from '@jobwatch/sdk';
-import type { DockerRunner, InstalledAdapters } from '@jobwatch/core';
+import type { DockerRunner, InstalledAdapters, InstalledModules, InstalledUtilities } from '@jobwatch/core';
 import { dashboard } from './dashboard';
 import { doctor } from './doctor';
 import { linkedinGeo } from './linkedinGeo';
@@ -27,7 +27,9 @@ export interface Io {
 export interface Deps {
   io: Io;
   env: Readonly<Record<string, string | undefined>>;
-  installed: InstalledAdapters;
+  /** The installed adapters (modules that fetch jobs) and utilities (helper modules), listed apart. */
+  adapters: InstalledAdapters;
+  utilities: InstalledUtilities;
   version: string;
   /** Runs `docker <args>`; commands that need the daemon (login, doctor) fail cleanly without it. */
   docker?: DockerRunner;
@@ -105,21 +107,30 @@ function describeTool(tool: CatalogEntry): string {
 
 const GROUP: Record<ModuleRole, ModuleGroup> = { adapter: 'adapters', utility: 'utilities' };
 const COMMAND: Record<ModuleRole, string> = { adapter: 'adapters', utility: 'utilities' };
+const OTHER: Record<ModuleRole, ModuleRole> = { adapter: 'utility', utility: 'adapter' };
 
-/** The ids installed with a role, and an error line for ids that are installed with the other one or not at all. */
-async function idsOfRole(deps: Deps, role: ModuleRole, asked: readonly string[]): Promise<{ ids: string[]; problem?: string }> {
-  const all = await describeInstalled(deps.installed);
-  const ids = all.filter((entry) => (entry.summary ?? { role: 'adapter' }).role === role).map((entry) => entry.id);
-  const elsewhere = asked.filter((id) => id in deps.installed && !ids.includes(id));
-  const unknown = asked.filter((id) => !(id in deps.installed));
+/** What the commands of one role work on: its installed map, and how to describe it. */
+interface Kit {
+  map: InstalledModules;
+  describe: () => Promise<ModuleEntry[]>;
+}
+const kitOf = (deps: Deps, role: ModuleRole): Kit =>
+  role === 'adapter'
+    ? { map: deps.adapters, describe: () => describeInstalledAdapters(deps.adapters) }
+    : { map: deps.utilities, describe: () => describeInstalledUtilities(deps.utilities) };
+
+/** The ids installed for a role, and an error line for ids that belong to the other role or to none. */
+function checkIds(deps: Deps, role: ModuleRole, asked: readonly string[]): { ids: string[]; problem?: string } {
+  const ids = Object.keys(kitOf(deps, role).map).sort();
+  const other = kitOf(deps, OTHER[role]).map;
+  const elsewhere = asked.filter((id) => !ids.includes(id) && id in other);
+  const unknown = asked.filter((id) => !ids.includes(id) && !(id in other));
   if (unknown.length > 0)
     return { ids, problem: `Unknown ${role}: ${unknown.join(', ')}. Installed ${role}s: ${ids.join(', ') || 'none'}\n` };
   if (elsewhere.length > 0) {
-    const other: ModuleRole = role === 'adapter' ? 'utility' : 'adapter';
-    return {
-      ids,
-      problem: `${elsewhere.join(', ')} ${elsewhere.length > 1 ? 'are' : other === 'adapter' ? 'is an' : 'is a'} ${other}${elsewhere.length > 1 ? 's' : ''}: use \`jobwatch ${COMMAND[other]}\`\n`,
-    };
+    const many = elsewhere.length > 1;
+    const be = many ? 'are' : OTHER[role] === 'adapter' ? 'is an' : 'is a';
+    return { ids, problem: `${elsewhere.join(', ')} ${be} ${OTHER[role]}${many ? 's' : ''}: use \`jobwatch ${COMMAND[OTHER[role]]}\`\n` };
   }
   return { ids };
 }
@@ -130,31 +141,29 @@ async function list(deps: Deps, args: string[], role: ModuleRole): Promise<numbe
     allowPositionals: true,
     options: { json: { type: 'boolean', default: false }, tools: { type: 'boolean', default: false } },
   });
-  const checked = await idsOfRole(deps, role, positionals);
+  const checked = checkIds(deps, role, positionals);
   if (checked.problem !== undefined) {
     deps.io.err(checked.problem);
     return EXIT.usage;
   }
+  const kit = kitOf(deps, role);
   const settings = loadStorageSettings(deps.env);
-  const enabled = await resolveEnabledAdapters(settings);
-  // a module that does not load has no role to read: it is listed with the adapters
-  const all = (await describeInstalled(deps.installed)).filter((entry) =>
-    entry.summary === undefined ? role === 'adapter' : entry.summary.role === role,
-  );
+  const enabled = await resolveEnabledModules(settings);
+  const all = await kit.describe();
   const entries = positionals.length === 0 ? all : all.filter((entry) => positionals.includes(entry.id));
-  const strays = enabled[GROUP[role]].filter((id) => !(id in deps.installed));
+  const strays = enabled[GROUP[role]].filter((id) => !(id in kit.map));
   const broken = entries.filter((entry) => entry.error !== undefined);
 
   // the tools as the router lists them to Claude (static: nothing is started), only when asked
   const catalogs = new Map<string, CatalogEntry[]>();
   if (values.tools)
     for (const entry of entries) {
-      const load = deps.installed[entry.id];
+      const load = kit.map[entry.id];
       if (entry.summary && load) catalogs.set(entry.id, buildCatalog(await load()));
     }
 
   if (values.json) {
-    const modules = entries.map((entry: InstalledEntry) =>
+    const modules = entries.map((entry: ModuleEntry) =>
       entry.summary
         ? {
             ...entry.summary,
@@ -238,15 +247,16 @@ async function toggle(deps: Deps, args: string[], enable: boolean, role: ModuleR
   const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
   const verb = enable ? 'enable' : 'disable';
   if (positionals.length === 0) {
-    const known = await idsOfRole(deps, role, []);
-    deps.io.err(`${COMMAND[role]} ${verb} needs at least one ${role} id. Installed: ${known.ids.sort().join(', ') || 'none'}\n`);
+    deps.io.err(
+      `${COMMAND[role]} ${verb} needs at least one ${role} id. Installed: ${checkIds(deps, role, []).ids.join(', ') || 'none'}\n`,
+    );
     return EXIT.usage;
   }
-  // an id that is not installed is for `setAdaptersEnabled` to judge: enabling refuses it, disabling cleans it up
-  const checked = await idsOfRole(
+  // an id that is not installed is for `setModulesEnabled` to judge: enabling refuses it, disabling cleans it up
+  const checked = checkIds(
     deps,
     role,
-    positionals.filter((id) => id in deps.installed),
+    positionals.filter((id) => id in kitOf(deps, OTHER[role]).map),
   );
   if (checked.problem !== undefined) {
     deps.io.err(checked.problem);
@@ -255,7 +265,7 @@ async function toggle(deps: Deps, args: string[], enable: boolean, role: ModuleR
   const settings = loadStorageSettings(deps.env);
   const before = (await readEnabledFile(settings.dataDir)) ?? { adapters: [], utilities: [] };
   const group = GROUP[role];
-  const { ids, changed } = await setAdaptersEnabled(settings, checked.ids.sort(), positionals, enable, group);
+  const { ids, changed } = await setModulesEnabled(settings, checked.ids.sort(), positionals, enable, group);
   const unchanged = [...new Set(positionals)].filter((id) => !changed.includes(id));
   if (changed.length > 0) deps.io.out(`${enable ? 'Enabled' : 'Disabled'}: ${changed.join(', ')}\n`);
   if (unchanged.length > 0) deps.io.out(`Already ${enable ? 'enabled' : 'disabled'}: ${unchanged.join(', ')}\n`);

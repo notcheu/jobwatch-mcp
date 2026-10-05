@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { adaptersFilePath, readEnabledFile, resolveEnabledAdapters, setAdaptersEnabled, writeEnabledFile } from './adapters-config';
+import { adaptersFilePath, readEnabledFile, resolveEnabledModules, setModulesEnabled, writeEnabledFile } from './adapters-config';
 import { ConfigError } from './errors';
 
 let dataDir: string;
@@ -24,7 +24,7 @@ const fromFile = {
 describe('fresh install', () => {
   it('has nothing enabled and says where that came from', async () => {
     expect(await readEnabledFile(dataDir)).toBeUndefined();
-    expect(await resolveEnabledAdapters(fromFile)).toEqual({ ids: [], adapters: [], utilities: [], source: 'default' });
+    expect(await resolveEnabledModules(fromFile)).toEqual({ ids: [], adapters: [], utilities: [], source: 'default' });
   });
 });
 
@@ -56,58 +56,58 @@ describe('a broken file is an error, never "nothing enabled"', () => {
   ])('%s', async (_name, content) => {
     await writeFile(adaptersFilePath(dataDir), content);
     await expect(readEnabledFile(dataDir)).rejects.toBeInstanceOf(ConfigError);
-    await expect(resolveEnabledAdapters(fromFile)).rejects.toBeInstanceOf(ConfigError);
+    await expect(resolveEnabledModules(fromFile)).rejects.toBeInstanceOf(ConfigError);
   });
 });
 
-describe('resolveEnabledAdapters precedence', () => {
+describe('resolveEnabledModules precedence', () => {
   it('lets JW_ADAPTERS win over the file, even when it is empty', async () => {
     await writeEnabledFile(dataDir, { adapters: ['linkedin'], utilities: [] });
-    expect(await resolveEnabledAdapters({ adaptersFromEnv: ['apec'], dataDir })).toEqual({
+    expect(await resolveEnabledModules({ adaptersFromEnv: ['apec'], dataDir })).toEqual({
       ids: ['apec'],
       adapters: ['apec'],
       utilities: [],
       source: 'env',
     });
-    expect(await resolveEnabledAdapters({ adaptersFromEnv: [], dataDir })).toEqual({ ids: [], adapters: [], utilities: [], source: 'env' });
+    expect(await resolveEnabledModules({ adaptersFromEnv: [], dataDir })).toEqual({ ids: [], adapters: [], utilities: [], source: 'env' });
   });
 
   it('uses the file when the environment says nothing', async () => {
     await writeEnabledFile(dataDir, { adapters: ['linkedin'], utilities: [] });
-    expect(await resolveEnabledAdapters(fromFile)).toEqual({ ids: ['linkedin'], adapters: ['linkedin'], utilities: [], source: 'file' });
+    expect(await resolveEnabledModules(fromFile)).toEqual({ ids: ['linkedin'], adapters: ['linkedin'], utilities: [], source: 'file' });
   });
 });
 
-describe('setAdaptersEnabled', () => {
+describe('setModulesEnabled', () => {
   it('enables, reports what changed, and is idempotent', async () => {
-    expect(await setAdaptersEnabled(fromFile, installed, ['linkedin'], true)).toEqual({ ids: ['linkedin'], changed: ['linkedin'] });
-    expect(await setAdaptersEnabled(fromFile, installed, ['linkedin', 'apec'], true)).toEqual({
+    expect(await setModulesEnabled(fromFile, installed, ['linkedin'], true)).toEqual({ ids: ['linkedin'], changed: ['linkedin'] });
+    expect(await setModulesEnabled(fromFile, installed, ['linkedin', 'apec'], true)).toEqual({
       ids: ['apec', 'linkedin'],
       changed: ['apec'],
     });
-    expect(await setAdaptersEnabled(fromFile, installed, ['apec'], true)).toEqual({ ids: ['apec', 'linkedin'], changed: [] });
+    expect(await setModulesEnabled(fromFile, installed, ['apec'], true)).toEqual({ ids: ['apec', 'linkedin'], changed: [] });
   });
 
   it('disables and reports what changed', async () => {
     await writeEnabledFile(dataDir, { adapters: ['apec', 'linkedin'], utilities: [] });
-    expect(await setAdaptersEnabled(fromFile, installed, ['linkedin'], false)).toEqual({ ids: ['apec'], changed: ['linkedin'] });
-    expect(await setAdaptersEnabled(fromFile, installed, ['linkedin'], false)).toEqual({ ids: ['apec'], changed: [] });
+    expect(await setModulesEnabled(fromFile, installed, ['linkedin'], false)).toEqual({ ids: ['apec'], changed: ['linkedin'] });
+    expect(await setModulesEnabled(fromFile, installed, ['linkedin'], false)).toEqual({ ids: ['apec'], changed: [] });
   });
 
   it('does not touch the file when nothing changes', async () => {
-    await setAdaptersEnabled(fromFile, installed, ['apec'], false);
+    await setModulesEnabled(fromFile, installed, ['apec'], false);
     expect(await readdir(dataDir)).toEqual([]);
   });
 
   it('refuses ids that are not installed and says which', async () => {
-    await expect(setAdaptersEnabled(fromFile, installed, ['linkedin', 'wttj'], true)).rejects.toThrow(
+    await expect(setModulesEnabled(fromFile, installed, ['linkedin', 'wttj'], true)).rejects.toThrow(
       /not installed: wttj \(installed: apec, linkedin\)/,
     );
     expect(await readEnabledFile(dataDir)).toBeUndefined();
   });
 
   it('refuses to edit while JW_ADAPTERS overrides the file', async () => {
-    await expect(setAdaptersEnabled({ adaptersFromEnv: ['apec'], dataDir }, installed, ['linkedin'], true)).rejects.toThrow(
+    await expect(setModulesEnabled({ adaptersFromEnv: ['apec'], dataDir }, installed, ['linkedin'], true)).rejects.toThrow(
       /JW_ADAPTERS is set/,
     );
     expect(await readEnabledFile(dataDir)).toBeUndefined();
@@ -115,12 +115,12 @@ describe('setAdaptersEnabled', () => {
 
   it('can always disable a stale entry whose adapter was deleted from the code', async () => {
     await writeEnabledFile(dataDir, { adapters: ['apec', 'ghost'], utilities: [] });
-    expect(await setAdaptersEnabled(fromFile, installed, ['ghost'], false)).toEqual({ ids: ['apec'], changed: ['ghost'] });
+    expect(await setModulesEnabled(fromFile, installed, ['ghost'], false)).toEqual({ ids: ['apec'], changed: ['ghost'] });
     expect(await readEnabledFile(dataDir)).toEqual({ adapters: ['apec'], utilities: [] });
   });
 
   it('treats disabling something that was never enabled as a no-op, not an error', async () => {
-    expect(await setAdaptersEnabled(fromFile, installed, ['nonexistent'], false)).toEqual({ ids: [], changed: [] });
+    expect(await setModulesEnabled(fromFile, installed, ['nonexistent'], false)).toEqual({ ids: [], changed: [] });
   });
 });
 
@@ -128,13 +128,13 @@ describe('utilities are a group of their own', () => {
   const utilities = ['linkedin-geo', 'ats-discovery'];
 
   it('enables them in their own list, leaving the adapters alone', async () => {
-    await setAdaptersEnabled(fromFile, installed, ['apec'], true);
-    expect(await setAdaptersEnabled(fromFile, utilities, ['linkedin-geo'], true, 'utilities')).toEqual({
+    await setModulesEnabled(fromFile, installed, ['apec'], true);
+    expect(await setModulesEnabled(fromFile, utilities, ['linkedin-geo'], true, 'utilities')).toEqual({
       ids: ['linkedin-geo'],
       changed: ['linkedin-geo'],
     });
     expect(await readEnabledFile(dataDir)).toEqual({ adapters: ['apec'], utilities: ['linkedin-geo'] });
-    expect(await resolveEnabledAdapters(fromFile)).toEqual({
+    expect(await resolveEnabledModules(fromFile)).toEqual({
       ids: ['apec', 'linkedin-geo'],
       adapters: ['apec'],
       utilities: ['linkedin-geo'],
@@ -145,20 +145,20 @@ describe('utilities are a group of their own', () => {
   it('is pinned by JW_UTILITIES alone, and the adapters then still come from the file', async () => {
     await writeEnabledFile(dataDir, { adapters: ['apec'], utilities: [] });
     const env = { adaptersFromEnv: undefined, utilitiesFromEnv: ['ats-discovery'], dataDir };
-    expect(await resolveEnabledAdapters(env)).toEqual({
+    expect(await resolveEnabledModules(env)).toEqual({
       ids: ['apec', 'ats-discovery'],
       adapters: ['apec'],
       utilities: ['ats-discovery'],
       source: 'env',
     });
-    await expect(setAdaptersEnabled(env, utilities, ['linkedin-geo'], true, 'utilities')).rejects.toThrow(/JW_UTILITIES is set/);
-    expect((await setAdaptersEnabled(env, installed, ['linkedin'], true)).ids).toEqual(['apec', 'linkedin']);
+    await expect(setModulesEnabled(env, utilities, ['linkedin-geo'], true, 'utilities')).rejects.toThrow(/JW_UTILITIES is set/);
+    expect((await setModulesEnabled(env, installed, ['linkedin'], true)).ids).toEqual(['apec', 'linkedin']);
   });
 
   it('reads a file written before utilities existed, and disabling clears a utility left among the adapters', async () => {
     await writeFile(adaptersFilePath(dataDir), '{"enabled":["apec","linkedin-geo"]}');
-    expect((await resolveEnabledAdapters(fromFile)).ids).toEqual(['apec', 'linkedin-geo']);
-    expect(await setAdaptersEnabled(fromFile, utilities, ['linkedin-geo'], false, 'utilities')).toEqual({
+    expect((await resolveEnabledModules(fromFile)).ids).toEqual(['apec', 'linkedin-geo']);
+    expect(await setModulesEnabled(fromFile, utilities, ['linkedin-geo'], false, 'utilities')).toEqual({
       ids: [],
       changed: ['linkedin-geo'],
     });

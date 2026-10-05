@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { BackendError, LOGIN_PORT, loadConfig, loginRunArgs, type RuntimeSpec } from '@jobwatch/core';
-import { describeInstalled } from '@jobwatch/adapters';
+import { describeInstalledAdapters } from '@jobwatch/mcp-modules';
 import type { Deps } from './cli';
 
 const EXIT_OK = 0;
@@ -36,7 +36,7 @@ export async function login(deps: Deps, args: string[]): Promise<number> {
     deps.io.err(LOGIN_USAGE);
     return EXIT_USAGE;
   }
-  const entries = await describeInstalled(deps.installed);
+  const entries = await describeInstalledAdapters(deps.adapters);
   const adapter = entries.find((entry) => entry.summary?.kind === 'browser' && entry.summary.platform === platform)?.summary;
   if (adapter === undefined) {
     const known = [...new Set(entries.flatMap((entry) => (entry.summary?.kind === 'browser' ? [entry.summary.platform] : [])))];

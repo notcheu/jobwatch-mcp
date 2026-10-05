@@ -1,8 +1,8 @@
 {
-  "name": "@jobwatch/tool-new-adapter",
+  "name": "@jobwatch/tool-new-module",
   "version": "0.0.0",
   "private": true,
-  "description": "Scaffolds a new adapter package: npm run new:adapter -- <id> [--kind http|browser]",
+  "description": "Scaffolds a new adapter or utility package: npm run new:adapter -- <id> [--kind http|browser], npm run new:utility -- <id>",
   "type": "module",
   "scripts": {
     "lint": "eslint .",

@@ -106,29 +106,51 @@ export function defineUtility<U extends Omit<UtilityModule, 'role' | 'kind'>>(ut
   return { ...utility, role: 'utility', kind: 'http' };
 }
 
-/** What `jobwatch adapters list` and `utilities list` show: metadata only, no handlers. */
-export interface AdapterSummary {
+interface SummaryBase {
   id: string;
   displayName: string;
   description: string;
   platform: string;
-  role: ModuleRole;
   kind: AdapterKind;
   allowedHosts: readonly string[];
   openHttps: boolean;
   tools: readonly { name: string; title: string }[];
 }
 
-export function summarizeAdapter(adapter: McpModule): AdapterSummary {
-  return {
-    id: adapter.id,
-    displayName: adapter.displayName,
-    description: adapter.description,
-    platform: adapter.platform,
-    role: roleOf(adapter),
-    kind: adapter.kind,
-    allowedHosts: adapter.allowedHosts,
-    openHttps: adapter.kind === 'http' && adapter.openHttps === true,
-    tools: adapter.tools.map((tool) => ({ name: tool.name, title: tool.title })),
-  };
+/** What `jobwatch adapters list` shows: metadata only, no handlers. */
+export interface AdapterSummary extends SummaryBase {
+  role: 'adapter';
+}
+
+/** What `jobwatch utilities list` shows. */
+export interface UtilitySummary extends SummaryBase {
+  role: 'utility';
+  kind: 'http';
+}
+
+/** Either, for the code that handles both (the dashboard, the registry). */
+export type ModuleSummary = AdapterSummary | UtilitySummary;
+
+const summaryOf = (module: McpModule): SummaryBase => ({
+  id: module.id,
+  displayName: module.displayName,
+  description: module.description,
+  platform: module.platform,
+  kind: module.kind,
+  allowedHosts: module.allowedHosts,
+  openHttps: module.kind === 'http' && module.openHttps === true,
+  tools: module.tools.map((tool) => ({ name: tool.name, title: tool.title })),
+});
+
+export function summarizeAdapter(adapter: AdapterModule): AdapterSummary {
+  return { ...summaryOf(adapter), role: 'adapter' };
+}
+
+export function summarizeUtility(utility: UtilityModule): UtilitySummary {
+  return { ...summaryOf(utility), role: 'utility', kind: 'http' };
+}
+
+/** Summarise a module of either kind. */
+export function summarizeModule(module: McpModule): ModuleSummary {
+  return module.role === 'utility' ? summarizeUtility(module) : summarizeAdapter(module);
 }

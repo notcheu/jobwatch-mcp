@@ -36,6 +36,7 @@ Claude ──HTTPS──▶ your reverse proxy (TLS) ──▶ OAuth front ─�
 | **OAuth front** ([`babs/mcp-auth-proxy`](https://github.com/babs/mcp-auth-proxy) + Redis) | Signs you in with Google and only forwards calls that carry a valid token. |
 | **Router** (this repo, `apps/mcp`) | The MCP server: validates arguments, applies rate limits, runs adapters, stores the jobs it read in SQLite. |
 | **Adapters** (`packages/adapter-*`) | One package per source. Only the ones you enable are plugged in. |
+| **Utilities** (`packages/utility-*`) | Helper modules that fetch no jobs (places, ATS discovery). Enabled separately. |
 | **Browser container** (`images/browser`) | Headful Chrome with one persistent profile per site, spawned by the router through the Docker socket. |
 | **Watchtower** | Optional: keeps the router image up to date. |
 
@@ -224,6 +225,7 @@ Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is brok
 | `npm run format` / `format:check` | Prettier. |
 | `npm run catalog:gen` | Regenerate every adapter's `catalog/` snapshot after changing a tool definition. |
 | `npm run new:adapter -- <id> [--kind http\|browser]` | Scaffold a new adapter package. |
+| `npm run new:utility -- <id>` | Scaffold a new utility package (always HTTP). |
 | `npm run test:integration` | Drive a real browser container (needs Docker; never in CI). |
 | `npm run test:dashboard` | Smoke-test the built router and dashboard (run `npm run build` first; not in CI). |
 | `npm run jobwatch -- <args>` | Build and run the CLI. |
@@ -475,7 +477,7 @@ All variables are optional unless noted; unknown `JW_*` names are reported at st
 
 ## Development
 
-The repository is an Nx and npm-workspaces monorepo: `packages/sdk` (the adapter contract), `packages/core` (the engine), `packages/adapters` (the installed adapter map), `packages/adapter-<platform>` (one per source), `apps/mcp` (the server) and `apps/cli` (`jobwatch`). Adapters import only `@jobwatch/sdk`; this is enforced by lint.
+The repository is an Nx and npm-workspaces monorepo: `packages/sdk` (the adapter contract), `packages/core` (the engine), `packages/mcp-modules` (the installed adapter and utility maps), `packages/adapter-<platform>` (one per source), `packages/utility-<name>` (one per utility), `apps/mcp` (the server) and `apps/cli` (`jobwatch`). Adapters and utilities import only `@jobwatch/sdk`; this is enforced by lint.
 
 Tool definitions live in code and each adapter package has a generated `catalog/` snapshot: after changing a tool, run `npm run catalog:gen` and commit the result. To add a source, `npm run new:adapter -- <id> --kind http`, then follow the checklist in [`docs/plans/03-router-spec.md`](docs/plans/03-router-spec.md). Work happens on a branch, one pull request per step, squash-merged once `npm run ci` is green; the whole test suite must stay under five minutes.
 

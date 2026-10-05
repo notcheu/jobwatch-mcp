@@ -63,7 +63,8 @@ const cli = (argv: string[], over: Partial<Deps> = {}): Promise<number> =>
   run(argv, {
     io: { out: (t) => (out += t), err: (t) => (err += t) },
     env: env(),
-    installed: table,
+    adapters: table,
+    utilities: {},
     version: '1.0.0',
     docker: fakeDocker(),
     randomPassword: () => 'pw123456',

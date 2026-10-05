@@ -1,13 +1,17 @@
-// Pure functions that build a new adapter package. No file system access here: index.mjs applies the result.
+// Pure functions that build a new adapter or utility package. No file system access here: index.mjs applies the result.
 
 export const ID_PATTERN = /^[a-z][a-z0-9-]{1,31}$/;
-const BEGIN = '// <installed:begin>';
-const END = '// <installed:end>';
+/** The two kinds of module the scaffolder creates; each has its own installed map between its own markers. */
+export const ROLES = ['adapter', 'utility'];
+const markers = (/** @type {string} */ role) => {
+  const map = role === 'utility' ? 'utilities' : 'adapters';
+  return { begin: `// <${map}:begin>`, end: `// <${map}:end>` };
+};
 
 /** @param {string} id */
 export function validateId(id) {
   if (!ID_PATTERN.test(id))
-    throw new Error(`Invalid adapter id "${id}": use 2-32 characters, lowercase letters, digits and hyphens, starting with a letter.`);
+    throw new Error(`Invalid id "${id}": use 2-32 characters, lowercase letters, digits and hyphens, starting with a letter.`);
 }
 
 /** @param {string} id */
@@ -20,37 +24,41 @@ const title = (id) =>
     .join(' ');
 
 /**
- * @typedef {{ id: string, kind: 'http' | 'browser', displayName?: string }} AdapterSpec
+ * @typedef {{ id: string, role?: 'adapter' | 'utility', kind?: 'http' | 'browser', displayName?: string }} ModuleSpec
  * @typedef {{ path: string, content: string }} GeneratedFile
  */
 
 /**
  * Files of the new package, relative to the repository root.
- * @param {AdapterSpec} spec
+ * @param {ModuleSpec} spec
  * @returns {GeneratedFile[]}
  */
-export function adapterFiles(spec) {
-  const { id, kind } = spec;
+export function moduleFiles(spec) {
+  const { id } = spec;
+  const role = spec.role ?? 'adapter';
+  const kind = spec.kind ?? 'http';
   validateId(id);
+  if (!ROLES.includes(role)) throw new Error(`Invalid role "${String(role)}": use adapter or utility.`);
   if (kind !== 'http' && kind !== 'browser') throw new Error(`Invalid kind "${String(kind)}": use http or browser.`);
-  const dir = `packages/adapter-${id}`;
+  if (role === 'utility' && kind !== 'http') throw new Error('A utility is always http: it has no browser.');
+  const dir = `packages/${role}-${id}`;
   const name = spec.displayName ?? title(id);
   const tool = `${snake(id)}_example`;
   const browser = kind === 'browser';
 
   const packageJson = {
-    name: `@jobwatch/adapter-${id}`,
+    name: `@jobwatch/${role}-${id}`,
     version: '0.0.0',
     private: true,
-    description: `${name} adapter (read-only).`,
+    description: `${name} ${role} (read-only).`,
     type: 'module',
     exports: { '.': './src/index.ts' },
     dependencies: { '@jobwatch/sdk': '*' },
     scripts: { lint: 'eslint .', typecheck: 'tsc -p tsconfig.json', test: 'vitest run' },
-    nx: { tags: ['type:adapter'] },
+    nx: { tags: [`type:${role}`] },
   };
 
-  const index = browser
+  const adapterIndex = browser
     ? `import { SDK_API_VERSION, defineAdapter, defineBrowserTool, z } from '@jobwatch/sdk';
 
 // TODO: replace this example with the real tools of the ${name} adapter (see docs/plans/03-router-spec.md, "Adapter SDK").
@@ -112,6 +120,17 @@ export default defineAdapter({
 });
 `;
 
+  // A utility is the http template declared with `defineUtility` (which fixes the kind) and described as a helper.
+  const index =
+    role === 'utility'
+      ? adapterIndex
+          .replace('defineAdapter, defineHttpTool', 'defineHttpTool, defineUtility')
+          .replace('export default defineAdapter({', 'export default defineUtility({')
+          .replace("  kind: 'http',\n", '')
+          .replaceAll(`${name} adapter`, `${name} utility`)
+          .replace('"Adapter SDK"', '"Adapters and utilities"')
+      : adapterIndex;
+
   const testContext = browser ? 'createBrowserTestContext' : 'createHttpTestContext';
   const contextOptions = browser
     ? "{ allowedHosts: adapter.allowedHosts, pages: { 'https://www.example.com/': { texts: { h1: 'Example' } } } }"
@@ -151,16 +170,19 @@ describeAdapterContract(adapter, {
 }
 
 /**
- * Add `id` to the installed table of @jobwatch/adapters, between the markers, keeping the lines sorted by id.
- * @param {string} source content of packages/adapters/src/index.ts
+ * Add `id` to the installed map of its role in @jobwatch/mcp-modules (adapters or utilities), between that map's markers,
+ * keeping the lines sorted by id.
+ * @param {string} source content of packages/mcp-modules/src/index.ts
  * @param {string} id
+ * @param {'adapter' | 'utility'} [role]
  */
-export function addInstalledLine(source, id) {
+export function addInstalledLine(source, id, role = 'adapter') {
   validateId(id);
+  const { begin: BEGIN, end: END } = markers(role);
   const begin = source.indexOf(BEGIN);
   const end = source.indexOf(END);
   if (begin === -1 || end === -1 || end < begin)
-    throw new Error(`packages/adapters/src/index.ts is missing the ${BEGIN} / ${END} markers.`);
+    throw new Error(`packages/mcp-modules/src/index.ts is missing the ${BEGIN} / ${END} markers.`);
   const beginLineEnd = source.indexOf('\n', begin) + 1;
   const endLineStart = source.lastIndexOf('\n', end) + 1;
   const lines = source
@@ -168,23 +190,25 @@ export function addInstalledLine(source, id) {
     .split('\n')
     .filter((line) => line.trim() !== '');
   const keyOf = (/** @type {string} */ line) => /^\s*'?([a-z0-9-]+)'?\s*:/.exec(line)?.[1];
-  if (lines.some((line) => keyOf(line) === id)) throw new Error(`Adapter "${id}" is already in the installed table.`);
+  if (lines.some((line) => keyOf(line) === id))
+    throw new Error(`${role === 'adapter' ? 'Adapter' : 'Utility'} "${id}" is already in the installed table.`);
   const key = id.includes('-') ? `'${id}'` : id;
-  lines.push(`  ${key}: () => import('@jobwatch/adapter-${id}').then((m) => m.default),`);
+  lines.push(`  ${key}: () => import('@jobwatch/${role}-${id}').then((m) => m.default),`);
   lines.sort((a, b) => (keyOf(a) ?? '').localeCompare(keyOf(b) ?? ''));
   return `${source.slice(0, beginLineEnd)}${lines.join('\n')}\n${source.slice(endLineStart)}`;
 }
 
 /**
- * Add the dependency on the new package to packages/adapters/package.json, keeping keys sorted.
+ * Add the dependency on the new package to packages/mcp-modules/package.json, keeping keys sorted.
  * @param {string} packageJsonText
  * @param {string} id
+ * @param {'adapter' | 'utility'} [role]
  */
-export function addAdaptersDependency(packageJsonText, id) {
+export function addModulesDependency(packageJsonText, id, role = 'adapter') {
   validateId(id);
   const json = JSON.parse(packageJsonText);
-  const name = `@jobwatch/adapter-${id}`;
-  if (json.dependencies?.[name] !== undefined) throw new Error(`${name} is already a dependency of @jobwatch/adapters.`);
+  const name = `@jobwatch/${role}-${id}`;
+  if (json.dependencies?.[name] !== undefined) throw new Error(`${name} is already a dependency of @jobwatch/mcp-modules.`);
   json.dependencies = Object.fromEntries(Object.entries({ ...json.dependencies, [name]: '*' }).sort(([a], [b]) => a.localeCompare(b)));
   return `${JSON.stringify(json, null, 2)}\n`;
 }

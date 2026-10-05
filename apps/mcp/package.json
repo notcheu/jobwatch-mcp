@@ -5,7 +5,7 @@
   "description": "The router: stateless Streamable HTTP MCP server. Composition root of core and the enabled adapters.",
   "type": "module",
   "dependencies": {
-    "@jobwatch/adapters": "*",
+    "@jobwatch/mcp-modules": "*",
     "@jobwatch/core": "*",
     "@jobwatch/dashboard-api": "*",
     "@jobwatch/sdk": "*",
