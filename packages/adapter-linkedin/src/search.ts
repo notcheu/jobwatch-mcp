@@ -134,7 +134,6 @@ export async function searchCards(ctx: BrowserAdapterContext, layout: SearchLayo
   const truncated = examined.length > args.max_results;
   if (args.remote_only) {
     result = result.filter((card) => card.work_mode === 'remote');
-    warnings.push('remote filter is not applied by LinkedIn; cards were post-filtered on the location.');
   }
   return {
     cards: result,

@@ -30,13 +30,13 @@ export interface VisitedPage {
   description: string;
 }
 
-export type ExcludedBy = 'title' | 'description';
+export type ExcludedBy = 'title' | 'description' | 'salary';
 
 export interface Excluded {
   id: string;
   title: string;
   reason: ExcludedBy;
-  /** The disallowed term that matched, as the caller wrote it. */
+  /** The disallowed term that matched, as the caller wrote it; for `salary`, the salary the job states. */
   term: string;
 }
 
@@ -46,6 +46,8 @@ export interface Terms {
   matchTitle: (title: string) => string | null;
   /** Null when terms apply to titles only. */
   matchDescription: ((description: string) => string | null) | null;
+  /** Returns the stated salary when it is below the caller's floor, or null (no floor, no salary stated, another currency). */
+  matchSalary?: ((description: string) => string | null) | null;
 }
 
 /** A job that passed the terms, from the page just read (`fetched`) or from the database (`stored`). Full description. */
@@ -90,7 +92,9 @@ const fromStored = (row: StoredJob): AcceptedJob => ({
 
 const descriptionVerdict = (id: string, title: string, description: string, terms: Terms): Excluded | null => {
   const term = terms.matchDescription?.(description) ?? null;
-  return term === null ? null : { id, title, reason: 'description', term };
+  if (term !== null) return { id, title, reason: 'description', term };
+  const salary = terms.matchSalary?.(description) ?? null;
+  return salary === null ? null : { id, title, reason: 'salary', term: salary };
 };
 
 /**

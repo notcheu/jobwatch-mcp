@@ -11,6 +11,8 @@ import {
   readByIds,
   readNew,
   returnedIds,
+  salaryFilterFields,
+  salaryFloor,
   termMatcher,
   z,
   type AcceptedJob,
@@ -63,7 +65,12 @@ const cardSchema = z.object({
   known: z.boolean().describe('Already stored: a previous call read this job.'),
 });
 
-const excludedSchema = z.object({ id: z.string(), title: z.string(), reason: z.enum(['title', 'description']), term: z.string() });
+const excludedSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  reason: z.enum(['title', 'description', 'salary']),
+  term: z.string(),
+});
 const failedSchema = z.object({ id: z.string(), status: z.string() });
 
 const matchFields = {
@@ -80,6 +87,7 @@ const matchFields = {
     .describe('last_24_hours, past_week, past_month, or any. The date is the one on the card.'),
 };
 const termFields = {
+  ...salaryFilterFields,
   disallowed_terms: z
     .array(z.string().trim().min(1).max(60))
     .max(60)
@@ -177,6 +185,7 @@ const job = defineBrowserTool({
       refresh: args.refresh,
       matchTitle: matchesTerm,
       matchDescription: args.disallowed_scope === 'title_then_description' ? matchesTerm : null,
+      matchSalary: salaryFloor(args),
       visit: (id) => {
         const ref = refs.get(id);
         return ref === undefined
@@ -266,6 +275,7 @@ const matches = defineBrowserTool({
         maxReturned: args.max_results,
         matchTitle: matchesTerm,
         matchDescription: args.disallowed_scope === 'title_then_description' ? matchesTerm : null,
+        matchSalary: salaryFloor(args),
         deadline,
         visit: (id) => {
           const card = byId.get(id);

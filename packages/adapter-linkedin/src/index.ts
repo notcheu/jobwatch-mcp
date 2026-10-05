@@ -1,4 +1,15 @@
-import { SDK_API_VERSION, defineAdapter, defineBrowserTool, describeJob, detailFields, matchedTerms, returnedIds, z } from '@jobwatch/sdk';
+import {
+  SDK_API_VERSION,
+  defineAdapter,
+  defineBrowserTool,
+  describeJob,
+  detailFields,
+  matchedTerms,
+  returnedIds,
+  salaryFilterFields,
+  salaryFloor,
+  z,
+} from '@jobwatch/sdk';
 import type { BrowserAdapterContext, BrowserSession, Detail, SessionStatus } from '@jobwatch/sdk';
 import { EXTRACT_PAGE_STATE, type ExtractedPageState } from './extract';
 import { aiSearchResultsLayout } from './layouts/aiSearchResults';
@@ -75,7 +86,7 @@ const jobSchema = z.object({
 const excludedSchema = z.object({
   id: z.string(),
   title: z.string(),
-  reason: z.enum(['title', 'description']),
+  reason: z.enum(['title', 'description', 'salary']),
   term: z.string(),
 });
 
@@ -89,7 +100,12 @@ const searchInput = z
       .enum(POSTED_WITHIN)
       .default('last_24_hours')
       .describe('How recent the postings must be: last_24_hours, past_week, past_month, or any (no date filter).'),
-    remote_only: z.boolean().default(false).describe('Keep only cards whose location says Remote (filtered here, not by LinkedIn).'),
+    remote_only: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Keep only remote jobs: LinkedIn is asked for them, and cards whose location does not say Remote are dropped here as well.',
+      ),
     max_results: z
       .number()
       .int()
@@ -111,6 +127,7 @@ const searchInput = z
 
 /** Shared by the two tools that open jobs. There is no built-in list: the caller decides per call. */
 const termFields = {
+  ...salaryFilterFields,
   disallowed_terms: z
     .array(z.string().trim().min(1).max(60))
     .max(60)
@@ -233,6 +250,7 @@ export function createLinkedinTools(layout: SearchLayout) {
         refresh: args.refresh,
         matchTitle: matchTerm,
         matchDescription: args.disallowed_scope === 'title_then_description' ? matchTerm : null,
+        matchSalary: salaryFloor(args),
       });
       const { fit, rest } = fitJobs(outcome.accepted.map((job) => toOutput(job, args.detail, args.description_max_chars, args.hint_terms)));
       const warnings = outcome.failed.map((f) => `job ${f.id}: ${f.status}`);
@@ -300,6 +318,7 @@ export function createLinkedinTools(layout: SearchLayout) {
         maxReturned: args.max_results,
         matchTitle: matchTerm,
         matchDescription: args.disallowed_scope === 'title_then_description' ? matchTerm : null,
+        matchSalary: salaryFloor(args),
         deadline,
       });
       await ctx.jobs.recordSearch({

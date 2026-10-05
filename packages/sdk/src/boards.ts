@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { HttpClient, JobStore } from './context';
 import { AdapterBroken, HostNotAllowedError, JobwatchError } from './errors';
 import { POSTED_WITHIN, containsAny, extractHints, fitToBytes, fold, matchedTerms, postedCutoff, termMatcher } from './jobtext';
+import { salaryFilterFields, salaryFloor } from './salaryFilter';
 import { DETAILS, describeJob } from './summary';
 
 /**
@@ -86,6 +87,7 @@ export const boardFilters = {
     .describe(
       'title: reject on the title (such a job is neither stored nor returned). title_then_description: then also reject on the description (such a job is stored, not returned).',
     ),
+  ...salaryFilterFields,
   only_new: z.boolean().default(false).describe('Return only jobs this router had not stored before.'),
   max_results: z.number().int().min(1).max(200).default(50).describe('Most jobs returned.'),
   ...detailFields('summary'),
@@ -97,7 +99,7 @@ export const boardExcludedSchema = z.object({
   id: z.string(),
   board: z.string(),
   title: z.string(),
-  reason: z.enum(['title', 'description']),
+  reason: z.enum(['title', 'description', 'salary']),
   term: z.string(),
 });
 export type BoardExcluded = z.infer<typeof boardExcludedSchema>;
@@ -185,6 +187,7 @@ export async function judgeBoardPostings<S extends string>(
     .sort((a, b) => (Date.parse(b.postedAt ?? '') || 0) - (Date.parse(a.postedAt ?? '') || 0));
 
   const matches = termMatcher(filters.disallowed_terms);
+  const belowSalary = salaryFloor(filters);
   const known = await jobs.known(relevant.map((posting) => posting.id));
   const excluded: BoardExcluded[] = [];
   const accepted: BoardJob<S>[] = [];
@@ -206,6 +209,11 @@ export async function judgeBoardPostings<S extends string>(
     const inDescription = filters.disallowed_scope === 'title_then_description' ? matches(posting.description) : null;
     if (inDescription !== null) {
       excluded.push({ id: posting.id, board: posting.board, title: posting.title, reason: 'description', term: inDescription });
+      continue;
+    }
+    const belowFloor = belowSalary?.(posting.description) ?? null;
+    if (belowFloor !== null) {
+      excluded.push({ id: posting.id, board: posting.board, title: posting.title, reason: 'salary', term: belowFloor });
       continue;
     }
     const isNew = !known.has(posting.id);

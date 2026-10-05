@@ -218,7 +218,7 @@ Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is brok
 
 Every example is the argument object Claude sends to the tool. The text of a job is returned as a short `summary` by default; ask for `detail: "full"` only when you need the whole description, or read chosen jobs later with `stored_job_texts`.
 
-**Arguments shared by the search and board tools.** `max_results` is the most results examined and returned. `detail` is `summary`, `full` or `none`, and `description_max_chars` caps the text. `disallowed_terms` drops jobs whose title (and, with `disallowed_scope: "title_then_description"`, whose description) contains one of the words. `posted_within` is `last_24_hours`, `past_week`, `past_month` or `any`. A call that ends with a non-empty `remaining_ids` is continued by calling it again with the same arguments.
+**Arguments shared by the search and board tools.** `max_results` is the most results examined and returned. `detail` is `summary`, `full` or `none`, and `description_max_chars` caps the text. `disallowed_terms` drops jobs whose title (and, with `disallowed_scope: "title_then_description"`, whose description) contains one of the words. `min_salary` with `salary_currency` (an ISO code) drops jobs whose text states a yearly salary below the floor in that currency; jobs that state none, or in another currency, are kept (`LinkedIn`, `WTTJ` and the company-board tools). `posted_within` is `last_24_hours`, `past_week`, `past_month` or `any`. A call that ends with a non-empty `remaining_ids` is continued by calling it again with the same arguments.
 
 <details>
 <summary><strong>LinkedIn</strong> — <code>linkedin_search</code>, <code>linkedin_job</code></summary>

@@ -88,6 +88,13 @@
         "minimum": 1,
         "type": "integer"
       },
+      "min_salary": {
+        "default": 0,
+        "description": "Yearly salary floor in whole currency units (e.g. 70000), 0 for none. A job whose stated salary is in salary_currency and whose upper end is below it is dropped after its text is read (stored, not returned). A job that states no salary, or one in another currency, is kept.",
+        "maximum": 100000000,
+        "minimum": 0,
+        "type": "integer"
+      },
       "page": {
         "default": 1,
         "description": "First result page to load (default 1). Only needed to continue a long search, e.g. page 3 with max_results 50 reads pages 3 and 4.",
@@ -108,8 +115,14 @@
       },
       "remote_only": {
         "default": false,
-        "description": "Keep only cards whose location says Remote (filtered here, not by LinkedIn).",
+        "description": "Keep only remote jobs: LinkedIn is asked for them, and cards whose location does not say Remote are dropped here as well.",
         "type": "boolean"
+      },
+      "salary_currency": {
+        "description": "ISO 4217 code of min_salary, e.g. \"EUR\", \"USD\", \"GBP\". Required when min_salary is above 0.",
+        "maxLength": 3,
+        "minLength": 3,
+        "type": "string"
       },
       "skip_ids": {
         "default": [],
@@ -235,7 +248,8 @@
             "reason": {
               "enum": [
                 "title",
-                "description"
+                "description",
+                "salary"
               ],
               "type": "string"
             },

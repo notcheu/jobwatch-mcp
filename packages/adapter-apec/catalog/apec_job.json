@@ -105,7 +105,8 @@
             "reason": {
               "enum": [
                 "title",
-                "description"
+                "description",
+                "salary"
               ],
               "type": "string"
             },

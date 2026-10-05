@@ -72,10 +72,23 @@
         "minItems": 1,
         "type": "array"
       },
+      "min_salary": {
+        "default": 0,
+        "description": "Yearly salary floor in whole currency units (e.g. 70000), 0 for none. A job whose stated salary is in salary_currency and whose upper end is below it is dropped after its text is read (stored, not returned). A job that states no salary, or one in another currency, is kept.",
+        "maximum": 100000000,
+        "minimum": 0,
+        "type": "integer"
+      },
       "refresh": {
         "default": false,
         "description": "Visit LinkedIn again even if the job is stored.",
         "type": "boolean"
+      },
+      "salary_currency": {
+        "description": "ISO 4217 code of min_salary, e.g. \"EUR\", \"USD\", \"GBP\". Required when min_salary is above 0.",
+        "maxLength": 3,
+        "minLength": 3,
+        "type": "string"
       }
     },
     "required": [
@@ -106,7 +119,8 @@
             "reason": {
               "enum": [
                 "title",
-                "description"
+                "description",
+                "salary"
               ],
               "type": "string"
             },
