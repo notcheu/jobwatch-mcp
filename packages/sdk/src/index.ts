@@ -84,6 +84,7 @@ export {
 } from './linkedinGeo';
 export type { LocationHit, SavedLocation } from './linkedinGeo';
 export type { Salary } from './salary';
+export { salaryFilterFields, salaryFloor } from './salaryFilter';
 
 export {
   boardExcludedSchema,

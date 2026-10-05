@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { termMatcher } from './jobtext';
+import { salaryFloor } from './salaryFilter';
 import { FakeJobStore } from './testkit/fakes';
 import { readByIds, readNew, type JobCard, type ReadPlan, type VisitedPage } from './visit';
 
@@ -72,6 +73,26 @@ describe('readNew', () => {
     expect(p.read).toEqual(['a4']);
     expect(jobs.jobs.has('a2')).toBe(false);
     expect(jobs.jobs.has('a4')).toBe(true);
+  });
+
+  it('drops a job whose stated salary is below the floor in that currency, keeps the rest, and stores it anyway', async () => {
+    const jobs = store();
+    const p = platform({
+      a1: { description: 'Salary: €45.000 - €55.000 per year.' },
+      a2: { description: 'Salary: €60.000 - €80.000 per year.' },
+      a3: { description: 'We pay well.' },
+      a4: { description: 'Salary: $30,000 - $40,000 per year.' },
+    });
+    const out = await readNew(jobs, cards, plan(p.visit, { matchSalary: salaryFloor({ min_salary: 58000, salary_currency: 'eur' }) }));
+    expect(out.excluded.map((e) => [e.id, e.reason])).toEqual([['a1', 'salary']]);
+    expect(out.excluded[0]?.term).toContain('45');
+    expect(ids(out.accepted)).toEqual(['a2', 'a3', 'a4']);
+    expect(jobs.jobs.has('a1')).toBe(true);
+  });
+
+  it('refuses a salary floor without a currency, and has no floor at 0', () => {
+    expect(() => salaryFloor({ min_salary: 70000 })).toThrow(/salary_currency/);
+    expect(salaryFloor({ min_salary: 0 })).toBeNull();
   });
 
   it('stores a job before judging its description, so another list reads it from the database next time', async () => {

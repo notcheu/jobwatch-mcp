@@ -100,10 +100,9 @@ describe('linkedin_search with max_jobs=0 (listing)', () => {
     ]);
   });
 
-  it('post-filters on remote and says so', async () => {
+  it('post-filters on remote as a safety net', async () => {
     const result = await LIST.handler(args({ remote_only: true }), context().ctx);
     expect(result.data.cards.map((c) => c.id)).toEqual(['4000000003']);
-    expect(result.warnings.join(' ')).toMatch(/post-filtered/);
   });
 
   it('reports an honest empty result only when the page says there are no results', async () => {

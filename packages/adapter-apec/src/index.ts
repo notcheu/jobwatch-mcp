@@ -55,7 +55,12 @@ const cardSchema = z.object({
   known: z.boolean().describe('Already stored: a previous call read this offer.'),
 });
 
-const excludedSchema = z.object({ id: z.string(), title: z.string(), reason: z.enum(['title', 'description']), term: z.string() });
+const excludedSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  reason: z.enum(['title', 'description', 'salary']),
+  term: z.string(),
+});
 const failedSchema = z.object({ id: z.string(), status: z.string() });
 
 const searchFields = {

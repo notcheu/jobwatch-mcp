@@ -114,4 +114,11 @@ describe('date range', () => {
     expect(layout.searchUrl({ ...base, posted_within: 'any' })).not.toContain('f_TPR');
     expect(layout.searchUrl({ ...base, posted_within: 'past_month' })).toContain('f_TPR=r2592000');
   });
+
+  it('asks LinkedIn for remote jobs (f_WT=2) on the classic layout only', () => {
+    const base = { keywords: 'x', geo: '1234', posted_within: 'any', page: 1, max_results: 25 } as const;
+    expect(classicLayout.searchUrl({ ...base, remote_only: true })).toContain('f_WT=2');
+    expect(classicLayout.searchUrl({ ...base, remote_only: false })).not.toContain('f_WT');
+    expect(aiSearchResultsLayout.searchUrl({ ...base, remote_only: true })).not.toContain('f_WT');
+  });
 });
