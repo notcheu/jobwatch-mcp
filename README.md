@@ -1,102 +1,87 @@
 # jobwatch-mcp
 
-A self-hosted **MCP server** that lets Claude search job boards for you. It exposes a small set of **read-only, task-level tools** (LinkedIn, Apec, Welcome to the Jungle and the public job boards of Teamtailor, Greenhouse, Lever and Ashby) over a public HTTPS endpoint protected by OAuth, and remembers every job it reads so that a later summary costs no new request.
+A self-hosted **MCP server** that lets AI Agents search job boards for you.
+
+It exposes a small set of **read-only, task-level tools** (LinkedIn, Apec, Welcome to the Jungle and the public job boards of Teamtailor, Greenhouse, Lever and Ashby) over a public HTTPS.
 
 - **Read-only by construction.** No tool posts, applies, messages or edits anything on a third-party site. There is no generic `navigate`, `click` or `evaluate` tool: only the tools in the catalog exist.
 - **Light on the host.** Sites that need a browser use one headful Chrome container at a time, started on the first call and stopped after an idle period, with a hard memory cap. Plain HTTP sources need no browser.
 - **Polite to the sites.** Every platform has an hourly and a daily budget, ATS company boards have a budget each, and calls are paced.
 - **Yours only.** Sign-in goes through your own identity provider (Google), restricted to the accounts you allow.
 
-The numbered design documents are in [`docs/plans/`](docs/plans/) (start with `00-overview.md`); this file is the practical guide.
+How the parts fit together: [`docs/architecture.md`](docs/architecture.md).
 
 ## Contents
 
-1. [How it fits together](#how-it-fits-together)
-2. [Install from the repo](#install-from-the-repo)
-3. [Run with Docker Compose](#run-with-docker-compose)
-4. [Enable and disable adapters](#enable-and-disable-adapters)
+1. [Install](#install)
+2. [Configure the OAuth provider](#configure-the-oauth-provider)
+3. [Connect Claude](#connect-claude)
+4. [Modules](#modules)
 5. [Log in to the sites that need it](#log-in-to-the-sites-that-need-it)
-6. [Configure the OAuth provider](#configure-the-oauth-provider)
-7. [Connect Claude](#connect-claude)
-8. [Operator dashboard](#operator-dashboard)
-9. [Commands](#commands)
-10. [Tools and example queries](#tools-and-example-queries)
-11. [Configuration reference](#configuration-reference)
-12. [Development](#development)
+6. [Operator dashboard](#operator-dashboard)
+7. [Commands](#commands)
+8. [Tools and example queries](#tools-and-example-queries)
+9. [Configuration reference](#configuration-reference)
+10. [Development](#development)
 
-## How it fits together
+## Install
 
-```
-Claude ──HTTPS──▶ your reverse proxy (TLS) ──▶ OAuth front ──▶ router ──▶ adapters ──▶ site (HTTP)
-                                                                                  └──▶ Chrome container (browser sites)
-```
+### From source
 
-| Part | Role |
-|---|---|
-| **OAuth front** ([`babs/mcp-auth-proxy`](https://github.com/babs/mcp-auth-proxy) + Redis) | Signs you in with Google and only forwards calls that carry a valid token. |
-| **Router** (this repo, `apps/mcp`) | The MCP server: validates arguments, applies rate limits, runs adapters, stores the jobs it read in SQLite. |
-| **Adapters** (`packages/adapter-*`) | One package per source. Only the ones you enable are plugged in. |
-| **Utilities** (`packages/utility-*`) | Helper modules that fetch no jobs (places, ATS discovery). Enabled separately. |
-| **Browser container** (`images/browser`) | Headful Chrome with one persistent profile per site, spawned by the router through the Docker socket. |
-| **Watchtower** | Optional: keeps the router image up to date. |
-
-## Install from the repo
-
-You need **Node 26** (see `.nvmrc`), npm and Docker.
+You need **Node 26** and npm.
 
 ```bash
-git clone <this repository> jobwatch-mcp && cd jobwatch-mcp
-nvm use                 # Node 26
-npm ci                  # install from the lockfile
-npm run ci              # format check + lint + typecheck + tests (about a minute)
-npm run build           # bundles the server and the CLI into dist/apps/*/main.js
+git clone git@github.com:mnogueron/jobwatch-mcp.git && cd jobwatch-mcp
+npm install
+npm run build
+npm run start
 ```
+
+The MCP server is started on `http://127.0.0.1:18931/mcp`.
+
+#### Use the CLI
 
 The CLI can be used straight from the repo, without Docker:
 
 ```bash
-JW_DATA_DIR=./data npm run jobwatch -- adapters list
+npm run jobwatch -- adapters list
 ```
 
-Build the two images (the router and the browser). The browser image uses Google Chrome on amd64 and Chromium on arm64 (Google ships no Linux arm64 Chrome, so an arm64 build is for development and is not suited to a LinkedIn session):
+### With Docker Compose
+
+`compose.yml` declares the always-on services: the OAuth front, Redis and the router. Browser containers are never declared there; the router starts them itself.
+
+**Host prerequisites.** Docker with Compose, ideally **rootless Docker for a dedicated user** (the router gets that user's socket and nothing more; never mount a root Docker socket). About 2 GB of free RAM while a browser runs. To use it from Claude on the web or desktop you also need a domain name with TLS in front of the front's published port ([reverse proxy](docs/reverse-proxy.md)). The full host setup (rootless Docker, cgroup v2, certificates) is in [`docs/plans/10-deployment.md`](docs/plans/10-deployment.md).
+
+1. Create a folder and copy [`deploy/compose.yml`](deploy/compose.yml) into it.
+2. Create a `.env` file next to it (`chmod 600 .env`; it holds secrets once you add OAuth, never commit it):
 
 ```bash
-docker build -t jobwatch-router:dev .
-docker build -t jobwatch-browser:dev images/browser
+JW_REGISTRY=registry.example.com         # where the router image is pulled from
 ```
 
-## Run with Docker Compose
-
-`deploy/compose.yml` declares the always-on services: the OAuth front, Redis, the router and Watchtower. Browser containers are never declared there; the router starts them itself.
-
-**Host prerequisites.** Docker with Compose, ideally **rootless Docker for a dedicated user** (the router gets that user's socket and nothing more; never mount a root Docker socket). About 2 GB of free RAM while a browser runs. A domain name with TLS in front of the front's published port; the example Nginx files are in `deploy/nginx/`. The full host setup (rootless Docker, cgroup v2, Nginx, certificates) is in [`docs/plans/10-deployment.md`](docs/plans/10-deployment.md).
+3. Start it (Compose reads `.env` by itself):
 
 ```bash
-cp deploy/.env.example deploy/.env      # then edit it; it holds secrets, never commit it
-chmod 600 deploy/.env
-mkdir -p data/router
-
-docker compose -f deploy/compose.yml --env-file deploy/.env up -d
-docker compose -f deploy/compose.yml --env-file deploy/.env ps
-docker compose -f deploy/compose.yml --env-file deploy/.env logs -f router
+mkdir -p data
+docker compose up -d
+docker compose ps
+docker compose logs -f router
 ```
-
-Values to set in `deploy/.env` at least:
 
 | Variable | Meaning |
 |---|---|
-| `JW_BASE_URL` | Public URL of the server, e.g. `https://mcp.example.com` |
-| `JW_REGISTRY`, `JW_TAG` | Where the router image is pulled from (or build it locally, see below) |
+| `JW_BASE_URL` | Public URL of the server, e.g. `https://mcp.example.com` (default `http://127.0.0.1:18931`) |
+| `JW_REGISTRY`, `JW_TAG` | Where the router image is pulled from (or build it locally, see above) |
 | `JW_BIND`, `JW_HOST_PORT` | Where the front is published for your reverse proxy (default `127.0.0.1:18931`) |
-| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Your Google OAuth client ([next sections](#configure-the-oauth-provider)) |
-| `TOKEN_SIGNING_SECRET` | `openssl rand -base64 48`; keep it identical across restarts |
-| `JW_NGINX_CIDR` | Address of your reverse proxy as the front sees it |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `TOKEN_SIGNING_SECRET` | Only with OAuth: see [Configure the OAuth provider](#configure-the-oauth-provider) |
+| `JW_PROXY_CIDR` | Address of your reverse proxy as the front sees it (default `172.17.0.1/32`, the Docker gateway) |
 | `JW_DOCKER_SOCKET` | Docker socket to mount; empty = `$XDG_RUNTIME_DIR/docker.sock` (Linux rootless). macOS: `/var/run/docker.sock` |
 | `JW_BROWSER_IMAGE`, `JW_BROWSER_LANG`, `JW_BROWSER_ACCEPT_LANGS` | The browser image and the language list of your everyday browser |
 
-To build the router locally instead of pulling it: `docker compose -f deploy/compose.yml --env-file deploy/.env build router`.
+The router keeps its data (enabled modules, stored jobs) in `./data`. To update: `docker compose pull router && docker compose up -d router` (or run [Watchtower](docs/watchtower.md)).
 
-**Trying it on a laptop, without OAuth.** `deploy/compose.dev.yml` runs only the router, on `http://127.0.0.1:18932/mcp` with **no authentication** (accepted only on a loopback address). Never expose that port.
+**Trying it on a laptop, without OAuth.** `deploy/compose.dev.yml` runs only the router (built from this repo), on `http://127.0.0.1:18932/mcp` with **no authentication** (accepted only on a loopback address), so no Google client is needed. Never expose that port.
 
 ```bash
 docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up router
@@ -106,36 +91,44 @@ claude mcp add --transport http jobwatch-dev http://127.0.0.1:18932/mcp
 Every `jobwatch` command below runs inside the router container:
 
 ```bash
-alias jobwatch='docker compose -f deploy/compose.yml --env-file deploy/.env exec router jobwatch'
+alias jobwatch='docker compose exec router jobwatch'
 ```
 
-## Enable and disable adapters
+## Configure the OAuth provider
 
-Nothing is enabled by default. The list lives in `data/router/adapters.json`. The commands below also tell a running router to reload the list, so no restart is needed (unless `JW_ADAPTERS` pins the list); reconnect the Claude connector afterwards so it sees the new tools.
+The front uses Google only to **authenticate you**; access control is the Google app itself. While the app is in **Testing** status only the test users you list can sign in.
+
+1. Google Cloud Console: create a project, then **APIs & Services → OAuth consent screen**. User type **External**, scopes `openid`, `email`, `profile`, and add **only your own account as a test user**.
+2. **Credentials → Create credentials → OAuth client ID → Web application**. Authorized redirect URI: `https://<your domain>/callback`.
+3. Add the client ID and secret to `.env` as `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`, generate `TOKEN_SIGNING_SECRET` with `openssl rand -base64 48` (keep it identical across restarts), and set `JW_BASE_URL` to your public URL.
+4. Set up a reverse proxy in front of the front's published port (`127.0.0.1:18931` by default): [`docs/reverse-proxy.md`](docs/reverse-proxy.md).
+5. Start the stack (`docker compose up -d`) and test: a second Google account must be refused by Google ("access blocked").
+
+Rotating `TOKEN_SIGNING_SECRET` invalidates every issued token: remove and re-add the connector in Claude afterwards. Details and the threat model: [`docs/plans/10-deployment.md`](docs/plans/10-deployment.md) and [`docs/plans/09-security.md`](docs/plans/09-security.md).
+
+## Connect Claude
+
+- **Claude (web or desktop)**: *Settings → Connectors → Add custom connector*, URL `https://<your domain>/mcp`. Claude registers itself with the front, you sign in with Google, and the tools appear. Authentication settings cannot be edited later: remove and re-add the connector if you change them.
+- **Claude Code**: `claude mcp add --transport http jobwatch https://<your domain>/mcp`, then authenticate from `/mcp`.
+
+After pulling a new router image, or enabling or disabling a module, reconnect the connector so Claude reloads the tool list. Check the server from Claude by calling `memory_report` (runtime state, rate-limit usage, recent calls) or `session_status`.
+
+## Modules
+
+The tools come from **modules**. An **adapter** fetches jobs from a platform. A **utility** is a helper module whose tools fetch no jobs; it is HTTP only (no browser, no login). Both have their own host list and request budget. Nothing is enabled by default; enable the modules you want, then **reconnect the Claude connector** so it sees the new tools (the same after disabling one).
 
 ```bash
 jobwatch adapters list                       # every installed adapter and whether it is enabled
 jobwatch adapters list --tools linkedin      # the tools of an adapter with their parameters (what Claude will see)
 jobwatch adapters enable apec wttj teamtailor greenhouse lever ashby
 jobwatch adapters disable linkedin
-```
 
-Setting `JW_ADAPTERS=apec,wttj` in the environment overrides the file, makes it read-only and disables hot reload.
-
-### Utilities
-
-An **adapter** fetches jobs from a platform. A **utility** is a helper module whose tools fetch no jobs; it is HTTP only (no browser, no login) and has its own host list and request budget like an adapter. Utilities are enabled with their own commands, written to the `utilities` list of `adapters.json`, and pinned by `JW_UTILITIES`.
-
-```bash
 jobwatch utilities list [--tools] [--json] [<id...>]
 jobwatch utilities enable linkedin-geo ats-discovery
 jobwatch utilities disable ats-discovery
 ```
 
-| Utility id | Tools | What it does |
-|---|---|---|
-| `linkedin-geo` | `linkedin_locations` | Finds the geoId of a place and remembers names for places; enable it next to `linkedin`. |
-| `ats-discovery` | `ats_find` | Finds which ATS (Greenhouse, Lever, Ashby, Teamtailor) hosts a company's careers board and the handle to give to the matching `*_jobs` tool. |
+Setting `JW_ADAPTERS=apec,wttj` (or `JW_UTILITIES=...`) in the environment pins the list and makes it read-only.
 
 | Adapter id | Tools | Needs |
 |---|---|---|
@@ -147,7 +140,12 @@ jobwatch utilities disable ats-discovery
 | `lever` | `lever_jobs` | Nothing (HTTP). |
 | `ashby` | `ashby_jobs` | Nothing (HTTP). |
 
-The built-in tools `session_status`, `memory_report`, `stored_jobs`, `stored_searches` and `stored_job_texts` are always available. The router remembers the search keywords you used and the jobs each one listed, for `JW_JOB_RETENTION_DAYS`, so that `stored_searches` can tell you which keywords bring jobs in.
+| Utility id | Tools | What it does |
+|---|---|---|
+| `linkedin-geo` | `linkedin_locations` | Finds the geoId of a place and remembers names for places; enable it next to `linkedin`. |
+| `ats-discovery` | `ats_find` | Finds which ATS (Greenhouse, Lever, Ashby, Teamtailor) hosts a company's careers board and the handle to give to the matching `*_jobs` tool. |
+
+The built-in tools (`session_status`, `memory_report`, `stored_jobs`, `stored_searches`, `stored_job_texts`) are always available: see [`docs/built-in-tools.md`](docs/built-in-tools.md).
 
 ## Log in to the sites that need it
 
@@ -165,24 +163,18 @@ jobwatch login start linkedin        # starts a visible browser on the site's pr
 
 If a site shows a security check (`checkpoint`), stop, wait at least 24 hours and lower the budget; the router never tries to get around it. Browser profiles are Docker volumes named `jw-profile-<platform>`: never put them in git or in a plain backup.
 
-## Configure the OAuth provider
+### Use your own Chrome instead of the Docker image
 
-The front uses Google only to **authenticate you**; access control is the Google app itself. While the app is in **Testing** status only the test users you list can sign in.
+By default the browser modules (`linkedin`, `apec`, `wttj`) run in a Chrome container. For development on your own machine you can use a Chrome without Docker, in one of two ways. `npm run dev` and `npm run start` use a local Chrome by default (`JW_LOCAL_CHROME=true` in `.env.local`); the Docker Compose deployment keeps the container:
 
-1. Google Cloud Console: create a project, then **APIs & Services → OAuth consent screen**. User type **External**, scopes `openid`, `email`, `profile`, and add **only your own account as a test user**.
-2. **Credentials → Create credentials → OAuth client ID → Web application**. Authorized redirect URI: `https://<your domain>/callback`.
-3. Put the client ID and secret in `deploy/.env` as `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`, and generate `TOKEN_SIGNING_SECRET` with `openssl rand -base64 48`.
-4. Point your reverse proxy at the front's published port. `deploy/nginx/` has a bootstrap site (port 80, for the certificate) and the final site; do not rewrite paths and do not buffer responses.
-5. Start the stack and test: a second Google account must be refused by Google ("access blocked").
+- **`JW_LOCAL_CHROME=true`**: the server starts a visible Chrome itself, the way Playwright does, and stops it after the idle period. Each platform gets its own profile in `<JW_DATA_DIR>/browser-profiles/`, so a sign-in survives restarts. Chrome is looked for in the usual places; set `JW_LOCAL_CHROME_PATH` to use another executable. Close any Chrome that already uses that profile directory.
+- **`JW_CDP_URL=http://127.0.0.1:9222`**: the server attaches to a Chrome that is already running. Start it with its DevTools port open and a profile directory of its own (Chrome ignores the port on its default profile):
 
-Rotating `TOKEN_SIGNING_SECRET` invalidates every issued token: remove and re-add the connector in Claude afterwards. Details and the threat model: [`docs/plans/10-deployment.md`](docs/plans/10-deployment.md) and [`docs/plans/09-security.md`](docs/plans/09-security.md).
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/.jobwatch-chrome"
+```
 
-## Connect Claude
-
-- **Claude (web or desktop)**: *Settings → Connectors → Add custom connector*, URL `https://<your domain>/mcp`. Claude registers itself with the front, you sign in with Google, and the tools appear. Authentication settings cannot be edited later: remove and re-add the connector if you change them.
-- **Claude Code**: `claude mcp add --transport http jobwatch https://<your domain>/mcp`, then authenticate from `/mcp`.
-
-After pulling a new router image, reconnect the connector so Claude reloads the tool list. Check the server from Claude by calling `memory_report` (runtime state, rate-limit usage, recent calls) or `session_status`.
+In both cases you sign in to the sites yourself in that browser (no `jobwatch login`, no noVNC). The server opens a tab of its own for each call and closes it afterwards: **it never closes, navigates or blocks your other tabs**, and it never quits an attached Chrome. Only loopback DevTools URLs are accepted. The memory cap, the fingerprint check and the one-browser-at-a-time rule for containers do not apply to a browser that is not ours.
 
 ## Operator dashboard
 
@@ -194,7 +186,7 @@ jobwatch dashboard status
 jobwatch dashboard stop
 ```
 
-Signing in uses Google, with the same OAuth client as the connector by default: add `https://<your domain>/dashboard/auth/callback` to that client's authorized redirect URIs in Google Cloud Console. The Google app decides who can sign in (keep it in Testing status with only your account as a test user); the dashboard has no allowlist of its own. Changes made from the dashboard need a sign-in within the last 10 minutes. When the router runs for local development (`JW_AUTH=none`, see `deploy/compose.dev.yml`) there is no sign-in and it is at `http://127.0.0.1:18933/dashboard/`. Behind Nginx, `deploy/nginx/mcp.example.com.conf` already maps `/dashboard`. The interface is a React app in `apps/dashboard` (`npm run build` produces it; `npm run dev -w @jobwatch/dashboard` serves it with hot reload and proxies the API to a dashboard started on `127.0.0.1:18933`). The design is in [`docs/plans/17-dashboard.md`](docs/plans/17-dashboard.md).
+Signing in uses Google, with the same OAuth client as the connector by default: add `https://<your domain>/dashboard/auth/callback` to that client's authorized redirect URIs in Google Cloud Console. The Google app decides who can sign in (keep it in Testing status with only your account as a test user); the dashboard has no allowlist of its own. Changes made from the dashboard need a sign-in within the last 10 minutes. When the router runs for local development (`JW_AUTH=none`, see `deploy/compose.dev.yml`) there is no sign-in and it is at `http://127.0.0.1:18933/dashboard/`. Behind a reverse proxy, route `/dashboard` to the dashboard port (`deploy/nginx/mcp.example.com.conf` already maps it for Nginx; see [`docs/reverse-proxy.md`](docs/reverse-proxy.md)). The interface is a React app in `apps/dashboard` (`npm run build` produces it; `npm run dev -w @jobwatch/dashboard` serves it with hot reload and proxies the API to a dashboard started on `127.0.0.1:18933`). The design is in [`docs/plans/17-dashboard.md`](docs/plans/17-dashboard.md).
 
 ## Commands
 
@@ -203,8 +195,8 @@ Signing in uses Google, with the same OAuth client as the connector by default: 
 | Command | What it does |
 |---|---|
 | `adapters list [--tools] [--json] [<id...>]` | Installed adapters and whether each is enabled. `--tools` adds every tool with its parameters (required ones starred, defaults, cost); `--json` gives the full catalog entries; ids narrow the list. |
-| `adapters enable <id...>` | Enable adapters (written to `adapters.json`). |
-| `adapters disable <id...>` | Disable adapters. |
+| `adapters enable <id...>`, `adapters disable <id...>` | Enable or disable adapters. |
+| `utilities list\|enable\|disable ...` | The same for utilities. |
 | `login start <platform> [--port 6080]` | Start a visible browser on the platform's profile to sign in by hand (noVNC on loopback). |
 | `login stop <platform>` | Stop it; the profile keeps the session. |
 | `linkedin-geo <text> [--save <name> [--pick <n>]]`, `linkedin-geo --list`, `linkedin-geo --forget <name>` | Find the LinkedIn geoId of a place (the candidates with their ids), remember a name for one, list or forget the remembered names. Needs the `linkedin-geo` utility. |
@@ -214,7 +206,7 @@ Signing in uses Google, with the same OAuth client as the connector by default: 
 | `doctor` | Check configuration, data directory, Docker, images, network and profiles. |
 | `--help`, `--version` | |
 
-Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is broken or Docker failed. `adapters enable|disable` reloads a running router at once.
+Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is broken or Docker failed.
 
 ### Repo scripts
 
@@ -228,6 +220,7 @@ Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is brok
 | `npm run new:utility -- <id>` | Scaffold a new utility package (always HTTP). |
 | `npm run test:integration` | Drive a real browser container (needs Docker; never in CI). |
 | `npm run test:dashboard` | Smoke-test the built router and dashboard (run `npm run build` first; not in CI). |
+| `npm run dev` | Run the server from the sources with watch and restart, configured by `.env.local`. |
 | `npm run jobwatch -- <args>` | Build and run the CLI. |
 
 ## Tools and example queries
@@ -276,11 +269,9 @@ Find the geoId of a place, and remember a name for it (`linkedin_locations`, fro
 
 Find which ATS a company's careers board is on (`ats_find`, from the `ats-discovery` utility), then read its jobs with the tool it names:
 
+```json
+{ "companies": ["Acme", "https://www.example.com", "https://jobs.lever.co/swile"] }
 ```
-
-{"companies":["Acme","https://www.example.com","https://jobs.lever.co/swile"]}
-
-```unknown
 
 Read specific jobs by id (up to 25; stored ones come from the database with no visit):
 
@@ -387,61 +378,6 @@ A board is the job board name, spelled exactly (`pennylane`), or its page URL (`
 ```
 </details>
 
-<details>
-<summary><strong>Built-in tools</strong> — <code>session_status</code>, <code>memory_report</code>, <code>stored_jobs</code>, <code>stored_searches</code>, <code>stored_job_texts</code></summary>
-
-Is the LinkedIn session still valid?
-
-```json
-{ "platform": "linkedin" }
-```
-
-Router state, rate-limit usage per platform and per company board, recent calls (no arguments):
-
-```json
-{}
-```
-
-The week's new jobs from the database, without calling any site. Add `terms` to see which keywords each job contains and how many jobs each keyword brought in (`stats`); text is off unless you ask for it:
-
-```json
-{
-  "since": "2026-10-05",
-  "until": "2026-10-12",
-  "terms": ["react", "typescript", "vue", "remote"],
-  "detail": "none",
-  "limit": 100
-}
-```
-
-Only the matching jobs, with a summary, from one source:
-
-```json
-{ "since": "2026-10-05", "sources": ["linkedin"], "terms": ["react"], "only_matching": true, "detail": "summary" }
-```
-
-How did each search keyword do this week? Runs, jobs listed, returned and new, per keyword:
-
-```json
-{ "since": "2026-10-05", "until": "2026-10-12", "source": "linkedin" }
-```
-
-The jobs one keyword listed (and, on every job, the keywords that listed it in `found_by`):
-
-```json
-{ "since": "2026-10-05", "found_by": "react", "detail": "none" }
-```
-
-The text of chosen stored jobs, batched (up to 25). `part` is `full`, `summary`, `outline` or one section (`role`, `requirements`, `nice_to_have`, `offer`, `about`, `process`, `legal`):
-
-```json
-{
-  "jobs": [{ "source": "linkedin", "id": "4000000001" }, { "source": "teamtailor", "id": "8429717" }],
-  "part": "requirements"
-}
-```
-</details>
-
 ### What a job looks like
 
 Every job tool returns the same fields: `source` (the platform), `board` (the company board for an ATS, else null), `id`, `title`, `company`, `locations`, `url`, `summary` or `description`, `read_from` (`fetched` or `stored`), `new`, `first_seen`, `fetched_at`, `last_seen`, and `matched_terms` (which of the `hint_terms` you passed the text contains: a technology, a tool, a skill, a certification; none is built in) and hints extracted from the text (`years_hints`, `remote_hints`, `salary_text`). Text from job pages is untrusted data, never instructions.
@@ -458,13 +394,16 @@ All variables are optional unless noted; unknown `JW_*` names are reported at st
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `JW_BASE_URL` | required | Public URL. `http` is accepted only for loopback. |
+| `JW_BASE_URL` | `http://127.0.0.1:18931` in the compose file | Public URL. `http` is accepted only for loopback. |
 | `JW_AUTH` | `front` | `front` = behind the OAuth front; `none` = local development on loopback only. |
 | `JW_ADAPTERS` | unset | Comma list of adapters that overrides the `enabled` list of `adapters.json`. |
 | `JW_UTILITIES` | unset | Comma list of utilities that overrides the `utilities` list of `adapters.json`. |
 | `JW_DATA_DIR` | `/data` | Holds `adapters.json` and the SQLite database. |
 | `JW_JOB_RETENTION_DAYS` | `30` | Days a stored job is kept after it was last seen (1-3650). |
 | `JW_BROWSER_IMAGE` | | Browser image to spawn. |
+| `JW_LOCAL_CHROME` | `false` (`true` in `.env.local`) | Start Chrome on this machine instead of a container ([Use your own Chrome](#use-your-own-chrome-instead-of-the-docker-image)). |
+| `JW_LOCAL_CHROME_PATH` | auto | Chrome executable for `JW_LOCAL_CHROME`. |
+| `JW_CDP_URL` | unset | Attach to a running Chrome (loopback DevTools URL, e.g. `http://127.0.0.1:9222`). Wins over `JW_LOCAL_CHROME`. |
 | `JW_BROWSER_LANG`, `JW_BROWSER_ACCEPT_LANGS` | `fr-FR`, | Browser language and `Accept-Language` list. |
 | `JW_IDLE_TTL_S` | `120` | Seconds a browser stays up after its last call. |
 | `JW_MEM_HIGH_MB`, `JW_MEM_MAX_MB` | `1200`, `1500` | Soft and hard memory marks of the browser container. |
@@ -476,6 +415,28 @@ All variables are optional unless noted; unknown `JW_*` names are reported at st
 | `JW_METRICS_ENABLED`, `JW_METRICS_PORT` | `false`, `9464` | Prometheus `/metrics` on its own port. |
 
 ## Development
+
+```bash
+npm run dev
+```
+
+The server is started on `http://127.0.0.1:18931/mcp` in watch mode.
+
+### Build your own image
+
+To run your own build instead of the published image, build the two images (the router and the browser). The browser image uses Google Chrome on amd64 and Chromium on arm64:
+
+```bash
+docker build -t jobwatch-router:dev .      # to use it with the compose file below: tag it local/jobwatch-router:dev and set JW_REGISTRY=local, JW_TAG=dev in .env
+docker build -t jobwatch-browser:dev images/browser
+```
+
+Set the repo up as in [Install from the repo](#install-from-the-repo), then check your work before a PR:
+
+```bash
+npm run ci              # format check + lint + typecheck + tests (about a minute)
+npm run build           # bundles the server and the CLI into dist/apps/*/main.js
+```
 
 The repository is an Nx and npm-workspaces monorepo: `packages/sdk` (the adapter contract), `packages/core` (the engine), `packages/mcp-modules` (the installed adapter and utility maps), `packages/adapter-<platform>` (one per source), `packages/utility-<name>` (one per utility), `apps/mcp` (the server) and `apps/cli` (`jobwatch`). Adapters and utilities import only `@jobwatch/sdk`; this is enforced by lint.
 

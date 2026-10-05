@@ -8,8 +8,7 @@ const USAGE = `Usage:
   jobwatch dashboard status                    is it open, where, and when it closes
 `;
 
-const NO_ROUTER =
-  'No router is running (nothing answers on its control socket). Start it first: docker compose -f deploy/compose.yml --env-file deploy/.env up -d';
+const NO_ROUTER = 'No router is running (nothing answers on its control socket). Start it first: docker compose up -d';
 
 function describe(deps: Deps, answer: Extract<ControlResponse, { ok: true }>): void {
   const stops = typeof answer['stopsAt'] === 'string' ? new Date(answer['stopsAt']) : undefined;

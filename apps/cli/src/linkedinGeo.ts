@@ -24,8 +24,7 @@ interface Remembered {
   saved_by: string;
 }
 
-const NO_ROUTER =
-  'No router is running (nothing answers on its control socket). Start it first: docker compose -f deploy/compose.yml --env-file deploy/.env up -d';
+const NO_ROUTER = 'No router is running (nothing answers on its control socket). Start it first: docker compose up -d';
 
 /** `jobwatch linkedin-geo` (also `linked-geo`): finds the LinkedIn geoId of a place and manages remembered names, through the running router. */
 export async function linkedinGeo(deps: Deps, args: string[]): Promise<number> {

@@ -58,7 +58,7 @@ The dashboard API is a **public surface** for one authenticated operator, but it
 
 - Every endpoint has an explicit **response type** defined once in a new package `packages/dashboard-api` (zod schemas + inferred types) and used by both the server and the UI. A database row (`StoredJobRow`, `UsageEvent`, `CallRecord`) is never serialised as is.
 - The list of jobs omits `description`; only the detail endpoint returns it (the same `detail` idea as the MCP tools, so a table of 200 rows is a few kilobytes, not megabytes).
-- Never returned: cookies, tokens, the OAuth secrets, `deploy/.env` values, the control socket path, container ids, the Docker socket, raw tool arguments (only the argument hash and, for searches, the recorded keywords), browser profile data.
+- Never returned: cookies, tokens, the OAuth secrets, `.env` values, the control socket path, container ids, the Docker socket, raw tool arguments (only the argument hash and, for searches, the recorded keywords), browser profile data.
 - A test (§9) serialises every endpoint's response and asserts it contains none of a list of forbidden keys and strings.
 
 ## 4. Data the dashboard needs
@@ -198,7 +198,7 @@ The dashboard exposes job-search data, the parameters of every call and a switch
 - **Session.** After the callback the dashboard sets a random session id in a `Secure`, `HttpOnly`, `SameSite=Strict` cookie scoped to path `/dashboard`, kept server-side in memory (so a restart signs everyone out). There is no separate session idle timer (D11): the session lasts until the dashboard stops (30 minutes without a request) with an absolute cap of 8 hours, and `dashboard stop` revokes all of them. No token is ever placed in a URL.
 - **Writes need a recent sign-in** (D11). `PUT /adapters/:id` and `POST /router/restart` are refused unless the session authenticated within the last 10 minutes (OIDC `max_age`); otherwise the UI sends the user through Google again. A stolen idle session cannot change the router.
 - **CSRF and origin.** Every non-GET request needs a custom header the app sets, an `Origin` equal to the configured public origin, and the `SameSite=Strict` cookie. `Host` must equal the configured public host (no DNS rebinding, no open Host).
-- **Brute force.** Per-IP rate limiting on the login routes (the real client address comes from the `X-Forwarded-For` that Nginx overwrites, trusted only from `JW_NGINX_CIDR`), constant-time checks, a generic error for a refused email.
+- **Brute force.** Per-IP rate limiting on the login routes (the real client address comes from the `X-Forwarded-For` that Nginx overwrites, trusted only from `JW_PROXY_CIDR`), constant-time checks, a generic error for a refused email.
 - **Headers.** Strict CSP (`default-src 'self'`, no inline script, `frame-ancestors 'none'`), `X-Content-Type-Options`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on API responses, HSTS inherited from the site, no CORS.
 - **Nginx.** The `/dashboard` block adds its own request-rate limit, `client_max_body_size 64k`, and does not buffer the optional SSE stream; the WAF/allowlist rules of `docs/plans/10` are unchanged for the MCP paths.
 - **What the API never returns** (section 3), and in particular: the call `params` come only from the in-memory buffer (D9), only on the detail endpoint, never in a list response, never persisted.
