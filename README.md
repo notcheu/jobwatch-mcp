@@ -124,6 +124,7 @@ Setting `JW_ADAPTERS=apec,wttj` in the environment overrides the file, makes it 
 | Adapter id | Tools | Needs |
 |---|---|---|
 | `linkedin-geo` | `linkedin_locations` | Nothing (HTTP, no login, no browser). Finds the geoId of a place and remembers names for places; enable it next to `linkedin`. |
+| `ats-discovery` | `ats_find` | Nothing (HTTP, no login, no browser). Finds which ATS (Greenhouse, Lever, Ashby, Teamtailor) hosts a company's careers board and the handle to give to the matching `*_jobs` tool. |
 | `linkedin` | `linkedin_search`, `linkedin_job` | A signed-in browser session. Strict budget: check [`docs/plans/09-security.md`](docs/plans/09-security.md) before enabling. |
 | `apec` | `apec_search`, `apec_job` | A browser (no login). Apec blocks plain HTTP. |
 | `wttj` | `wttj_matches`, `wttj_job` | A signed-in browser session. |
@@ -257,6 +258,14 @@ Find the geoId of a place, and remember a name for it (`linkedin_locations`, fro
 ```json
 { "save_as": "home", "id": "103035651", "label": "Berlin, Germany" }
 ```
+
+Find which ATS a company's careers board is on (`ats_find`, from the `ats-discovery` adapter), then read its jobs with the tool it names:
+
+```
+
+{"companies":["Acme","https://www.example.com","https://jobs.lever.co/swile"]}
+
+```unknown
 
 Read specific jobs by id (up to 25; stored ones come from the database with no visit):
 
