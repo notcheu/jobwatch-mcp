@@ -3,11 +3,11 @@ import { controlSocketPath, loadStorageSettings, sendControl, type ControlRespon
 import type { Deps } from './cli';
 
 const USAGE = `Usage:
-  jobwatch geo <text>                     look a place up on LinkedIn: its candidates and their geoIds
-  jobwatch geo <text> --save <name> [--pick <n>]
+  jobwatch linkedin-geo <text>                     look a place up on LinkedIn: its candidates and their geoIds
+  jobwatch linkedin-geo <text> --save <name> [--pick <n>]
                                           remember <name> for the n-th candidate (default 1); searches can then use it as geo
-  jobwatch geo --list                     the remembered names
-  jobwatch geo --forget <name>            forget one
+  jobwatch linkedin-geo --list                     the remembered names
+  jobwatch linkedin-geo --forget <name>            forget one
 
 The lookup uses the linkedin-geo adapter (jobwatch adapters enable linkedin-geo). A name you save is also kept by the router, so
 no restart is needed.
@@ -27,8 +27,8 @@ interface Remembered {
 const NO_ROUTER =
   'No router is running (nothing answers on its control socket). Start it first: docker compose -f deploy/compose.yml --env-file deploy/.env up -d';
 
-/** `jobwatch geo`: finds the LinkedIn geoId of a place and manages remembered names, through the running router. */
-export async function geo(deps: Deps, args: string[]): Promise<number> {
+/** `jobwatch linkedin-geo` (also `linked-geo`): finds the LinkedIn geoId of a place and manages remembered names, through the running router. */
+export async function linkedinGeo(deps: Deps, args: string[]): Promise<number> {
   let parsed;
   try {
     parsed = parseArgs({
@@ -80,19 +80,19 @@ export async function geo(deps: Deps, args: string[]): Promise<number> {
   };
 
   if (values.list) {
-    const answer = await ask('geo.list', {});
+    const answer = await ask('linkedin-geo.list', {});
     if (answer === undefined) return 2;
     showSaved(answer['remembered'] as Remembered[]);
     return 0;
   }
   if (values.forget !== undefined) {
-    const answer = await ask('geo.forget', { alias: values.forget });
+    const answer = await ask('linkedin-geo.forget', { alias: values.forget });
     if (answer === undefined) return 2;
     deps.io.out(`Forgot "${values.forget}".\n`);
     return 0;
   }
 
-  const found = await ask('geo.lookup', { query: text });
+  const found = await ask('linkedin-geo.lookup', { query: text });
   if (found === undefined) return 2;
   const places = found['places'] as Place[];
   if (places.length === 0) {
@@ -103,7 +103,7 @@ export async function geo(deps: Deps, args: string[]): Promise<number> {
 
   if (values.save === undefined) {
     deps.io.out(
-      '\nTo remember one:  jobwatch geo "' +
+      '\nTo remember one:  jobwatch linkedin-geo "' +
         text +
         '" --save <name> --pick <number>\nA search can then pass the geoId, or the name you saved, as geo.\n',
     );
@@ -115,7 +115,7 @@ export async function geo(deps: Deps, args: string[]): Promise<number> {
     deps.io.err(`--pick is a number between 1 and ${Math.min(places.length, 10)}.\n`);
     return 1;
   }
-  const saved = await ask('geo.save', { alias: values.save, id: chosen.id, label: chosen.label });
+  const saved = await ask('linkedin-geo.save', { alias: values.save, id: chosen.id, label: chosen.label });
   if (saved === undefined) return 2;
   deps.io.out(`\nRemembered "${values.save}" = ${chosen.id} (${chosen.label}).\n`);
   return 0;

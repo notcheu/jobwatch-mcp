@@ -192,7 +192,7 @@ Signing in uses Google, with the same OAuth client as the connector by default: 
 | `adapters disable <id...>` | Disable adapters. |
 | `login start <platform> [--port 6080]` | Start a visible browser on the platform's profile to sign in by hand (noVNC on loopback). |
 | `login stop <platform>` | Stop it; the profile keeps the session. |
-| `geo <text> [--save <name> [--pick <n>]]`, `geo --list`, `geo --forget <name>` | Find the LinkedIn geoId of a place (the candidates with their ids), remember a name for one, list or forget the remembered names. Needs the `linkedin-geo` adapter. |
+| `linkedin-geo <text> [--save <name> [--pick <n>]]`, `linkedin-geo --list`, `linkedin-geo --forget <name>` | Find the LinkedIn geoId of a place (the candidates with their ids), remember a name for one, list or forget the remembered names. Needs the `linkedin-geo` adapter. |
 | `dashboard start [--ttl <minutes>]` | Open the operator dashboard on the running router (closed by default; it closes after 30 minutes without use). |
 | `dashboard stop` | Close it and end every session. |
 | `dashboard status` | Is it open, where, and when it closes. |
@@ -264,7 +264,7 @@ Read specific jobs by id (up to 25; stored ones come from the database with no v
 { "ids": ["4000000001", "4000000002"], "detail": "full" }
 ```
 
-`geo` is a place name LinkedIn understands (`"Berlin, Germany"`, `"Austin, Texas"`, `"Remote"`) or a numeric LinkedIn geoId. Leave it out to use the operator's `JW_DEFAULT_LOCATION`; there is no place built in. A place name is looked up on LinkedIn's own location autocomplete the first time and remembered (the result says which place it chose and what else it could be); `linkedin_locations` or `jobwatch geo` show the candidates and let you remember a name yourself; `JW_LINKEDIN_GEO_ALIASES` (`home=104246759`) names geoIds in the environment.
+`geo` is a place name LinkedIn understands (`"Berlin, Germany"`, `"Austin, Texas"`, `"Remote"`) or a numeric LinkedIn geoId. Leave it out to use the operator's `JW_DEFAULT_LOCATION`; there is no place built in. A place name is looked up on LinkedIn's own location autocomplete the first time and remembered (the result says which place it chose and what else it could be); `linkedin_locations` or `jobwatch linkedin-geo` show the candidates and let you remember a name yourself; `JW_LINKEDIN_GEO_ALIASES` (`home=104246759`) names geoIds in the environment.
 </details>
 
 <details>

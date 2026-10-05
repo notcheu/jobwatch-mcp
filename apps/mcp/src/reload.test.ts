@@ -237,7 +237,7 @@ describe('changing adapters from the dashboard', () => {
   });
 });
 
-describe('places through the control socket (jobwatch geo)', () => {
+describe('places through the control socket (jobwatch linkedin-geo)', () => {
   const BERLIN = [
     { id: '103035651', type: 'GEO', displayName: 'Berlin, Germany' },
     { id: '90009712', type: 'GEO', displayName: 'Berlin Metropolitan Area' },
@@ -264,23 +264,25 @@ describe('places through the control socket (jobwatch geo)', () => {
 
   it('looks a place up, remembers a name for it, lists it and forgets it', async () => {
     const socket = await bootWithGeo();
-    const found = await sendControl(socket, { command: 'geo.lookup', query: 'Berlin' });
+    const found = await sendControl(socket, { command: 'linkedin-geo.lookup', query: 'Berlin' });
     expect(found).toMatchObject({ ok: true, best: { id: '103035651' } });
     expect((found as any).places.map((place: any) => place.id)).toEqual(['103035651', '90009712']);
 
-    expect(await sendControl(socket, { command: 'geo.save', alias: 'home', id: '103035651', label: 'Berlin, Germany' })).toMatchObject({
+    expect(
+      await sendControl(socket, { command: 'linkedin-geo.save', alias: 'home', id: '103035651', label: 'Berlin, Germany' }),
+    ).toMatchObject({
       ok: true,
       saved: { alias: 'home', id: '103035651' },
     });
-    expect(((await sendControl(socket, { command: 'geo.list' })) as any).remembered).toEqual([
+    expect(((await sendControl(socket, { command: 'linkedin-geo.list' })) as any).remembered).toEqual([
       { alias: 'home', id: '103035651', label: 'Berlin, Germany', saved_by: 'operator' },
     ]);
-    expect(((await sendControl(socket, { command: 'geo.forget', alias: 'Home' })) as any).remembered).toEqual([]);
+    expect(((await sendControl(socket, { command: 'linkedin-geo.forget', alias: 'Home' })) as any).remembered).toEqual([]);
   });
 
   it('shows the lookup in the call history like any other call', async () => {
     const socket = await bootWithGeo();
-    await sendControl(socket, { command: 'geo.lookup', query: 'Berlin' });
+    await sendControl(socket, { command: 'linkedin-geo.lookup', query: 'Berlin' });
     expect(running?.callLog.list({ limit: 5 }).calls[0]).toMatchObject({ tool: 'linkedin_locations', code: 'ok' });
   });
 
@@ -303,7 +305,7 @@ describe('places through the control socket (jobwatch geo)', () => {
       });
       return controlSocketPath(dir);
     })();
-    expect(await sendControl(socket, { command: 'geo.lookup', query: 'Berlin' })).toMatchObject({
+    expect(await sendControl(socket, { command: 'linkedin-geo.lookup', query: 'Berlin' })).toMatchObject({
       ok: false,
       error: expect.stringContaining('jobwatch adapters enable linkedin-geo'),
     });

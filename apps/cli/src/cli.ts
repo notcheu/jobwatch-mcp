@@ -14,7 +14,7 @@ import { buildCatalog, type CatalogEntry } from '@jobwatch/sdk';
 import type { DockerRunner, InstalledAdapters } from '@jobwatch/core';
 import { dashboard } from './dashboard';
 import { doctor } from './doctor';
-import { geo } from './geo';
+import { linkedinGeo } from './linkedinGeo';
 import { login } from './login';
 
 export interface Io {
@@ -43,7 +43,7 @@ Usage:
   jobwatch adapters disable <id...>    disable adapters
   jobwatch login start <platform>      start a visible browser to sign in by hand (noVNC on loopback)
   jobwatch login stop <platform>       stop it again
-  jobwatch geo <text> [--save <name> [--pick <n>]] | --list | --forget <name>
+  jobwatch linkedin-geo <text> [--save <name> [--pick <n>]] | --list | --forget <name>
                                        find the LinkedIn geoId of a place and remember names for places
   jobwatch dashboard start [--ttl <minutes>] | stop | status
                                        open or close the operator dashboard on the running router (closed by default)
@@ -251,8 +251,8 @@ export async function run(argv: readonly string[], deps: Deps): Promise<number> 
         deps,
         [subcommand, ...rest].filter((part): part is string => part !== undefined),
       );
-    if (command === 'geo')
-      return await geo(
+    if (command === 'linkedin-geo' || command === 'linked-geo')
+      return await linkedinGeo(
         deps,
         [subcommand, ...rest].filter((part): part is string => part !== undefined),
       );
