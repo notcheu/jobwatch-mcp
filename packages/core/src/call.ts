@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   JobwatchError,
-  type AdapterModule,
+  type McpModule,
   type AdapterResult,
   type BaseContext,
   type ErasedTool,
@@ -15,7 +15,7 @@ import type { Registry } from './registry';
 /** Gives a handler its context (HTTP client, browser session, logger) and takes it back. Real providers arrive in steps 5 and 6. */
 export interface ContextProvider {
   acquire(
-    adapter: AdapterModule,
+    adapter: McpModule,
     requestId: string,
   ): Promise<{
     ctx: BaseContext;
@@ -44,8 +44,8 @@ export interface Admission {
 }
 
 export interface CallGuard {
-  admit(adapter: AdapterModule, tool: ErasedTool<BaseContext>, args: unknown): Admission | undefined;
-  failed(adapter: AdapterModule, error: JobwatchError): void;
+  admit(adapter: McpModule, tool: ErasedTool<BaseContext>, args: unknown): Admission | undefined;
+  failed(adapter: McpModule, error: JobwatchError): void;
 }
 
 /** Receives the outcome of every call (the call log). A recorder that throws never affects the call. */

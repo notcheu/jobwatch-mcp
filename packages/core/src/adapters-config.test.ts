@@ -24,22 +24,24 @@ const fromFile = {
 describe('fresh install', () => {
   it('has nothing enabled and says where that came from', async () => {
     expect(await readEnabledFile(dataDir)).toBeUndefined();
-    expect(await resolveEnabledAdapters(fromFile)).toEqual({ ids: [], source: 'default' });
+    expect(await resolveEnabledAdapters(fromFile)).toEqual({ ids: [], adapters: [], utilities: [], source: 'default' });
   });
 });
 
 describe('writeEnabledFile / readEnabledFile', () => {
   it('writes sorted, de-duplicated JSON atomically (no temp file left behind)', async () => {
-    await writeEnabledFile(dataDir, ['linkedin', 'apec', 'linkedin']);
-    expect(await readFile(adaptersFilePath(dataDir), 'utf8')).toBe('{\n  "enabled": [\n    "apec",\n    "linkedin"\n  ]\n}\n');
+    await writeEnabledFile(dataDir, { adapters: ['linkedin', 'apec', 'linkedin'], utilities: ['linkedin-geo'] });
+    expect(await readFile(adaptersFilePath(dataDir), 'utf8')).toBe(
+      '{\n  "enabled": [\n    "apec",\n    "linkedin"\n  ],\n  "utilities": [\n    "linkedin-geo"\n  ]\n}\n',
+    );
     expect(await readdir(dataDir)).toEqual(['adapters.json']);
-    expect(await readEnabledFile(dataDir)).toEqual(['apec', 'linkedin']);
+    expect(await readEnabledFile(dataDir)).toEqual({ adapters: ['apec', 'linkedin'], utilities: ['linkedin-geo'] });
   });
 
   it('creates the data directory when missing', async () => {
     const nested = join(dataDir, 'a', 'b');
-    await writeEnabledFile(nested, ['apec']);
-    expect(await readEnabledFile(nested)).toEqual(['apec']);
+    await writeEnabledFile(nested, { adapters: ['apec'], utilities: [] });
+    expect(await readEnabledFile(nested)).toEqual({ adapters: ['apec'], utilities: [] });
   });
 });
 
@@ -60,14 +62,19 @@ describe('a broken file is an error, never "nothing enabled"', () => {
 
 describe('resolveEnabledAdapters precedence', () => {
   it('lets JW_ADAPTERS win over the file, even when it is empty', async () => {
-    await writeEnabledFile(dataDir, ['linkedin']);
-    expect(await resolveEnabledAdapters({ adaptersFromEnv: ['apec'], dataDir })).toEqual({ ids: ['apec'], source: 'env' });
-    expect(await resolveEnabledAdapters({ adaptersFromEnv: [], dataDir })).toEqual({ ids: [], source: 'env' });
+    await writeEnabledFile(dataDir, { adapters: ['linkedin'], utilities: [] });
+    expect(await resolveEnabledAdapters({ adaptersFromEnv: ['apec'], dataDir })).toEqual({
+      ids: ['apec'],
+      adapters: ['apec'],
+      utilities: [],
+      source: 'env',
+    });
+    expect(await resolveEnabledAdapters({ adaptersFromEnv: [], dataDir })).toEqual({ ids: [], adapters: [], utilities: [], source: 'env' });
   });
 
   it('uses the file when the environment says nothing', async () => {
-    await writeEnabledFile(dataDir, ['linkedin']);
-    expect(await resolveEnabledAdapters(fromFile)).toEqual({ ids: ['linkedin'], source: 'file' });
+    await writeEnabledFile(dataDir, { adapters: ['linkedin'], utilities: [] });
+    expect(await resolveEnabledAdapters(fromFile)).toEqual({ ids: ['linkedin'], adapters: ['linkedin'], utilities: [], source: 'file' });
   });
 });
 
@@ -82,7 +89,7 @@ describe('setAdaptersEnabled', () => {
   });
 
   it('disables and reports what changed', async () => {
-    await writeEnabledFile(dataDir, ['apec', 'linkedin']);
+    await writeEnabledFile(dataDir, { adapters: ['apec', 'linkedin'], utilities: [] });
     expect(await setAdaptersEnabled(fromFile, installed, ['linkedin'], false)).toEqual({ ids: ['apec'], changed: ['linkedin'] });
     expect(await setAdaptersEnabled(fromFile, installed, ['linkedin'], false)).toEqual({ ids: ['apec'], changed: [] });
   });
@@ -107,12 +114,54 @@ describe('setAdaptersEnabled', () => {
   });
 
   it('can always disable a stale entry whose adapter was deleted from the code', async () => {
-    await writeEnabledFile(dataDir, ['apec', 'ghost']);
+    await writeEnabledFile(dataDir, { adapters: ['apec', 'ghost'], utilities: [] });
     expect(await setAdaptersEnabled(fromFile, installed, ['ghost'], false)).toEqual({ ids: ['apec'], changed: ['ghost'] });
-    expect(await readEnabledFile(dataDir)).toEqual(['apec']);
+    expect(await readEnabledFile(dataDir)).toEqual({ adapters: ['apec'], utilities: [] });
   });
 
   it('treats disabling something that was never enabled as a no-op, not an error', async () => {
     expect(await setAdaptersEnabled(fromFile, installed, ['nonexistent'], false)).toEqual({ ids: [], changed: [] });
+  });
+});
+
+describe('utilities are a group of their own', () => {
+  const utilities = ['linkedin-geo', 'ats-discovery'];
+
+  it('enables them in their own list, leaving the adapters alone', async () => {
+    await setAdaptersEnabled(fromFile, installed, ['apec'], true);
+    expect(await setAdaptersEnabled(fromFile, utilities, ['linkedin-geo'], true, 'utilities')).toEqual({
+      ids: ['linkedin-geo'],
+      changed: ['linkedin-geo'],
+    });
+    expect(await readEnabledFile(dataDir)).toEqual({ adapters: ['apec'], utilities: ['linkedin-geo'] });
+    expect(await resolveEnabledAdapters(fromFile)).toEqual({
+      ids: ['apec', 'linkedin-geo'],
+      adapters: ['apec'],
+      utilities: ['linkedin-geo'],
+      source: 'file',
+    });
+  });
+
+  it('is pinned by JW_UTILITIES alone, and the adapters then still come from the file', async () => {
+    await writeEnabledFile(dataDir, { adapters: ['apec'], utilities: [] });
+    const env = { adaptersFromEnv: undefined, utilitiesFromEnv: ['ats-discovery'], dataDir };
+    expect(await resolveEnabledAdapters(env)).toEqual({
+      ids: ['apec', 'ats-discovery'],
+      adapters: ['apec'],
+      utilities: ['ats-discovery'],
+      source: 'env',
+    });
+    await expect(setAdaptersEnabled(env, utilities, ['linkedin-geo'], true, 'utilities')).rejects.toThrow(/JW_UTILITIES is set/);
+    expect((await setAdaptersEnabled(env, installed, ['linkedin'], true)).ids).toEqual(['apec', 'linkedin']);
+  });
+
+  it('reads a file written before utilities existed, and disabling clears a utility left among the adapters', async () => {
+    await writeFile(adaptersFilePath(dataDir), '{"enabled":["apec","linkedin-geo"]}');
+    expect((await resolveEnabledAdapters(fromFile)).ids).toEqual(['apec', 'linkedin-geo']);
+    expect(await setAdaptersEnabled(fromFile, utilities, ['linkedin-geo'], false, 'utilities')).toEqual({
+      ids: [],
+      changed: ['linkedin-geo'],
+    });
+    expect(await readEnabledFile(dataDir)).toEqual({ adapters: ['apec'], utilities: [] });
   });
 });

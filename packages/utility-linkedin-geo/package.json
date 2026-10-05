@@ -1,8 +1,8 @@
 {
-  "name": "@jobwatch/adapter-ats-discovery",
+  "name": "@jobwatch/utility-linkedin-geo",
   "version": "0.0.0",
   "private": true,
-  "description": "Ats Discovery adapter (read-only).",
+  "description": "LinkedIn locations utility (read-only).",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -17,7 +17,7 @@
   },
   "nx": {
     "tags": [
-      "type:adapter"
+      "type:utility"
     ]
   }
 }

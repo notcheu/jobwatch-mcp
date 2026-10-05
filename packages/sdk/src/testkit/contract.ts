@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AdapterModule } from '../adapter';
+import type { McpModule } from '../adapter';
 import { stableStringify } from '../catalog';
 import { diffCatalogSnapshot, writeCatalogSnapshot } from '../catalog-fs';
 import { validateAdapter } from '../validate';
@@ -27,7 +27,7 @@ export interface ContractOptions {
  * The contract test every adapter package runs (docs/plans/11-testing-and-validation.md). Call it from a `*.test.ts` file:
  * `describeAdapterContract(adapter, { snapshotDir: new URL('../catalog', import.meta.url).pathname })`.
  */
-export function describeAdapterContract(adapter: AdapterModule, options: ContractOptions): void {
+export function describeAdapterContract(adapter: McpModule, options: ContractOptions): void {
   describe(`adapter contract: ${adapter.id}`, () => {
     it('satisfies the startup rules', () => {
       expect(validateAdapter(adapter)).toEqual([]);

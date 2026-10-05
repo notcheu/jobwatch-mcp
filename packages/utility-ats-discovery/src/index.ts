@@ -1,4 +1,4 @@
-import { SDK_API_VERSION, defineAdapter, defineHttpTool, z } from '@jobwatch/sdk';
+import { SDK_API_VERSION, defineHttpTool, defineUtility, z } from '@jobwatch/sdk';
 import { ATS_IDS, boardPage, candidateHandles, knownBoard, readerTool, type AtsId } from './handles';
 import { probe, type Probe } from './probe';
 
@@ -111,14 +111,13 @@ export const atsFind = defineHttpTool({
   },
 });
 
-export default defineAdapter({
+export default defineUtility({
   id: 'ats-discovery',
   displayName: 'ATS discovery',
   description:
     "Finds which applicant tracking system (Greenhouse, Lever, Ashby, Teamtailor) hosts a company's careers board (read-only, no login, no browser).",
   sdkApi: SDK_API_VERSION,
   platform: 'ats-discovery',
-  kind: 'http',
   allowedHosts: ['boards-api.greenhouse.io', 'api.lever.co', 'api.ashbyhq.com', '*.teamtailor.com'],
   // a lookup is a handful of small requests; the budget is for a few companies a day, not a crawl
   rate: { perHour: 200, perDay: 600 },

@@ -139,6 +139,8 @@ export const toolStateSchema = z
     id: z.string(),
     displayName: z.string(),
     platform: z.string(),
+    /** An adapter fetches jobs; a utility is a helper tool that fetches none (it has a budget all the same). */
+    role: z.enum(['adapter', 'utility']),
     kind: z.enum(['browser', 'http']),
     enabled: z.boolean(),
     /** Present when JW_ADAPTERS pins the list: the switch is disabled and says why. */

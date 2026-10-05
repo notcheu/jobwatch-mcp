@@ -63,7 +63,8 @@ export default [
             { sourceTag: 'type:sdk', onlyDependOnLibsWithTags: [] },
             { sourceTag: 'type:core', onlyDependOnLibsWithTags: ['type:sdk'] },
             { sourceTag: 'type:adapter', onlyDependOnLibsWithTags: ['type:sdk'] },
-            { sourceTag: 'type:adapters', onlyDependOnLibsWithTags: ['type:sdk', 'type:adapter'] },
+            { sourceTag: 'type:utility', onlyDependOnLibsWithTags: ['type:sdk'] },
+            { sourceTag: 'type:adapters', onlyDependOnLibsWithTags: ['type:sdk', 'type:adapter', 'type:utility'] },
             { sourceTag: 'type:api', onlyDependOnLibsWithTags: [] },
             { sourceTag: 'type:ui', onlyDependOnLibsWithTags: ['type:api'] },
             { sourceTag: 'type:app', onlyDependOnLibsWithTags: ['type:sdk', 'type:core', 'type:adapters', 'type:api'] },
@@ -75,7 +76,7 @@ export default [
   },
   {
     // Adapters are trusted in-process code, but they only get what AdapterContext hands them.
-    files: ['packages/adapter-*/**/*.ts'],
+    files: ['packages/adapter-*/**/*.ts', 'packages/utility-*/**/*.ts'],
     ignores: ['**/*.test.ts'],
     rules: {
       'no-restricted-imports': [
@@ -91,7 +92,7 @@ export default [
   },
   {
     // Tests may read fixtures from disk, but still never reach the engine or the browser library.
-    files: ['packages/adapter-*/**/*.test.ts'],
+    files: ['packages/adapter-*/**/*.test.ts', 'packages/utility-*/**/*.test.ts'],
     rules: { 'no-restricted-imports': ['error', { paths: [PLAYWRIGHT, ...ENGINE] }] },
   },
   {
@@ -118,7 +119,15 @@ export default [
         {
           patterns: [
             {
-              group: ['@jobwatch/core', '@jobwatch/sdk', '@jobwatch/adapters', '@jobwatch/adapter-*', '@jobwatch/mcp', 'node:*'],
+              group: [
+                '@jobwatch/core',
+                '@jobwatch/sdk',
+                '@jobwatch/adapters',
+                '@jobwatch/adapter-*',
+                '@jobwatch/utility-*',
+                '@jobwatch/mcp',
+                'node:*',
+              ],
               message: 'The dashboard imports @jobwatch/dashboard-api only.',
             },
           ],

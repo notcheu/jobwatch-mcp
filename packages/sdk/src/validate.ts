@@ -1,4 +1,4 @@
-import type { AdapterModule } from './adapter';
+import type { McpModule } from './adapter';
 import { isHostEntry } from './hosts';
 import { findInputSchemaProblems, inputJsonSchema, outputJsonSchema } from './schema';
 import { SDK_API_VERSION } from './version';
@@ -37,7 +37,7 @@ const OUTPUT_MAX_BYTES_CEILING = 262_144;
  * contract test of every adapter calls it. An empty array means the adapter is acceptable.
  * Uniqueness of tool names ACROSS adapters is the registry's job (it sees all adapters).
  */
-export function validateAdapter(adapter: AdapterModule): Violation[] {
+export function validateAdapter(adapter: McpModule): Violation[] {
   const out: Violation[] = [];
   const add = (rule: Rule, at: string, message: string): void => {
     out.push({ rule, at, message });

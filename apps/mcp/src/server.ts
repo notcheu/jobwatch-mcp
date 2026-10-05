@@ -27,6 +27,8 @@ import {
   loadConfig,
   type ConnectBrowser,
   policyFor,
+  isPinned,
+  pinVariable,
   resolveEnabledAdapters,
   setAdaptersEnabled,
   type PlatformStatus,
@@ -38,6 +40,7 @@ import {
   type RuntimeHooks,
 } from '@jobwatch/core';
 import { installed } from '@jobwatch/adapters';
+import { roleOf, type McpModule } from '@jobwatch/sdk';
 import { createApp, type AppDeps } from './app';
 import { DashboardManager } from './dashboard/manager';
 import { ChangeRefused, registerWrites } from './dashboard/writes';
@@ -310,9 +313,9 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   );
 
   /** Hot reload (docs/plans/17-dashboard.md, section 6.4): re-read `adapters.json` and swap the registry. */
+  const pinnedByEnv = config.adaptersFromEnv !== undefined || config.utilitiesFromEnv !== undefined;
   const reloadAdapters = async (): Promise<ReloadResult> => {
-    if (config.adaptersFromEnv !== undefined)
-      throw new Error('JW_ADAPTERS sets the list of adapters; unset it to change them without a restart.');
+    if (pinnedByEnv) throw new Error('JW_ADAPTERS or JW_UTILITIES sets the enabled list; unset it to change it without a restart.');
     const wanted = await resolveEnabledAdapters(config);
     const result = await holder.reload(wanted.ids);
     logger.info({ enabled: result.enabled, added: result.addedAdapters, removed: result.removedAdapters }, 'adapters_reloaded');
@@ -343,7 +346,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
       breaker,
       registry: () => holder.current(),
       installed: table,
-      pinned: config.adaptersFromEnv !== undefined,
+      pinned: pinnedByEnv,
       runtime: () => runtime,
       sessionStates: () => sessionCache,
       settings: {
@@ -356,7 +359,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
         jobRetentionDays: config.jobRetentionDays,
         maxTabs: config.maxTabs,
         browser: { idleStopSeconds: config.idleTtlS, memoryHighMb: config.memHighMb, memoryMaxMb: config.memMaxMb },
-        adaptersPinned: config.adaptersFromEnv !== undefined,
+        adaptersPinned: pinnedByEnv,
       },
     },
     logger,
@@ -367,16 +370,24 @@ export async function start(options: StartOptions): Promise<RunningServer> {
           router,
           {
             setAdapter: async (id, enabled) => {
-              if (config.adaptersFromEnv !== undefined)
-                throw new ChangeRefused(409, 'pinned', 'JW_ADAPTERS sets the list of adapters; unset it to change them from here.');
-              if (!(id in table)) throw new ChangeRefused(404, 'not_found', 'No such adapter is installed.');
-              await setAdaptersEnabled(config, Object.keys(table).sort(), [id], enabled);
+              const load = (table as Readonly<Record<string, (() => Promise<McpModule>) | undefined>>)[id];
+              if (load === undefined) throw new ChangeRefused(404, 'not_found', 'No such adapter or utility is installed.');
+              const group = roleOf(await load()) === 'utility' ? 'utilities' : 'adapters';
+              if (isPinned(config, group))
+                throw new ChangeRefused(409, 'pinned', `${pinVariable(group)} sets the enabled list; unset it to change it from here.`);
+              const groupIds = (
+                await Promise.all(Object.entries(table).map(async ([key, loader]) => [key, roleOf(await loader())] as const))
+              )
+                .filter(([, role]) => (role === 'utility') === (group === 'utilities'))
+                .map(([key]) => key)
+                .sort();
+              await setAdaptersEnabled(config, groupIds, [id], enabled, group);
               try {
                 const result = await reloadAdapters();
                 return { enabledAdapters: result.enabled, addedTools: result.addedTools, removedTools: result.removedTools };
               } catch (error) {
                 // the file was written but the list does not load: put it back so the next start is not broken
-                await setAdaptersEnabled(config, Object.keys(table).sort(), [id], !enabled).catch(() => undefined);
+                await setAdaptersEnabled(config, groupIds, [id], !enabled, group).catch(() => undefined);
                 throw new ChangeRefused(
                   422,
                   'not_loadable',

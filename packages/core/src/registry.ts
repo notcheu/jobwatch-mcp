@@ -1,7 +1,7 @@
 import {
   formatViolations,
   validateAdapter,
-  type AdapterModule,
+  type McpModule,
   type ErasedTool,
   type BaseContext,
   type CatalogEntry,
@@ -12,7 +12,7 @@ import {
  * The installed adapters: id to a loader. The list lives in `@jobwatch/adapters`; core only knows this shape,
  * so it never imports an adapter and the dependency rule (core depends on sdk only) holds.
  */
-export type InstalledAdapters = Readonly<Record<string, () => Promise<AdapterModule>>>;
+export type InstalledAdapters = Readonly<Record<string, () => Promise<McpModule>>>;
 
 export class RegistryError extends Error {
   readonly problems: readonly string[];
@@ -25,15 +25,15 @@ export class RegistryError extends Error {
 }
 
 export interface RegisteredTool {
-  adapter: AdapterModule;
+  adapter: McpModule;
   tool: ErasedTool<BaseContext>;
 }
 
 export interface Registry {
   /** Built-in adapters first (the ops tools), then the enabled ones in the order they were requested. */
-  readonly adapters: readonly AdapterModule[];
+  readonly adapters: readonly McpModule[];
   /** Only the enabled, installed adapters (what `adapters.json` selects), without the built-ins. */
-  readonly enabled: readonly AdapterModule[];
+  readonly enabled: readonly McpModule[];
   /** Tool name to its adapter and definition. Names are unique across all enabled adapters. */
   readonly tools: ReadonlyMap<string, RegisteredTool>;
 }
@@ -47,10 +47,10 @@ export interface Registry {
 export async function loadAdapters(
   enabledIds: readonly string[],
   installed: InstalledAdapters,
-  builtins: readonly AdapterModule[] = [],
+  builtins: readonly McpModule[] = [],
 ): Promise<Registry> {
   const problems: string[] = [];
-  const adapters: AdapterModule[] = [];
+  const adapters: McpModule[] = [];
 
   // Built-ins (the ops tools) are part of the engine, always present, and held to the same rules as any adapter.
   for (const builtin of builtins) {
@@ -70,7 +70,7 @@ export async function loadAdapters(
       problems.push(`"${id}" is enabled but not installed (installed: ${Object.keys(installed).join(', ') || 'none'})`);
       continue;
     }
-    let adapter: AdapterModule;
+    let adapter: McpModule;
     try {
       adapter = await load();
     } catch (error) {

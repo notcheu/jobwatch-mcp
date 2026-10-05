@@ -6,7 +6,7 @@ import {
   defineAdapter,
   defineHttpTool,
   z,
-  type AdapterModule,
+  type McpModule,
   type BrowserAdapter,
   type SessionState,
 } from '@jobwatch/sdk';
@@ -27,7 +27,7 @@ const annotations = { readOnlyHint: true, openWorldHint: false, idempotentHint: 
 
 export interface OpsDeps {
   /** The enabled adapters; a getter because the registry that holds the ops tools is built after this object. */
-  enabledAdapters: () => readonly AdapterModule[];
+  enabledAdapters: () => readonly McpModule[];
   /** The browser runtime, or a function that returns it (it can appear while the router runs). */
   runtime: RuntimeManager | undefined | (() => RuntimeManager | undefined);
   store: Store;
@@ -97,7 +97,7 @@ const memoryReportSchema = z.object({
  * routine can always ask "are you alive and logged in?". They run on their own platform (`ops`), so a platform whose breaker
  * is open does not block them, and they never touch a site whose breaker says a verification is pending.
  */
-export function createOpsAdapter(deps: OpsDeps): AdapterModule {
+export function createOpsAdapter(deps: OpsDeps): McpModule {
   const cache = deps.sessionCache ?? new Map<string, PlatformStatus>();
   const sessionAdapters = (): BrowserAdapter[] =>
     deps.enabledAdapters().filter((adapter): adapter is BrowserAdapter => adapter.kind === 'browser' && adapter.sessionCheck !== undefined);
@@ -236,7 +236,7 @@ export function createOpsAdapter(deps: OpsDeps): AdapterModule {
       const current = status?.current;
       const platforms = deps
         .enabledAdapters()
-        .reduce<Map<string, AdapterModule>>(
+        .reduce<Map<string, McpModule>>(
           (map, adapter) => (map.has(adapter.platform) ? map : map.set(adapter.platform, adapter)),
           new Map(),
         );

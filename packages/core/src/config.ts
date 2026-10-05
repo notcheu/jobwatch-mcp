@@ -61,6 +61,7 @@ const envSchema = z.object({
   JW_DB_PATH: z.string().min(1).optional(),
   JW_JOB_RETENTION_DAYS: integer(1, 3650, 30),
   JW_ADAPTERS: z.string().optional(),
+  JW_UTILITIES: z.string().optional(),
   JW_IDLE_TTL_S: integer(10, 3600, 120),
   JW_MAX_LIFETIME_S: integer(60, 86_400, 1800),
   JW_QUEUE_TIMEOUT_S: integer(1, 600, 60),
@@ -122,6 +123,8 @@ export interface Config {
   jobRetentionDays: number;
   /** From JW_ADAPTERS. When defined it overrides adapters.json and the CLI refuses to edit the file. */
   adaptersFromEnv: readonly string[] | undefined;
+  /** From JW_UTILITIES. Same rule, for the utilities (tools that fetch no jobs). */
+  utilitiesFromEnv: readonly string[] | undefined;
   idleTtlS: number;
   maxLifetimeS: number;
   queueTimeoutS: number;
@@ -137,15 +140,15 @@ export interface LoadedConfig {
   warnings: string[];
 }
 
-/** Parse `JW_ADAPTERS`. Empty string means "explicitly none enabled". Returns problems instead of throwing. */
-export function parseAdapterList(raw: string): { ids: string[]; problems: string[] } {
+/** Parse `JW_ADAPTERS` (or `JW_UTILITIES`). Empty string means "explicitly none enabled". Returns problems instead of throwing. */
+export function parseAdapterList(raw: string, variable = 'JW_ADAPTERS'): { ids: string[]; problems: string[] } {
   const ids: string[] = [];
   const problems: string[] = [];
   for (const part of raw.split(',')) {
     const id = part.trim();
     if (id === '') continue;
-    if (!ADAPTER_ID_PATTERN.test(id)) problems.push(`JW_ADAPTERS: "${id}" is not a valid adapter id`);
-    else if (ids.includes(id)) problems.push(`JW_ADAPTERS: "${id}" is listed twice`);
+    if (!ADAPTER_ID_PATTERN.test(id)) problems.push(`${variable}: "${id}" is not a valid id`);
+    else if (ids.includes(id)) problems.push(`${variable}: "${id}" is listed twice`);
     else ids.push(id);
   }
   return { ids, problems };
@@ -192,6 +195,12 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
     problems.push(...list.problems);
     adaptersFromEnv = list.ids;
   }
+  let utilitiesFromEnv: string[] | undefined;
+  if (env['JW_UTILITIES'] !== undefined) {
+    const list = parseAdapterList(env['JW_UTILITIES'], 'JW_UTILITIES');
+    problems.push(...list.problems);
+    utilitiesFromEnv = list.ids;
+  }
 
   if (problems.length > 0) throw new ConfigError(problems);
 
@@ -236,6 +245,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       jobRetentionDays: parsed.JW_JOB_RETENTION_DAYS,
       dbPath: parsed.JW_DB_PATH ?? `${parsed.JW_DATA_DIR.replace(/\/+$/, '')}/jobwatch.sqlite`,
       adaptersFromEnv,
+      utilitiesFromEnv,
       idleTtlS: parsed.JW_IDLE_TTL_S,
       maxLifetimeS: parsed.JW_MAX_LIFETIME_S,
       queueTimeoutS: parsed.JW_QUEUE_TIMEOUT_S,
@@ -252,11 +262,13 @@ export interface StorageSettings {
   dataDir: string;
   /** From JW_ADAPTERS; when defined it overrides adapters.json. */
   adaptersFromEnv: readonly string[] | undefined;
+  /** From JW_UTILITIES; when defined it overrides the `utilities` of adapters.json. */
+  utilitiesFromEnv: readonly string[] | undefined;
 }
 
 const storageSchema = z.object({ JW_DATA_DIR: z.string().min(1).default('/data') });
 
-/** Parse JW_DATA_DIR and JW_ADAPTERS only. Throws `ConfigError`; same rules as `loadConfig` for these two variables. */
+/** Parse JW_DATA_DIR, JW_ADAPTERS and JW_UTILITIES only. Throws `ConfigError`; same rules as `loadConfig` for these two variables. */
 export function loadStorageSettings(env: Readonly<Record<string, string | undefined>>): StorageSettings {
   const problems: string[] = [];
   const result = storageSchema.safeParse({ JW_DATA_DIR: env['JW_DATA_DIR'] === '' ? undefined : env['JW_DATA_DIR'] });
@@ -267,8 +279,14 @@ export function loadStorageSettings(env: Readonly<Record<string, string | undefi
     problems.push(...list.problems);
     adaptersFromEnv = list.ids;
   }
+  let utilitiesFromEnv: string[] | undefined;
+  if (env['JW_UTILITIES'] !== undefined) {
+    const list = parseAdapterList(env['JW_UTILITIES'], 'JW_UTILITIES');
+    problems.push(...list.problems);
+    utilitiesFromEnv = list.ids;
+  }
   if (problems.length > 0 || !result.success) throw new ConfigError(problems);
-  return { dataDir: result.data.JW_DATA_DIR, adaptersFromEnv };
+  return { dataDir: result.data.JW_DATA_DIR, adaptersFromEnv, utilitiesFromEnv };
 }
 
 /** A copy of the configuration that is safe to log or print (secrets replaced). */

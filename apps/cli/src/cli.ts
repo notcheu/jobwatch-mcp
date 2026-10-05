@@ -8,9 +8,11 @@ import {
   resolveEnabledAdapters,
   setAdaptersEnabled,
   adaptersFilePath,
+  pinVariable,
+  type ModuleGroup,
 } from '@jobwatch/core';
 import { describeInstalled, type InstalledEntry } from '@jobwatch/adapters';
-import { buildCatalog, type CatalogEntry } from '@jobwatch/sdk';
+import { buildCatalog, type CatalogEntry, type ModuleRole } from '@jobwatch/sdk';
 import type { DockerRunner, InstalledAdapters } from '@jobwatch/core';
 import { dashboard } from './dashboard';
 import { doctor } from './doctor';
@@ -33,7 +35,7 @@ export interface Deps {
   randomPassword?: () => string;
 }
 
-const USAGE = `jobwatch: manage which adapters the router plugs in
+const USAGE = `jobwatch: manage which adapters and utilities the router plugs in
 
 Usage:
   jobwatch adapters list [--tools] [--json] [<id...>]
@@ -41,6 +43,8 @@ Usage:
                                        parameters (what Claude will see), --json prints it as JSON; ids narrow the list
   jobwatch adapters enable <id...>     enable adapters (written to adapters.json)
   jobwatch adapters disable <id...>    disable adapters
+  jobwatch utilities list|enable|disable ...
+                                       the same for utilities: helper tools that fetch no jobs (LinkedIn geoIds, ATS discovery)
   jobwatch login start <platform>      start a visible browser to sign in by hand (noVNC on loopback)
   jobwatch login stop <platform>       stop it again
   jobwatch linkedin-geo <text> [--save <name> [--pick <n>]] | --list | --forget <name>
@@ -51,7 +55,7 @@ Usage:
   jobwatch --help | --version
 
 Settings (environment): JW_DATA_DIR (default /data) holds adapters.json;
-JW_ADAPTERS (comma list) overrides the file and makes it read-only.
+JW_ADAPTERS and JW_UTILITIES (comma lists) override their part of the file and make it read-only.
 
 Changes take effect after the router restarts: docker compose restart router
 `;
@@ -99,22 +103,46 @@ function describeTool(tool: CatalogEntry): string {
   return `${lines.join('\n')}\n`;
 }
 
-async function list(deps: Deps, args: string[]): Promise<number> {
+const GROUP: Record<ModuleRole, ModuleGroup> = { adapter: 'adapters', utility: 'utilities' };
+const COMMAND: Record<ModuleRole, string> = { adapter: 'adapters', utility: 'utilities' };
+
+/** The ids installed with a role, and an error line for ids that are installed with the other one or not at all. */
+async function idsOfRole(deps: Deps, role: ModuleRole, asked: readonly string[]): Promise<{ ids: string[]; problem?: string }> {
+  const all = await describeInstalled(deps.installed);
+  const ids = all.filter((entry) => (entry.summary ?? { role: 'adapter' }).role === role).map((entry) => entry.id);
+  const elsewhere = asked.filter((id) => id in deps.installed && !ids.includes(id));
+  const unknown = asked.filter((id) => !(id in deps.installed));
+  if (unknown.length > 0)
+    return { ids, problem: `Unknown ${role}: ${unknown.join(', ')}. Installed ${role}s: ${ids.join(', ') || 'none'}\n` };
+  if (elsewhere.length > 0) {
+    const other: ModuleRole = role === 'adapter' ? 'utility' : 'adapter';
+    return {
+      ids,
+      problem: `${elsewhere.join(', ')} ${elsewhere.length > 1 ? 'are' : other === 'adapter' ? 'is an' : 'is a'} ${other}${elsewhere.length > 1 ? 's' : ''}: use \`jobwatch ${COMMAND[other]}\`\n`,
+    };
+  }
+  return { ids };
+}
+
+async function list(deps: Deps, args: string[], role: ModuleRole): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
     options: { json: { type: 'boolean', default: false }, tools: { type: 'boolean', default: false } },
   });
-  const unknown = positionals.filter((id) => !(id in deps.installed));
-  if (unknown.length > 0) {
-    deps.io.err(`Unknown adapter: ${unknown.join(', ')}. Installed: ${Object.keys(deps.installed).sort().join(', ') || 'none'}\n`);
+  const checked = await idsOfRole(deps, role, positionals);
+  if (checked.problem !== undefined) {
+    deps.io.err(checked.problem);
     return EXIT.usage;
   }
   const settings = loadStorageSettings(deps.env);
   const enabled = await resolveEnabledAdapters(settings);
-  const all = await describeInstalled(deps.installed);
+  // a module that does not load has no role to read: it is listed with the adapters
+  const all = (await describeInstalled(deps.installed)).filter((entry) =>
+    entry.summary === undefined ? role === 'adapter' : entry.summary.role === role,
+  );
   const entries = positionals.length === 0 ? all : all.filter((entry) => positionals.includes(entry.id));
-  const strays = enabled.ids.filter((id) => !(id in deps.installed));
+  const strays = enabled[GROUP[role]].filter((id) => !(id in deps.installed));
   const broken = entries.filter((entry) => entry.error !== undefined);
 
   // the tools as the router lists them to Claude (static: nothing is started), only when asked
@@ -126,7 +154,7 @@ async function list(deps: Deps, args: string[]): Promise<number> {
     }
 
   if (values.json) {
-    const adapters = entries.map((entry: InstalledEntry) =>
+    const modules = entries.map((entry: InstalledEntry) =>
       entry.summary
         ? {
             ...entry.summary,
@@ -136,13 +164,13 @@ async function list(deps: Deps, args: string[]): Promise<number> {
         : { id: entry.id, enabled: enabled.ids.includes(entry.id), error: entry.error },
     );
     deps.io.out(
-      `${JSON.stringify({ source: enabled.source, file: adaptersFilePath(settings.dataDir), adapters, enabledButNotInstalled: strays }, null, 2)}\n`,
+      `${JSON.stringify({ source: enabled.source, file: adaptersFilePath(settings.dataDir), [GROUP[role]]: modules, enabledButNotInstalled: strays }, null, 2)}\n`,
     );
     return broken.length > 0 ? EXIT.broken : EXIT.ok;
   }
 
   if (entries.length === 0) {
-    deps.io.out('No adapters are installed.\n');
+    deps.io.out(`No ${GROUP[role]} are installed.\n`);
   } else {
     const rows = [['ID', 'STATUS', 'KIND', 'TOOLS', 'HOSTS']];
     for (const entry of entries) {
@@ -170,13 +198,15 @@ async function list(deps: Deps, args: string[]): Promise<number> {
     }
   const where =
     enabled.source === 'env'
-      ? 'JW_ADAPTERS (environment, overrides the file)'
+      ? `${pinVariable(GROUP[role])} (environment, overrides the file)`
       : enabled.source === 'file'
         ? adaptersFilePath(settings.dataDir)
         : `${adaptersFilePath(settings.dataDir)} (not created: nothing enabled yet)`;
   deps.io.out(`\nEnabled list: ${where}\n`);
   for (const id of strays)
-    deps.io.out(`Warning: "${id}" is enabled but not installed; the router will refuse to start. Run: jobwatch adapters disable ${id}\n`);
+    deps.io.out(
+      `Warning: "${id}" is enabled but not installed; the router will refuse to start. Run: jobwatch ${COMMAND[role]} disable ${id}\n`,
+    );
   return broken.length > 0 ? EXIT.broken : EXIT.ok;
 }
 
@@ -204,21 +234,33 @@ async function applyToRunningRouter(deps: Deps, dataDir: string): Promise<void> 
   }
 }
 
-async function toggle(deps: Deps, args: string[], enable: boolean): Promise<number> {
+async function toggle(deps: Deps, args: string[], enable: boolean, role: ModuleRole): Promise<number> {
   const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
   const verb = enable ? 'enable' : 'disable';
   if (positionals.length === 0) {
-    deps.io.err(`adapters ${verb} needs at least one adapter id. Installed: ${Object.keys(deps.installed).sort().join(', ') || 'none'}\n`);
+    const known = await idsOfRole(deps, role, []);
+    deps.io.err(`${COMMAND[role]} ${verb} needs at least one ${role} id. Installed: ${known.ids.sort().join(', ') || 'none'}\n`);
+    return EXIT.usage;
+  }
+  // an id that is not installed is for `setAdaptersEnabled` to judge: enabling refuses it, disabling cleans it up
+  const checked = await idsOfRole(
+    deps,
+    role,
+    positionals.filter((id) => id in deps.installed),
+  );
+  if (checked.problem !== undefined) {
+    deps.io.err(checked.problem);
     return EXIT.usage;
   }
   const settings = loadStorageSettings(deps.env);
-  const before = (await readEnabledFile(settings.dataDir)) ?? [];
-  const { ids, changed } = await setAdaptersEnabled(settings, Object.keys(deps.installed).sort(), positionals, enable);
+  const before = (await readEnabledFile(settings.dataDir)) ?? { adapters: [], utilities: [] };
+  const group = GROUP[role];
+  const { ids, changed } = await setAdaptersEnabled(settings, checked.ids.sort(), positionals, enable, group);
   const unchanged = [...new Set(positionals)].filter((id) => !changed.includes(id));
   if (changed.length > 0) deps.io.out(`${enable ? 'Enabled' : 'Disabled'}: ${changed.join(', ')}\n`);
   if (unchanged.length > 0) deps.io.out(`Already ${enable ? 'enabled' : 'disabled'}: ${unchanged.join(', ')}\n`);
   deps.io.out(`Enabled now: ${ids.length === 0 ? 'none' : ids.join(', ')}\n`);
-  if (changed.length > 0 && before.join() !== ids.join()) await applyToRunningRouter(deps, settings.dataDir);
+  if (changed.length > 0 && before[group].join() !== ids.join()) await applyToRunningRouter(deps, settings.dataDir);
   return EXIT.ok;
 }
 
@@ -234,11 +276,12 @@ export async function run(argv: readonly string[], deps: Deps): Promise<number> 
       deps.io.out(`${deps.version}\n`);
       return EXIT.ok;
     }
-    if (command === 'adapters') {
-      if (subcommand === 'list') return await list(deps, rest);
-      if (subcommand === 'enable') return await toggle(deps, rest, true);
-      if (subcommand === 'disable') return await toggle(deps, rest, false);
-      deps.io.err(`Unknown adapters command: ${subcommand ?? '(none)'}\n\n${USAGE}`);
+    if (command === 'adapters' || command === 'utilities') {
+      const role: ModuleRole = command === 'adapters' ? 'adapter' : 'utility';
+      if (subcommand === 'list') return await list(deps, rest, role);
+      if (subcommand === 'enable') return await toggle(deps, rest, true, role);
+      if (subcommand === 'disable') return await toggle(deps, rest, false, role);
+      deps.io.err(`Unknown ${command} command: ${subcommand ?? '(none)'}\n\n${USAGE}`);
       return EXIT.usage;
     }
     if (command === 'login')

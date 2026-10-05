@@ -121,10 +121,23 @@ jobwatch adapters disable linkedin
 
 Setting `JW_ADAPTERS=apec,wttj` in the environment overrides the file, makes it read-only and disables hot reload.
 
+### Utilities
+
+An **adapter** fetches jobs from a platform. A **utility** is a helper module whose tools fetch no jobs; it is HTTP only (no browser, no login) and has its own host list and request budget like an adapter. Utilities are enabled with their own commands, written to the `utilities` list of `adapters.json`, and pinned by `JW_UTILITIES`.
+
+```bash
+jobwatch utilities list [--tools] [--json] [<id...>]
+jobwatch utilities enable linkedin-geo ats-discovery
+jobwatch utilities disable ats-discovery
+```
+
+| Utility id | Tools | What it does |
+|---|---|---|
+| `linkedin-geo` | `linkedin_locations` | Finds the geoId of a place and remembers names for places; enable it next to `linkedin`. |
+| `ats-discovery` | `ats_find` | Finds which ATS (Greenhouse, Lever, Ashby, Teamtailor) hosts a company's careers board and the handle to give to the matching `*_jobs` tool. |
+
 | Adapter id | Tools | Needs |
 |---|---|---|
-| `linkedin-geo` | `linkedin_locations` | Nothing (HTTP, no login, no browser). Finds the geoId of a place and remembers names for places; enable it next to `linkedin`. |
-| `ats-discovery` | `ats_find` | Nothing (HTTP, no login, no browser). Finds which ATS (Greenhouse, Lever, Ashby, Teamtailor) hosts a company's careers board and the handle to give to the matching `*_jobs` tool. |
 | `linkedin` | `linkedin_search`, `linkedin_job` | A signed-in browser session. Strict budget: check [`docs/plans/09-security.md`](docs/plans/09-security.md) before enabling. |
 | `apec` | `apec_search`, `apec_job` | A browser (no login). Apec blocks plain HTTP. |
 | `wttj` | `wttj_matches`, `wttj_job` | A signed-in browser session. |
@@ -193,7 +206,7 @@ Signing in uses Google, with the same OAuth client as the connector by default: 
 | `adapters disable <id...>` | Disable adapters. |
 | `login start <platform> [--port 6080]` | Start a visible browser on the platform's profile to sign in by hand (noVNC on loopback). |
 | `login stop <platform>` | Stop it; the profile keeps the session. |
-| `linkedin-geo <text> [--save <name> [--pick <n>]]`, `linkedin-geo --list`, `linkedin-geo --forget <name>` | Find the LinkedIn geoId of a place (the candidates with their ids), remember a name for one, list or forget the remembered names. Needs the `linkedin-geo` adapter. |
+| `linkedin-geo <text> [--save <name> [--pick <n>]]`, `linkedin-geo --list`, `linkedin-geo --forget <name>` | Find the LinkedIn geoId of a place (the candidates with their ids), remember a name for one, list or forget the remembered names. Needs the `linkedin-geo` utility. |
 | `dashboard start [--ttl <minutes>]` | Open the operator dashboard on the running router (closed by default; it closes after 30 minutes without use). |
 | `dashboard stop` | Close it and end every session. |
 | `dashboard status` | Is it open, where, and when it closes. |
@@ -249,7 +262,7 @@ Skip jobs you already reported, and keep the full text:
 { "keywords": "typescript", "skip_ids": ["4000000001", "4000000002"], "detail": "full", "description_max_chars": 6000 }
 ```
 
-Find the geoId of a place, and remember a name for it (`linkedin_locations`, from the `linkedin-geo` adapter):
+Find the geoId of a place, and remember a name for it (`linkedin_locations`, from the `linkedin-geo` utility):
 
 ```json
 { "query": "Berlin" }
@@ -259,7 +272,7 @@ Find the geoId of a place, and remember a name for it (`linkedin_locations`, fro
 { "save_as": "home", "id": "103035651", "label": "Berlin, Germany" }
 ```
 
-Find which ATS a company's careers board is on (`ats_find`, from the `ats-discovery` adapter), then read its jobs with the tool it names:
+Find which ATS a company's careers board is on (`ats_find`, from the `ats-discovery` utility), then read its jobs with the tool it names:
 
 ```
 
@@ -445,7 +458,8 @@ All variables are optional unless noted; unknown `JW_*` names are reported at st
 |---|---|---|
 | `JW_BASE_URL` | required | Public URL. `http` is accepted only for loopback. |
 | `JW_AUTH` | `front` | `front` = behind the OAuth front; `none` = local development on loopback only. |
-| `JW_ADAPTERS` | unset | Comma list that overrides `adapters.json`. |
+| `JW_ADAPTERS` | unset | Comma list of adapters that overrides the `enabled` list of `adapters.json`. |
+| `JW_UTILITIES` | unset | Comma list of utilities that overrides the `utilities` list of `adapters.json`. |
 | `JW_DATA_DIR` | `/data` | Holds `adapters.json` and the SQLite database. |
 | `JW_JOB_RETENTION_DAYS` | `30` | Days a stored job is kept after it was last seen (1-3650). |
 | `JW_BROWSER_IMAGE` | | Browser image to spawn. |

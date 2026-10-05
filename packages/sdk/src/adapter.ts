@@ -17,7 +17,8 @@ export interface Pacing {
   maxMs: number;
 }
 
-interface AdapterBase {
+/** What every module that adds MCP tools declares, whatever it does with them: an adapter or a utility. */
+export interface ModuleBase {
   /** The name used by `jobwatch adapters enable <id>` and in adapters.json, e.g. `linkedin`. Lowercase, digits, hyphens. */
   id: string;
   displayName: string;
@@ -43,7 +44,9 @@ interface AdapterBase {
 }
 
 /** An adapter that needs the leased, single-tab Chrome of its platform. */
-export interface BrowserAdapter extends AdapterBase {
+export interface BrowserAdapter extends ModuleBase {
+  /** Adapters fetch jobs; this is the default and need not be written. */
+  role?: 'adapter';
   kind: 'browser';
   /** Reports whether the platform session is usable. Used by `session_status` and before the first call. */
   sessionCheck?: (session: BrowserSession) => Promise<SessionStatus>;
@@ -57,7 +60,8 @@ export interface BrowserAdapter extends AdapterBase {
 }
 
 /** An adapter that only talks HTTP: no container, no semaphore. */
-export interface HttpAdapter extends AdapterBase {
+export interface HttpAdapter extends ModuleBase {
+  role?: 'adapter';
   kind: 'http';
   /**
    * Also reach ANY public https host, for ATS boards on a company's own domain (`careers.bsport.io`). Off unless set, shown in
@@ -69,32 +73,59 @@ export interface HttpAdapter extends AdapterBase {
   tools: readonly ErasedTool<HttpAdapterContext>[];
 }
 
+/** An adapter: a module that FETCHES JOBS from a platform (LinkedIn, Apec, WTTJ, an ATS). Stores what it reads. */
 export type AdapterModule = BrowserAdapter | HttpAdapter;
-export type AdapterKind = AdapterModule['kind'];
+
+/**
+ * A utility: a module of helper tools that fetch no jobs (finding a LinkedIn geoId, finding the ATS of a company). HTTP only: no
+ * browser, no login. It has a platform budget (`rate`) and a host allowlist like an adapter, and is enabled with
+ * `jobwatch utilities enable <id>`.
+ */
+export interface UtilityModule extends ModuleBase {
+  role: 'utility';
+  kind: 'http';
+  openHttps?: undefined;
+  tools: readonly ErasedTool<HttpAdapterContext>[];
+}
+
+/** Anything the router can plug in: the one interface the registry, the budgets, the catalog and the listing work with. */
+export type McpModule = AdapterModule | UtilityModule;
+export type AdapterKind = McpModule['kind'];
+export type ModuleRole = 'adapter' | 'utility';
+
+/** The role of a module: `utility` only when it says so. */
+export const roleOf = (module: McpModule): ModuleRole => (module.role === 'utility' ? 'utility' : 'adapter');
 
 /** Declare an adapter. Identity function: it exists so the compiler checks the whole shape at the definition site. */
 export function defineAdapter<A extends AdapterModule>(adapter: A): A {
   return adapter;
 }
 
-/** What `jobwatch adapters list` shows: metadata only, no handlers. */
+/** Declare a utility. Identity function, like `defineAdapter`. */
+export function defineUtility<U extends Omit<UtilityModule, 'role' | 'kind'>>(utility: U): U & { role: 'utility'; kind: 'http' } {
+  return { ...utility, role: 'utility', kind: 'http' };
+}
+
+/** What `jobwatch adapters list` and `utilities list` show: metadata only, no handlers. */
 export interface AdapterSummary {
   id: string;
   displayName: string;
   description: string;
   platform: string;
+  role: ModuleRole;
   kind: AdapterKind;
   allowedHosts: readonly string[];
   openHttps: boolean;
   tools: readonly { name: string; title: string }[];
 }
 
-export function summarizeAdapter(adapter: AdapterModule): AdapterSummary {
+export function summarizeAdapter(adapter: McpModule): AdapterSummary {
   return {
     id: adapter.id,
     displayName: adapter.displayName,
     description: adapter.description,
     platform: adapter.platform,
+    role: roleOf(adapter),
     kind: adapter.kind,
     allowedHosts: adapter.allowedHosts,
     openHttps: adapter.kind === 'http' && adapter.openHttps === true,

@@ -96,10 +96,11 @@ Draft code for Greenhouse, Lever and Ashby (provider parsers, HTML-to-text, the 
 - **Remote:** a posting with `isRemote: true` gets `Remote` added to its locations, which is what `location_any: ["remote"]` matches.
 - **Filters, output, source and board, budget (20 per hour and 100 per day per company board, 600 per hour and 3000 per day for the whole platform):** as for every company-board tool (`03-router-spec.md`). `source: "ashby"`, job id = the Ashby uuid.
 
-## ATS discovery (`packages/adapter-ats-discovery`, tool `ats_find`)
+## ATS discovery (utility `packages/utility-ats-discovery`, tool `ats_find`)
 Answers "which ATS is this company on, and what is its handle?" so the routine can move a company from a page-reading source to `greenhouse_jobs`, `lever_jobs`, `ashby_jobs` or `teamtailor_jobs`. It works by **probing**, not by reading company sites: for a name it derives up to `handles_per_company` spellings (`Société Générale` -> `societe-generale`, `societegenerale`, `societe`); for a site URL it takes the name label of the host; for the address of a board on a known ATS it reads the handle exactly. Each handle is checked with ONE request per ATS against the same public feeds the reading tools use, and a match needs the feed to have the ATS's own shape (a job list), so a 404 or an unrelated JSON is "no match". The result carries the job count and three titles, because a handle can belong to another company with the same name: the caller (or the operator) confirms before relying on it.
 - **Hosts:** only the four feed hosts (`boards-api.greenhouse.io`, `api.lever.co`, `api.ashbyhq.com`, `*.teamtailor.com`). Company websites are never fetched, so a Teamtailor board on a custom domain, or any other ATS, is reported as no match.
 - **Budget:** its own platform budget (200 per hour, 600 per day, one unit per request), at most 8 companies x 3 handles x 4 ATS = 96 requests per call. The result is not stored in the router: the caller keeps the mapping it confirmed.
+- **A utility, not an adapter:** it fetches no jobs; it has its own platform budget and is enabled with `jobwatch utilities enable ats-discovery`.
 - **Adding an ATS:** add its feed URL and shape in `probe.ts`, its address forms in `handles.ts`, and the host in `allowedHosts`.
 
 ## Adapter checklist (for any new platform)

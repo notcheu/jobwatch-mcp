@@ -59,6 +59,7 @@ describe('catalogFileName and summarizeAdapter', () => {
       displayName: 'Sample browser',
       description: 'Example browser adapter used by the SDK tests.',
       platform: 'sample',
+      role: 'adapter',
       kind: 'browser',
       allowedHosts: ['www.example.com'],
       openHttps: false,
