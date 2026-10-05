@@ -41,6 +41,9 @@ const envSchema = z.object({
     .regex(/^[A-Za-z0-9,;=.-]{2,512}$/)
     .optional(),
   JW_BROWSER_MAX_TABS: z.coerce.number().int().min(1).default(3),
+  JW_LOCAL_CHROME: flag.default(false),
+  JW_LOCAL_CHROME_PATH: z.string().min(1).optional(),
+  JW_CDP_URL: z.string().min(1).optional(),
   JW_DASHBOARD_PORT: integer(1024, 65535, 8090),
   JW_DASHBOARD_URL: z.url().optional(),
   JW_DASHBOARD_STATIC_DIR: z.string().min(1).optional(),
@@ -88,9 +91,18 @@ export interface Config {
   browserNetwork: string;
   /** Absolute path of the Chrome seccomp profile as seen by the docker CLI; unset = Docker's default profile. */
   browserSeccomp: string | undefined;
-  /** UI language and `navigator.languages` of the browser (copied from the everyday browser, 05 G8). The list is personal: keep it in the untracked deploy/.env. */
+  /** UI language and `navigator.languages` of the browser (copied from the everyday browser, 05 G8). The list is personal: keep it in the untracked .env. */
   browserLang: string;
   browserAcceptLangs: readonly string[] | undefined;
+  /**
+   * Where the browser comes from. `docker`: a container per platform (default). `local`: Chrome started on this machine
+   * (`JW_LOCAL_CHROME`). `attach`: an already running Chrome reached over DevTools (`JW_CDP_URL`, which wins over `JW_LOCAL_CHROME`).
+   */
+  browserMode: 'docker' | 'local' | 'attach';
+  /** `JW_LOCAL_CHROME_PATH`: the Chrome executable of `local` mode; unset = look in the usual places. */
+  localBrowserPath: string | undefined;
+  /** `ip:port` of the DevTools of the browser to attach to; set in `attach` mode only. Always loopback. */
+  browserCdpAddress: string | undefined;
   /** Most tabs the browser may have open at once (`JW_BROWSER_MAX_TABS`, default 3, no upper limit). 1 = single tab: `openTab` refuses. */
   maxTabs: number;
   /** The operator dashboard (docs/plans/17-dashboard.md). Off until `jobwatch dashboard start`. */
@@ -154,6 +166,19 @@ export function parseAdapterList(raw: string, variable = 'JW_ADAPTERS'): { ids: 
   return { ids, problems };
 }
 
+/** `ip:port` of a loopback DevTools URL (`http://127.0.0.1:9222`, `http://localhost:9222`), or undefined when it is anything else. */
+function parseCdpUrl(value: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  const host = url.hostname === 'localhost' ? '127.0.0.1' : url.hostname;
+  if (url.protocol !== 'http:' || !/^127(\.\d{1,3}){3}$/.test(host) || url.port === '') return undefined;
+  return `${host}:${url.port}`;
+}
+
 /**
  * Validate the environment. Pure: pass `process.env` (or a test object). Throws `ConfigError` listing every problem at once.
  * Messages carry variable names and reasons only, never the offending values.
@@ -189,6 +214,15 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
   if (parsed.JW_METRICS_ENABLED && parsed.JW_METRICS_PORT === parsed.JW_PORT)
     problems.push('JW_METRICS_PORT must differ from JW_PORT: metrics are never served on the MCP port');
 
+  let browserCdpAddress: string | undefined;
+  if (parsed.JW_CDP_URL !== undefined) {
+    browserCdpAddress = parseCdpUrl(parsed.JW_CDP_URL);
+    if (browserCdpAddress === undefined) problems.push('JW_CDP_URL: must be a loopback http URL with a port, e.g. http://127.0.0.1:9222');
+    if (parsed.JW_LOCAL_CHROME) warnings.push('JW_LOCAL_CHROME is ignored because JW_CDP_URL is set: the running Chrome is used');
+  }
+  if (parsed.JW_LOCAL_CHROME_PATH !== undefined && !parsed.JW_LOCAL_CHROME && parsed.JW_CDP_URL === undefined)
+    warnings.push('JW_LOCAL_CHROME_PATH is ignored unless JW_LOCAL_CHROME=true');
+
   let adaptersFromEnv: string[] | undefined;
   if (env['JW_ADAPTERS'] !== undefined) {
     const list = parseAdapterList(env['JW_ADAPTERS']);
@@ -220,6 +254,9 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       browserAcceptLangs: parsed.JW_BROWSER_ACCEPT_LANGS?.split(',')
         .map((l) => l.trim())
         .filter(Boolean),
+      browserMode: browserCdpAddress !== undefined ? 'attach' : parsed.JW_LOCAL_CHROME ? 'local' : 'docker',
+      localBrowserPath: parsed.JW_LOCAL_CHROME_PATH,
+      browserCdpAddress,
       maxTabs: parsed.JW_BROWSER_MAX_TABS,
       dashboard: {
         port: parsed.JW_DASHBOARD_PORT,

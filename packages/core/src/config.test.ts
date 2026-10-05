@@ -239,3 +239,38 @@ describe('dashboard sign-in config', () => {
     expect([dashboard.port, dashboard.idleS, dashboard.sessionMaxS, dashboard.writeWindowS]).toEqual([8090, 1800, 28_800, 600]);
   });
 });
+
+describe('browser mode', () => {
+  it('is docker by default', () => {
+    expect(loadConfig(base).config).toMatchObject({ browserMode: 'docker', browserCdpAddress: undefined });
+  });
+
+  it('starts a local Chrome with JW_LOCAL_CHROME', () => {
+    expect(loadConfig({ ...base, JW_LOCAL_CHROME: 'true' }).config.browserMode).toBe('local');
+  });
+
+  it('attaches to a running Chrome with JW_CDP_URL, localhost included', () => {
+    expect(loadConfig({ ...base, JW_CDP_URL: 'http://127.0.0.1:9222' }).config).toMatchObject({
+      browserMode: 'attach',
+      browserCdpAddress: '127.0.0.1:9222',
+    });
+    expect(loadConfig({ ...base, JW_CDP_URL: 'http://localhost:9333' }).config.browserCdpAddress).toBe('127.0.0.1:9333');
+  });
+
+  it('refuses a DevTools URL that is not loopback, has no port or is not http', () => {
+    for (const url of ['http://192.168.1.5:9222', 'http://example.com:9222', 'http://127.0.0.1', 'https://127.0.0.1:9222', 'nonsense'])
+      expect(problemsOf({ ...base, JW_CDP_URL: url }), url).toEqual([expect.stringContaining('JW_CDP_URL')]);
+  });
+
+  it('attaches when both are set: the running Chrome wins, with a warning', () => {
+    const { config, warnings } = loadConfig({ ...base, JW_LOCAL_CHROME: 'true', JW_CDP_URL: 'http://127.0.0.1:9222' });
+    expect(config.browserMode).toBe('attach');
+    expect(warnings).toEqual([expect.stringContaining('JW_LOCAL_CHROME is ignored')]);
+  });
+
+  it('warns about a Chrome path that nothing uses', () => {
+    expect(loadConfig({ ...base, JW_LOCAL_CHROME_PATH: '/usr/bin/chrome' }).warnings).toEqual([
+      expect.stringContaining('JW_LOCAL_CHROME_PATH'),
+    ]);
+  });
+});

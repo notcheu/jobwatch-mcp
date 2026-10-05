@@ -4,7 +4,8 @@
  * this file and nothing else.
  *
  * Rules (docs/plans/05-browser-runtime.md, docs/plans/06-memory-and-lifecycle-policy.md): connect by IP; use the tab Chrome started with;
- * NEVER `newPage()`; close any other tab that appears; park the tab on about:blank instead of closing it.
+ * NEVER `newPage()`; close any other tab that appears; park the tab on about:blank instead of closing it. The exception is a browser
+ * that is not ours (`shared`): there we open one tab of our own, touch no other, and close ours when the call ends.
  */
 import { isUrlAllowed, type BrowserSession } from '@jobwatch/sdk';
 import { devtoolsBaseUrl } from './address';
@@ -31,6 +32,11 @@ export type ConnectBrowser = (address: string, allowedHosts: readonly string[], 
 export interface ConnectOptions {
   /** Most tabs at once; 1 (default) keeps the single-tab rule. */
   maxTabs?: number;
+  /**
+   * The browser is somebody's own (`JW_CDP_URL`, or a local Chrome): open a tab of ours instead of taking the first one,
+   * leave every other tab alone (never close, route or park them), close only the tabs we opened, and leave the cookies as they are.
+   */
+  shared?: boolean;
 }
 
 export const SESSION_COOKIE_TTL_S = 30 * 24 * 3600;
@@ -68,22 +74,45 @@ export const connectBrowser: ConnectBrowser = async (address, allowedHosts, opti
   try {
     const context = browser.contexts()[0];
     if (context === undefined) throw new Error('the browser has no default context');
-    const [page, ...strays] = context.pages();
-    if (page === undefined) throw new Error('the browser has no tab');
-    for (const stray of strays) await stray.close().catch(() => undefined);
+    const shared = options.shared === true;
+    // Our tabs. In a container the browser is ours entirely, so the tab it started with is used and every other one is stray.
+    // In a shared browser we open our own tab and only ever close or route the ones in this set.
+    const ours = new Set<PageLike>();
+    let page: Awaited<ReturnType<typeof context.newPage>>;
+    if (shared) {
+      page = await context.newPage();
+    } else {
+      const [first, ...strays] = context.pages();
+      if (first === undefined) throw new Error('the browser has no tab');
+      page = first;
+      for (const stray of strays) await stray.close().catch(() => undefined);
+    }
+    ours.add(page as unknown as PageLike);
 
     // Documents and frames only: a navigation to a host the adapter did not declare (a redirect, a link, a popup) is refused.
     // Sub-resources (scripts, images) are the site's own business and load normally; blocking them would also change how
     // the session looks to the site (decision recorded in docs/plans/05-browser-runtime.md).
-    await context.route('**/*', async (route) => {
+    // In a shared browser the rule is set on our tabs only: a context-wide route would also block the operator's own tabs.
+    const guard = async (route: Parameters<Parameters<typeof context.route>[1]>[0]): Promise<void> => {
       const request = route.request();
       if (request.isNavigationRequest() && !isUrlAllowed(request.url(), allowedHosts)) await route.abort('blockedbyclient');
       else await route.continue();
-    });
+    };
+    if (shared) await page.route('**/*', guard);
+    else await context.route('**/*', guard);
     // A popup or target=_blank would be a second tab: close it at once. The only tabs that stay are the ones `openTab` asks for.
+    // In a shared browser only a popup of one of our tabs is ours to close; a tab the operator opens meanwhile is theirs.
     let opening = false;
     context.on('page', (opened) => {
-      if (opened !== page && !opening) void opened.close().catch(() => undefined);
+      if (opening || ours.has(opened as unknown as PageLike)) return;
+      if (!shared) {
+        if (opened !== page) void opened.close().catch(() => undefined);
+        return;
+      }
+      void opened
+        .opener()
+        .then((opener) => (opener !== null && ours.has(opener as unknown as PageLike) ? opened.close() : undefined))
+        .catch(() => undefined);
     });
 
     const tabs: TabSupport | undefined =
@@ -92,29 +121,43 @@ export const connectBrowser: ConnectBrowser = async (address, allowedHosts, opti
         : {
             max: maxTabs,
             open: async () => {
-              if (context.pages().length >= maxTabs) throw new Error(`At most ${maxTabs} tabs may be open.`);
+              if (ours.size >= maxTabs || (!shared && context.pages().length >= maxTabs))
+                throw new Error(`At most ${maxTabs} tabs may be open.`);
               opening = true;
               try {
-                return (await context.newPage()) as unknown as PageLike;
+                const extra = await context.newPage();
+                ours.add(extra as unknown as PageLike);
+                if (shared) await extra.route('**/*', guard);
+                return extra as unknown as PageLike;
               } finally {
                 opening = false;
               }
             },
             close: async (extra) => {
+              ours.delete(extra);
               await (extra as unknown as { close(): Promise<void> }).close();
             },
           };
     const closeExtraTabs = async (): Promise<void> => {
-      for (const other of context.pages()) if (other !== page) await other.close().catch(() => undefined);
+      const others = shared
+        ? [...ours].filter((tab) => tab !== (page as unknown as PageLike))
+        : context.pages().filter((tab) => tab !== page);
+      for (const other of others) {
+        ours.delete(other as PageLike);
+        await (other as unknown as { close(): Promise<void> }).close().catch(() => undefined);
+      }
     };
     const session = createGuardedSession(page as unknown as PageLike, allowedHosts, tabs);
     return {
       session,
       park: async () => {
         await closeExtraTabs(); // a tab the adapter left open does not outlive its call
-        await page.goto('about:blank', { timeout: 10_000, waitUntil: 'domcontentloaded' });
+        // A shared browser gets its window back as it was: our tab is closed instead of parked on about:blank.
+        if (shared) await page.close();
+        else await page.goto('about:blank', { timeout: 10_000, waitUntil: 'domcontentloaded' });
       },
       keepSessionCookies: async () => {
+        if (shared) return 0; // the operator's own browser keeps its cookies as it sees fit
         const copies = persistentCopies(await context.cookies(), allowedHosts, Date.now() / 1000);
         if (copies.length > 0) await context.addCookies(copies);
         return copies.length;
@@ -129,6 +172,7 @@ export const connectBrowser: ConnectBrowser = async (address, allowedHosts, opti
         }
       },
       quit: async () => {
+        if (shared) return; // never quit a browser that is not ours
         const cdp = await browser.newBrowserCDPSession();
         // Chrome exits before it can answer, so the call is expected to fail; the container then stops on its own.
         await cdp.send('Browser.close').catch(() => undefined);

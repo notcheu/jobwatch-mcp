@@ -105,3 +105,7 @@ The login viewer is never exposed publicly and never started by a tool call.
 - Rebuild monthly or on Chrome security releases; keep the previous tag for rollback.
 - Profiles are sensitive (cookies): mode 0700, excluded from git, backups encrypted or skipped.
 - After a Chrome major upgrade run the fingerprint check and `session_status` before trusting runs.
+
+## Browser not in a container (`JW_LOCAL_CHROME`, `JW_CDP_URL`)
+
+For development on the operator's own machine the runtime can run without Docker. `JW_LOCAL_CHROME=true` selects `LocalBackend` (starts a headful Chrome with `--remote-debugging-port=0` and a profile directory per platform, reads the port from `DevToolsActivePort`); `JW_CDP_URL` (loopback only, wins over `JW_LOCAL_CHROME`) selects `AttachBackend` (nothing is started or stopped, DevTools is only probed). Both plug into `RuntimeManager` as ordinary `RuntimeBackend`s with `createAttachHooks` (no fingerprint check, no `Browser.close`, no memory shedding). `connectBrowser` is then called with `shared: true`: it opens a tab of its own, routes and closes only the tabs it opened (a popup of one of its tabs included), leaves cookies alone, never quits the browser and closes its tab at the end of the call, so the operator's tabs are never touched. The memory cap and the per-platform memory budgets do not apply (`memoryBytes` is 0). The container stays the default and the only supported mode for the deployed server.
