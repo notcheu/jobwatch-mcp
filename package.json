@@ -26,6 +26,7 @@
     "new:adapter": "node tools/new-module/index.mjs adapter",
     "new:utility": "node tools/new-module/index.mjs utility",
     "dev": "node tools/dev.mjs",
+    "dev:dashboard": "node tools/dev-dashboard.mjs",
     "start": "node tools/start.mjs",
     "jobwatch": "npm run -s build -w @jobwatch/cli && node tools/jobwatch.mjs",
     "ci": "npm run format:check && npm run lint && npm run typecheck && npm test"
