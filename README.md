@@ -38,7 +38,7 @@ npm run build
 npm run start
 ```
 
-The MCP server is started on `http://127.0.0.1:18931/mcp`.
+The MCP server prints its address when it is ready: `MCP server listening on http://127.0.0.1:18931/mcp`.
 
 The browser modules (`linkedin`, `apec`, `wttj`) need a Chrome instance. From source they use **your own Chrome** by default, so there is nothing to pull. To use the Docker browser image instead, see [Browser: the Docker image or your own Chrome](#browser-the-docker-image-or-your-own-chrome).
 
@@ -250,7 +250,7 @@ Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is brok
 | `npm run test:integration` | Drive a real browser container (needs Docker; never in CI). |
 | `npm run test:dashboard` | Smoke-test the built router and dashboard (run `npm run build` first; not in CI). |
 | `npm run dev` | Run the server from the sources with watch and restart, configured by `.env.local`. |
-| `npm run jobwatch -- <args>` | Build and run the CLI. |
+| `npm run jobwatch -- <args>` | Build and run the CLI with the environment of `npm run dev` (`.env.local`, then `.env`), so it reaches the local server's data folder and control socket (`dashboard start`, `adapters enable`). |
 
 ## Tools and example queries
 
@@ -266,7 +266,7 @@ Every environment variable, grouped by category (general, modules, OAuth, browse
 npm run dev
 ```
 
-The server is started on `http://127.0.0.1:18931/mcp` in watch mode.
+The server restarts on every change and prints its address when it is ready (`MCP server listening on http://127.0.0.1:18931/mcp`). To open the dashboard of that local server, run `npm run jobwatch -- dashboard start` in another terminal.
 
 ### Build your own image
 

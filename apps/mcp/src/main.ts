@@ -3,6 +3,11 @@ import { reportStartupError, start } from './server';
 
 try {
   const running = await start({ env: process.env, version: pkg.version });
+  // The structured log has the port; this line is for the person who started it by hand (npm run dev, npm run start).
+  process.stderr.write(
+    `MCP server listening on ${running.endpoints.listen}` +
+      `${running.endpoints.public === running.endpoints.listen ? '' : ` (public URL: ${running.endpoints.public})`}\n`,
+  );
 
   let stopping = false;
   const shutdown = (signal: string): void => {
