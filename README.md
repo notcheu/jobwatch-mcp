@@ -408,7 +408,7 @@ To run your own build instead of the published image, build the two images (the 
 
 ```bash
 docker build -t notcheu/jobwatch-mcp:latest .      # the name compose.yml runs
-docker build -t jobwatch-browser:latest images/browser   # BROWSER_IMAGE's default
+docker build -t jobwatch-browser:latest images/browser   # then set BROWSER_IMAGE=jobwatch-browser:latest in .env
 ```
 
 Set the repo up as in [Install from the repo](#install-from-the-repo), then check your work before a PR:

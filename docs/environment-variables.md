@@ -72,7 +72,7 @@ Used by the browser modules (`linkedin`, `apec`, `wttj`). HTTP-only modules neve
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `BROWSER_IMAGE` | `localhost/jobwatch-browser:1` (`jobwatch-browser:latest` in `compose.yml`) | Browser image the router spawns. |
+| `BROWSER_IMAGE` | `localhost/jobwatch-browser:1` (`notcheu/jobwatch-browser:0.1.0` in `.env.example`) | Browser image the router spawns. Published for amd64 and arm64 with its own version (`docs/releasing.md`); docker pulls it on the first browser call, so `docker pull` it beforehand to avoid a slow cold start. |
 | `BROWSER_NETWORK` | `jobwatch-browsers` | Internal Docker network of the browsers. `compose.yml` creates it under this name (`BROWSER_NETWORK` in `.env`), and the router attaches the browsers to it. |
 | `BROWSER_SECCOMP` | unset | Absolute path of the Chrome seccomp profile as the docker CLI sees it; unset = Docker's default profile. |
 | `BROWSER_PROFILE_VOLUME_PREFIX` | `jw-profile-` | Browser profiles are Docker volumes named `<prefix><platform>`. |
