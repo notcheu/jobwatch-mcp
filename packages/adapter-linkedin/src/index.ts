@@ -244,6 +244,13 @@ export function createLinkedinTools(layout: SearchLayout) {
     }),
     annotations,
     limits: { timeoutS: 300, cost: 25, estimate: (args) => new Set(args.ids).size, outputMaxBytes: 262_144 },
+    examples: [
+      {
+        title: 'Read one job in full',
+        prompt: 'Read the full description of the LinkedIn job with id 4000000001.',
+        input: { ids: ['4000000001'], detail: 'full' },
+      },
+    ],
     handler: async (args, ctx) => {
       const matchTerm = termMatcher(args.disallowed_terms);
       const outcome = await readByIds(ctx, args.ids, {
@@ -305,6 +312,18 @@ export function createLinkedinTools(layout: SearchLayout) {
       estimate: (args) => pagesFor(args) + Math.min(args.max_jobs, args.max_results),
       outputMaxBytes: 262_144,
     },
+    examples: [
+      {
+        title: 'Jobs posted in the last day',
+        prompt: 'Search LinkedIn for <job title> jobs in <place> posted in the last 24 hours and show me the ones worth reading.',
+        input: { keywords: '<job title>', geo: '<place>', posted_within: 'last_24_hours' },
+      },
+      {
+        title: 'Remote roles, without a term',
+        prompt: 'Search LinkedIn for remote <job title> jobs and skip anything that mentions <unwanted term>.',
+        input: { keywords: '<job title>', remote_only: true, disallowed_terms: ['<unwanted term>'] },
+      },
+    ],
     handler: async (args, ctx) => {
       const deadline = Date.now() + OPEN_BUDGET_MS;
       const place = await resolvePlace(ctx, args.geo);

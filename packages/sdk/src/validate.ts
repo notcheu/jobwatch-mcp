@@ -16,6 +16,7 @@ export type Rule =
   | 'read-only'
   | 'description'
   | 'limits'
+  | 'examples'
   | 'schema'
   | 'schema-strict'
   | 'schema-bounded';
@@ -30,6 +31,7 @@ export interface Violation {
 const ID_PATTERN = /^[a-z][a-z0-9-]{1,31}$/;
 const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{2,63}$/;
 const OUTPUT_MAX_BYTES_CEILING = 262_144;
+const MAX_EXAMPLES = 5;
 
 /**
  * The startup rules every adapter must satisfy (docs/plans/03-router-spec.md, "Rules the SDK and registry enforce").
@@ -128,6 +130,17 @@ export function validateAdapter(adapter: McpModule): Violation[] {
     if (memory !== undefined && !(memory.highMb >= 128 && memory.highMb < memory.maxMb && memory.maxMb <= 4096)) {
       add('limits', at, 'limits.memory needs 128 <= highMb < maxMb <= 4096');
     }
+
+    const examples = tool.examples ?? [];
+    if (examples.length > MAX_EXAMPLES) add('examples', at, `at most ${MAX_EXAMPLES} examples per tool`);
+    examples.forEach((example, index) => {
+      const where = `${at}.examples[${index}]`;
+      if (example.title.trim().length === 0 || example.title.length > 80) add('examples', where, 'title must be 1-80 characters');
+      if (example.prompt.trim().length === 0 || example.prompt.length > 400) add('examples', where, 'prompt must be 1-400 characters');
+      const parsed = tool.input.safeParse(example.input);
+      if (!parsed.success)
+        add('examples', where, `input does not match the tool's schema: ${parsed.error.issues[0]?.message ?? 'invalid'}`);
+    });
 
     try {
       for (const problem of findInputSchemaProblems(inputJsonSchema(tool.input))) {

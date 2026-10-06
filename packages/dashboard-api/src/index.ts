@@ -176,6 +176,62 @@ export const toolsSchema = z
   .strict();
 export type Tools = z.infer<typeof toolsSchema>;
 
+// ------------------------------------------------------------------------------------------------------ docs
+
+export const paramDocSchema = z
+  .object({
+    name: z.string(),
+    type: z.string(),
+    required: z.boolean(),
+    default: z.unknown(),
+    enum: z.array(z.string()).nullable(),
+    min: z.number().nullable(),
+    max: z.number().nullable(),
+    description: z.string(),
+  })
+  .strict();
+export type ParamDoc = z.infer<typeof paramDocSchema>;
+
+export const toolExampleSchema = z.object({ title: z.string(), prompt: z.string(), input: z.record(z.string(), z.unknown()) }).strict();
+export type ToolExample = z.infer<typeof toolExampleSchema>;
+
+export const toolDocSchema = z
+  .object({
+    name: z.string(),
+    title: z.string(),
+    description: z.string(),
+    annotations: z.object({ readOnly: z.boolean(), idempotent: z.boolean(), openWorld: z.boolean() }).strict(),
+    needsBrowser: z.boolean(),
+    /** Budget units one call reserves at most. */
+    costMax: z.number(),
+    params: z.array(paramDocSchema),
+    /** The smallest accepted input: the required arguments with placeholders. */
+    sampleInput: z.record(z.string(), z.unknown()),
+    examples: z.array(toolExampleSchema),
+  })
+  .strict();
+export type ToolDoc = z.infer<typeof toolDocSchema>;
+
+export const moduleDocSchema = z
+  .object({
+    id: z.string(),
+    displayName: z.string(),
+    description: z.string(),
+    role: z.enum(['adapter', 'utility']),
+    kind: z.enum(['browser', 'http']),
+    /** Whether the router currently plugs it in: the page only shows it, it cannot change it. */
+    enabled: z.boolean(),
+    allowedHosts: z.array(z.string()),
+    /** An HTTP module that may reach any public https host. */
+    openHttps: z.boolean(),
+    tools: z.array(toolDocSchema),
+  })
+  .strict();
+export type ModuleDoc = z.infer<typeof moduleDocSchema>;
+
+export const docsSchema = z.object({ modules: z.array(moduleDocSchema) }).strict();
+export type Docs = z.infer<typeof docsSchema>;
+
 // ------------------------------------------------------------------------------------------------------ changes
 
 export const adapterToggleSchema = z

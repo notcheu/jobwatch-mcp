@@ -343,9 +343,33 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(usage.series).toHaveLength(1);
   });
 
+  it('documents every installed module, enabled or not: annotations, hosts, arguments from the schema, examples', async () => {
+    const t = await build();
+    const docs = await json(await t.call('/dashboard/api/v1/docs'));
+    const probe = docs.modules.find((m: any) => m.id === 'probe');
+    expect(probe).toMatchObject({
+      role: 'adapter',
+      kind: 'http',
+      enabled: true,
+      allowedHosts: ['api.probe.example.com'],
+      openHttps: false,
+    });
+    const echo = probe.tools.find((tool: any) => tool.name === 'probe_echo');
+    expect(echo).toMatchObject({
+      title: 'Echo (read-only)',
+      annotations: { readOnly: true },
+      needsBrowser: false,
+      costMax: 1,
+      params: [{ name: 'word', type: 'string', required: true, default: null, enum: null, min: null, max: 30 }],
+      sampleInput: { word: '<word>' },
+      examples: [{ title: 'Echo a word', prompt: 'Echo the word hello with the probe.', input: { word: 'hello' } }],
+    });
+    expect(docs.modules.find((m: any) => m.id === 'other')).toMatchObject({ enabled: false });
+  });
+
   it('never returns a secret-looking key, a description in a list or a stack trace', async () => {
     const t = await build();
-    const paths = ['/overview', '/calls', '/jobs', '/searches', '/tools', '/usage', '/me'];
+    const paths = ['/overview', '/calls', '/jobs', '/searches', '/tools', '/docs', '/usage', '/me'];
     for (const path of paths) {
       const text = await (await t.call(`/dashboard/api/v1${path}`)).text();
       expect(text, path).not.toMatch(/"(?:cookie|token|secret|password|authorization|client_secret|stack)"/i);

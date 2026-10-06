@@ -188,6 +188,8 @@ export default defineAdapter({
   tools: [searchTool],
 });
 ```
+A tool may carry `examples` (`{ title, prompt, input }`, at most 5), shown in the dashboard's Docs page and never sent in `tools/list`; the startup check parses each `input` with the tool's schema. Generic modules write values to replace as `<angle brackets>`.
+
 Tools are built with `defineHttpTool` (handler context: `{ http, jobs, log, pace }`) or `defineBrowserTool` (adds `session`). The compiler rejects a browser tool inside an HTTP adapter, `readOnlyHint: false`, a handler result that does not match the `output` schema, and any use of `ctx.session` in an HTTP tool (type tests in `packages/sdk/src/validate.test.ts`).
 
 ### Registration and enable / disable

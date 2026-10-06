@@ -25,6 +25,25 @@ describe('validateAdapter: acceptable adapters', () => {
   });
 });
 
+describe('validateAdapter: tool examples', () => {
+  const good = { title: 'Greet', prompt: 'Greet someone with the example API.', input: { name: 'Ada' } };
+
+  it('accepts examples whose input the tool accepts', () => {
+    expect(validateAdapter(withTool({ examples: [good, { ...good, input: { name: 'Bo', tags: ['x'] } }] }))).toEqual([]);
+  });
+
+  it("rejects an example the tool's own schema refuses, so it cannot drift", () => {
+    expect(rules(withTool({ examples: [{ ...good, input: { name: 1 } }] }))).toContain('examples');
+    expect(rules(withTool({ examples: [{ ...good, input: { name: 'Ada', extra: true } }] }))).toContain('examples');
+  });
+
+  it('rejects an empty or oversized title or prompt and more than 5 examples', () => {
+    expect(rules(withTool({ examples: [{ ...good, title: '' }] }))).toContain('examples');
+    expect(rules(withTool({ examples: [{ ...good, prompt: 'p'.repeat(401) }] }))).toContain('examples');
+    expect(rules(withTool({ examples: Array.from({ length: 6 }, () => good) }))).toContain('examples');
+  });
+});
+
 describe('validateAdapter: adapter-level rules', () => {
   it('rejects another SDK API version', () => {
     expect(rules({ ...httpAdapter, sdkApi: 999 })).toContain('sdk-api');

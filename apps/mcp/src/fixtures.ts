@@ -23,6 +23,7 @@ export const probe: AdapterModule = defineAdapter({
       output: z.object({ echoed: z.string() }),
       annotations,
       limits: { timeoutS: 5, cost: 1, outputMaxBytes: 4096 },
+      examples: [{ title: 'Echo a word', prompt: 'Echo the word hello with the probe.', input: { word: 'hello' } }],
       handler: async ({ word }) => {
         runs.count += 1;
         return { data: { echoed: word }, warnings: ['example warning'] };

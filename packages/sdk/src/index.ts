@@ -44,7 +44,7 @@ export type {
 } from './context';
 
 export { defineHttpTool, defineBrowserTool } from './tool';
-export type { ToolAnnotations, ToolLimits, AdapterResult, ToolDefinition, ErasedTool } from './tool';
+export type { ToolAnnotations, ToolLimits, AdapterResult, ToolDefinition, ErasedTool, ToolExample } from './tool';
 
 export { defineAdapter, defineUtility, roleOf, summarizeAdapter, summarizeModule, summarizeUtility } from './adapter';
 export type {
@@ -69,6 +69,8 @@ export type { Rule, Violation } from './validate';
 export { buildCatalog, catalogFileName, stableStringify } from './catalog';
 export type { CatalogEntry } from './catalog';
 
+export { describeParams, sampleInput } from './docs';
+export type { ParamDoc } from './docs';
 export { inputJsonSchema, outputJsonSchema, findInputSchemaProblems } from './schema';
 export type { JsonSchema, SchemaProblem } from './schema';
 
