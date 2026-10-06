@@ -20,7 +20,7 @@ Versions follow [semantic versioning](https://semver.org). The project is **0.x:
    | Registry | Image | Tags |
    |---|---|---|
    | Docker Hub | `notcheu/jobwatch-mcp` | `X.Y.Z`, `X.Y`, `latest` |
-   | GHCR | `ghcr.io/<owner>/jobwatch-mcp` | the same |
+   | GHCR | `ghcr.io/notcheu/jobwatch-mcp` | the same |
 
    The browser image is not published yet.
 
@@ -31,9 +31,9 @@ Versions follow [semantic versioning](https://semver.org). The project is **0.x:
 ## One-time setup
 
 - **Docker Hub:** create the access token (Account settings, Personal access tokens, read and write) and add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` as GitHub Actions secrets. The `notcheu/jobwatch-mcp` repository can be created on Docker Hub in advance or by the first push.
-- **GitHub namespace:** the image on GHCR is named after the repository owner. To publish as `ghcr.io/notcheu/jobwatch-mcp`, create a GitHub organization named `notcheu` (the name is free) and transfer the repository to it (Settings, Danger Zone, Transfer). A user account cannot be renamed to a name used by an organization, and an organization cannot be created from the command line. Until then the GHCR image is published under `mnogueron`; the workflow follows the repository owner by itself.
+- **GitHub namespace:** the repository lives in the `notcheu` organization, so the GHCR image is `ghcr.io/notcheu/jobwatch-mcp` (the workflow names it after the repository owner). Release-please needs *Settings, Actions, General, Allow GitHub Actions to create and approve pull requests* switched on, for the organization and for the repository.
 - **Release pull request checks:** a pull request opened with the default `GITHUB_TOKEN` does not trigger other workflows, so CI does not run on the release pull request. If `main` requires the checks, add a personal access token (or GitHub App token) with `contents` and `pull requests` write access as the secret `RELEASE_PLEASE_TOKEN`.
-- **Package visibility:** GHCR packages are private on first push: make the package public in its settings.
+- **Package visibility:** GHCR packages are private on first push: make the package public in its settings (organization, Packages, `jobwatch-mcp`, Package settings, Change visibility), and link it to the repository.
 
 ## Notes
 

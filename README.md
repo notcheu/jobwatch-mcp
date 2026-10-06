@@ -31,7 +31,7 @@ How the parts fit together: [`docs/architecture.md`](docs/architecture.md).
 You need **Node 26** and npm.
 
 ```bash
-git clone git@github.com:mnogueron/jobwatch-mcp.git && cd jobwatch-mcp
+git clone git@github.com:notcheu/jobwatch-mcp.git && cd jobwatch-mcp
 npm install
 npm run build
 npm run start
