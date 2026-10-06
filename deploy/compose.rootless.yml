@@ -1,0 +1,7 @@
+# Rootless Docker add-on: points the router at the rootless Docker socket of the user running Compose (Linux).
+# docker compose -f compose.yml -f compose.rootless.yml up -d
+# Host setup and why this is recommended on a server: docs/rootless-docker.md.
+services:
+  router:
+    volumes:
+      - "${XDG_RUNTIME_DIR:?run Compose as the rootless Docker user (XDG_RUNTIME_DIR is unset)}/docker.sock:/var/run/docker.sock"   # replaces the base file's mount of the same container path

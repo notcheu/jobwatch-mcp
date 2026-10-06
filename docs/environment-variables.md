@@ -73,7 +73,6 @@ Used by the browser modules (`linkedin`, `apec`, `wttj`). HTTP-only modules neve
 | Variable | Default | Meaning |
 |---|---|---|
 | `BROWSER_IMAGE` | `localhost/jobwatch-browser:1` (`jobwatch-browser:latest` in `compose.yml`) | Browser image the router spawns. |
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Where the router finds the Docker socket inside its container. `compose.yml` mounts the socket at that path, so leave it as it is. |
 | `BROWSER_NETWORK` | `jobwatch-browsers` | Internal Docker network of the browsers. `compose.yml` creates it under this name (`BROWSER_NETWORK` in `.env`), and the router attaches the browsers to it. |
 | `BROWSER_SECCOMP` | unset | Absolute path of the Chrome seccomp profile as the docker CLI sees it; unset = Docker's default profile. |
 | `BROWSER_PROFILE_VOLUME_PREFIX` | `jw-profile-` | Browser profiles are Docker volumes named `<prefix><platform>`. |
@@ -120,7 +119,5 @@ Closed until `jobwatch dashboard start`. Sign-in variables are under [OAuth](#oa
 
 - **Images:** `notcheu/jobwatch-mcp:latest`, `redis:7-alpine` and the OAuth front `ghcr.io/babs/mcp-auth-proxy:1.4.1`.
 - **Published addresses:** the front's `PORT`, `DASHBOARD_PORT` and `METRICS_PORT` are published on `127.0.0.1`. Replace it by the host's LAN IP if the reverse proxy or Prometheus is on another machine or in a container.
-- **Docker socket:** `${XDG_RUNTIME_DIR}/docker.sock` (the rootless Docker socket of the user, Linux). On Docker Desktop (macOS) replace it by `/var/run/docker.sock`. Never a root socket.
+- **Docker socket:** `/var/run/docker.sock` (Docker Desktop and a default install). For the rootless Docker socket of a dedicated user, add `compose.rootless.yml` ([`rootless-docker.md`](rootless-docker.md)); for any other, edit the mount in `compose.yml`.
 - **The front's own settings:** `PROXY_BASE_URL`, `UPSTREAM_MCP_URL`, `LISTEN_ADDR`, `METRICS_ADDR`.
-
-The Watchtower variable (`WATCHTOWER_IMAGE`) belongs to the optional service described in [`watchtower.md`](watchtower.md).
