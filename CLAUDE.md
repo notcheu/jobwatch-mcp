@@ -73,7 +73,7 @@ Pinned versions: TypeScript 5.9.3 on purpose (`typescript-eslint` 8.71 supports 
 - **LinkedIn may drop the `f_WT=2` remote filter on load:** it is sent on the classic layout only, and remote is post-filtered anyway. Match `Vue` case-sensitively (the French word "vue" otherwise matches everywhere) (`07-…`).
 - **Chrome DevTools rejects non-IP/non-localhost `Host` headers:** connect to the container IP, not its DNS name (`05-…`, G2).
 - **Session cookies may not survive a restart** unless session restore is on; verify login persistence over repeated stop/start (`05-…`, G4).
-- **Rootless Docker socket ownership:** the socket is owned by the host user, which is uid 0 inside containers; the router needs `user: "0:0"` (set in `deploy/compose.rootless.yml`; still unprivileged on the host) (`10-…`).
+- **Rootless Docker socket ownership:** the socket is owned by the host user, which is uid 0 inside containers; the router needs `user: "0:0"` (set in `deploy/compose.yml`; still unprivileged on the host) (`10-…`).
 - **Memory limits need cgroup v2 delegation** for the rootless user; `--memory-reservation` is not the same as Podman's `memory.high` (`06-…`).
 
 ## Ask the maintainer before

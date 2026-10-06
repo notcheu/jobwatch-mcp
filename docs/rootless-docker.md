@@ -10,7 +10,7 @@ docker compose -f compose.yml -f compose.rootless.yml up -d
 
 It only replaces the socket mount with `${XDG_RUNTIME_DIR}/docker.sock` (`/run/user/<uid>/docker.sock`), so run Compose as the rootless user from a real login session. To use any other socket, edit the left side of that mount in `compose.yml`: it is not an environment variable.
 
-The add-on also runs the router as `user: "0:0"`. Under rootless Docker, uid 0 in the container is the Docker user on the host, which is what lets it open the socket and write `./data` (uid 1000, the image's `node` user, maps to another host uid and can do neither); the container stays unprivileged (`cap_drop: ALL`, `no-new-privileges`, read-only root).
+The router runs as `user: "0:0"` (set in `compose.yml`, as the image's uid 1000 can open neither a Docker socket nor a root-owned `./data`). Under rootless Docker, uid 0 in the container is the Docker user on the host, not root; the container stays unprivileged (`cap_drop: ALL`, `no-new-privileges`, read-only root).
 
 ## Host setup (Ubuntu LTS)
 

@@ -50,6 +50,7 @@ services:
   router:
     image: notcheu/jobwatch-mcp:latest
     env_file: .env
+    user: "0:0"                              # the image runs as uid 1000, which cannot open the Docker socket nor write ./data. Under rootless Docker uid 0 is the Docker user on the host. Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
     read_only: true
     tmpfs: [ "/tmp:rw,size=64m" ]
     cap_drop: [ ALL ]
