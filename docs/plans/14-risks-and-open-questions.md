@@ -4,20 +4,20 @@
 
 Update this file as spikes resolve items (keep the history: date, result, decision).
 
-## Open questions for the owner (ask before the related work)
+## Open questions for the maintainer (ask before the related work)
 1. Machine facts: CPU architecture, total/free RAM when idle, disk, always-on desktop session?
 2. ~~Public hostname~~ **decided: `mcp.example.com`** behind the existing Nginx (D10: Nginx + one published port). DNS record, port forwarding and certificate are still to be created (`10-…`).
-3. ~~Identity provider~~ **decided: Google** OAuth app in "Testing" mode with the owner as the only test user (D7 in `01`).
+3. ~~Identity provider~~ **decided: Google** OAuth app in "Testing" mode with the operator as the only test user (D7 in `01`).
 4. LinkedIn usage budget (defaults in `07-…`) — approve or adjust.
 5. LinkedIn UI language to standardize on (English vs French).
-6. Should the routine's "seen offers" memory move server-side (Phase 4) or stay in the Claude project?
+6. Should a client's "seen offers" memory move server-side (Phase 4) or stay in the Claude project?
 7. CI preference (local `npm run ci` vs GitHub Actions) and repo hosting (private repo!).
 
 ## VERIFY list (assumptions, not facts)
 | # | Assumption | Where used | Spike | Status |
 |---|---|---|---|---|
-| V1 | Custom OAuth connectors are usable from scheduled routines and survive token refresh unattended | `02`, `12` | S1 | **partly confirmed, remainder consciously accepted (the owner, 2026-10-01)**: the connector works from chat (sign-in via the front and Google, tools listed, calls succeed). Not tested: calls from a scheduled routine, unattended refresh over days, behaviour after 7 idle days (the front has no `offline_access`). Risk accepted; the real routine verifies it in Phase 5, and a refresh failure is handled as "connector unavailable" (`13-…`), with a manual re-sign-in as the remedy |
-| V2 | R0Wi/mcp-gateway or babs/mcp-auth-proxy can restrict login to a single identity and work with Claude's DCR/PKCE flow | `01` D7 | S2 | **confirmed for babs/mcp-auth-proxy**: DCR + PKCE flow works with Claude (sign-in completed). Single-identity restriction relies on the Google app in Testing mode with one test user; **not tested with a second account, consciously accepted (the owner, 2026-10-01)** |
+| V1 | Custom OAuth connectors are usable from scheduled tasks and survive token refresh unattended | `02`, `12` | S1 | **partly confirmed, remainder consciously accepted (the maintainer, 2026-10-01)**: the connector works from chat (sign-in via the front and Google, tools listed, calls succeed). Not tested: calls from a scheduled task, unattended refresh over days, behaviour after 7 idle days (the front has no `offline_access`). Risk accepted; a real client verifies it in Phase 5, and a refresh failure is handled as "connector unavailable" (`13-…`), with a manual re-sign-in as the remedy |
+| V2 | R0Wi/mcp-gateway or babs/mcp-auth-proxy can restrict login to a single identity and work with Claude's DCR/PKCE flow | `01` D7 | S2 | **confirmed for babs/mcp-auth-proxy**: DCR + PKCE flow works with Claude (sign-in completed). Single-identity restriction relies on the Google app in Testing mode with one test user; **not tested with a second account, consciously accepted (the maintainer, 2026-10-01)** |
 | V3 | Google Chrome stable is available for the host architecture | `05` | S3 | **confirmed** (host is x86_64, `docs/measurements.md`) |
 | V4 | One headful Chrome container fits in ≈1 GB on LinkedIn pages | `06` | S3 | **not at 1 GB; fits at 1.5 GB**: search page needs about 1.04 GB anon+shmem, at a 1100 MB cap the flow completed with one kernel OOM kill. New defaults `max` 1500 MB / `high` 1200 MB. **Host decision pending**: it must have about 2 GB genuinely free at run time (currently 1.0-1.7 GB available, swap full) |
 | V5 | Session cookies persist across graceful restarts with `--restore-last-session` | `05` G4 | S4 | **confirmed**: three consecutive stop/start cycles, `STATE: ok` each time; `li_at` is a persistent cookie (no dependency on session restore) |
@@ -36,18 +36,18 @@ Update this file as spikes resolve items (keep the history: date, result, decisi
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | LinkedIn checkpoint/ban | medium | high (job-search tool) | conservative budget, breaker, residential IP, manual fallback, never write |
-| Scheduled routines can't use custom OAuth connectors | unknown | high | S1 first; plan B static header (beta) or keep Chrome path |
+| Scheduled tasks can't use custom OAuth connectors | unknown | high | S1 first; plan B static header (beta) or keep Chrome path |
 | Selector drift breaks adapters | high over time | medium | fixtures, `adapter_broken` code, nightly smoke, small adapters |
 | RAM pressure on the host | medium | medium | strict policy, measurements, zram, single browser |
 | Automation fingerprint detected | medium | medium/high | headful Chrome, consistency with real Chrome, Patchright option, low volume |
-| arm64/Mac image behaves differently from the production amd64 Chrome | high | medium | arm64 uses Chromium (no Google Chrome for Linux arm64); development only, the LinkedIn profile and the routine run on the amd64 reference host; never use Mac measurements for budgets |
+| arm64/Mac image behaves differently from the production amd64 Chrome | high | medium | arm64 uses Chromium (no Google Chrome for Linux arm64); development only, the LinkedIn profile and the client run on the amd64 reference host; never use Mac measurements for budgets |
 | Over-engineering for one consumer | medium | wasted time | phase gates; Phase 1 is useful alone; stop after Phase 2 if value is reached |
 | Nginx/WAF rules break OAuth discovery or MCP streaming | low/medium | high | follow Anthropic's notes, test with checklist, allowlist carefully |
 | Exposed OAuth front vulnerability | low | high | pinned images, updates, single identity, minimal surface |
-| Maintenance burden (Chrome upgrades, image rebuilds) | high | low/medium | monthly routine, tests, rollback tag |
+| Maintenance burden (Chrome upgrades, image rebuilds) | high | low/medium | monthly upkeep, tests, rollback tag |
 
 ## Open findings
-- **Browser egress (decided 2026-10-01, the owner):** `jobwatch-browsers` was `internal: true`, which blocked the browsers' internet access. It is now `internal: false`; open egress is accepted until the Phase 4 allowlist proxy (see `09`). Existing deployments must recreate the network: `docker compose down` then `up -d` (an existing network keeps its old setting).
+- **Browser egress (decided 2026-10-01, the operator):** `jobwatch-browsers` was `internal: true`, which blocked the browsers' internet access. It is now `internal: false`; open egress is accepted until the Phase 4 allowlist proxy (see `09`). Existing deployments must recreate the network: `docker compose down` then `up -d` (an existing network keeps its old setting).
 
 ## Decisions log (append)
 - 2026-09-30: custom router chosen over off-the-shelf gateways (D1). Static schemas (D2). Shared browser image (D4). Headful Chrome preferred (D5, pending S3/S4). Rootless runtime (D8).

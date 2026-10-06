@@ -4,7 +4,7 @@ import type { SearchLayout } from './layout';
 
 /**
  * Layout B, the AI `/jobs/search-results/`. Kept because LinkedIn may bring it back (it worked on 2026-09-30, then answered
- * "No results found" on 2026-10-01). The URL form is the one from the routine; the in-page script already reads its cards.
+ * "No results found" on 2026-10-01). The in-page script already reads its cards.
  */
 export const aiSearchResultsLayout: SearchLayout = {
   id: 'ai',

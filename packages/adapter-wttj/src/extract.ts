@@ -3,7 +3,7 @@
  * The site is client-rendered and answers plain HTTP with 403, so everything goes through the signed-in browser page. The ONE
  * thing a script does besides reading is `CLICK_NEXT`, which presses the "Next Page" pagination button and nothing else: it never
  * touches the buttons that change the account (save a job, "Pas pour moi", apply). Each is an async function expression that
- * `BrowserSession.evaluate` calls. The markup was observed in the owner's own session on 2026-10-02.
+ * `BrowserSession.evaluate` calls. The markup was observed in the maintainer's own session on 2026-10-02.
  */
 
 /** Signed-in state and bot-check state of the current page. */

@@ -24,7 +24,7 @@ export interface BrowserSession {
   goto(url: string, options: GotoOptions): Promise<void>;
   /**
    * Run a script in the page and return its JSON-serialisable result. A STRING is a function expression that is CALLED with
-   * `arg` (`'(ids) => ids.length'`), the form `linkedin-extract.js` already has; `arg` then travels as JSON. A real function is
+   * `arg` (`'(ids) => ids.length'`), the form the adapters' in-page scripts use; `arg` then travels as JSON. A real function is
    * passed to the browser as is. (A bare expression such as `'1 + 1'` is not supported: wrap it, `'() => 1 + 1'`.)
    */
   evaluate<T, A = undefined>(script: string | ((arg: A) => T), arg?: A): Promise<T>;

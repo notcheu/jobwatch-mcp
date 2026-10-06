@@ -51,14 +51,14 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"   # only read by Watchtower, if you run it (docs/watchtower.md)
     env_file: .env   # every router setting: see .env.example and docs/environment-variables.md
-    user: "0:0"                              # CONFIRMED on the reference host: under rootless Docker uid 0 in the container IS mcpuser on the host. uid 1000 could not write ./data nor would it open the socket. Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
+    user: "0:0"                              # Confirmed under rootless Docker: uid 0 in the container is the Docker user on the host. uid 1000 could not write ./data nor would it open the socket. Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
     read_only: true
     tmpfs: [ "/tmp:rw,size=64m" ]
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
     volumes:
       - "${XDG_RUNTIME_DIR}/docker.sock:/var/run/docker.sock"   # the rootless Docker socket of this user (Linux). Docker Desktop (macOS): replace the left side by /var/run/docker.sock. Never a root socket
-      - "./data:/data"             # owned by mcpuser = uid 0 in the container (hence user "0:0" above)
+      - "./data:/data"             # owned by the Docker user = uid 0 in the container (hence user "0:0" above)
       # Browser profiles are named Docker volumes (jw-profile-<platform>) created by the router: no host paths, so the same file works on Linux and macOS.
     ports:
       - "127.0.0.1:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}"   # the dashboard, for the reverse proxy (/dashboard); nothing listens until it is started

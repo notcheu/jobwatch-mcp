@@ -3,12 +3,12 @@
 > **Related docs:** Load for orientation. Also load: `16-architecture-diagrams.md` (visuals); `01` if you need a decision's rationale; `09` for security questions; `07` for LinkedIn lessons. Not needed for coding a single module. Follow a link only if the task needs it.
 
 ## Why this exists
-The daily job-search routine (see `../00-orchestrator.md`) currently reads LinkedIn, WTTJ and APEC through the **Claude in Chrome extension on the owner's laptop**. That makes every run depend on the laptop being awake, Chrome open and logged in, the extension connected, and a long multi-step browser conversation that burns tokens and breaks often (lessons in `07-adapter-linkedin.md`).
+An agent that reads LinkedIn, WTTJ, APEC and company career pages through a browser extension on the operator's laptop makes every run depend on the laptop being awake, Chrome open and logged in, the extension connected, and a long multi-step browser conversation that burns tokens and breaks often (lessons in `07-adapter-linkedin.md`).
 
-The orchestrator moves that work to an always-on home Ubuntu machine, behind a small number of **task-level MCP tools**. Claude (including scheduled routines) calls them over the internet through a custom connector.
+The orchestrator moves that work to a small always-on machine, behind a small number of **task-level MCP tools**. Claude (including scheduled tasks) calls them over the internet through a custom connector.
 
 ## Goals
-1. Remove the laptop/Chrome-extension dependency from the routine.
+1. Remove the laptop/Chrome-extension dependency from the client.
 2. Expose **few, compact, read-only tools** that return structured results (cheap in tokens, stable across site changes).
 3. Be **secure**: OAuth 2.1 in front, single authorized user, read-only tool surface, hardened containers, egress allowlist.
 4. Be **cheap to run on limited RAM**: nothing runs when idle; a browser is spawned on demand and stopped after a short grace period.
@@ -22,16 +22,16 @@ The orchestrator moves that work to an always-on home Ubuntu machine, behind a s
 - No attempt to defeat site protections beyond behaving like a normal, low-volume, logged-in user (see `09-security.md` for the terms-of-service caveat).
 
 ## Constraints
-- Host: real Ubuntu machine at a home (trusted residential IP — important for LinkedIn), **limited RAM** (exact figure unknown: measure in Phase 0), always on.
+- Host: a real Linux machine on a trusted residential IP (important for LinkedIn), **limited RAM** (measured in Phase 0, `docs/measurements.md`), always on.
 - Claude connects from Anthropic's cloud: the endpoint must be public HTTPS with OAuth or a supported static header (see `02-…`).
-- Must work from **scheduled routines** (unattended). VERIFY: custom connectors are usable from scheduled tasks (Phase 0 spike S1).
-- Only one LinkedIn account, the owner's own; keep volume human-scale.
+- Must work from **scheduled tasks** (unattended). VERIFY: custom connectors are usable from scheduled tasks (Phase 0 spike S1).
+- Only one LinkedIn account, the operator's own; keep volume human-scale.
 
 ## Architecture (logical)
 
 ```mermaid
 flowchart LR
-  C[Claude / routine] -- HTTPS + OAuth --> T[Existing Nginx reverse proxy<br/>TLS + your domain]
+  C[Claude / scheduled task] -- HTTPS + OAuth --> T[Existing Nginx reverse proxy<br/>TLS + your domain]
   T -- "one published host port" --> A[OAuth front<br/>always on]
   A -- private net, token validated --> R[Router<br/>always on, tiny]
   R -- enabled adapters only --> K[(adapter catalogs<br/>packages/adapter-*/catalog)]
@@ -42,7 +42,7 @@ flowchart LR
   P[Prometheus / Grafana<br/>optional] -. scrape :9464 .-> R
 ```
 
-Detailed diagrams (deployment, router internals and adapter plug-in, call sequence, state machine, routine integration): `16-architecture-diagrams.md`.
+Detailed diagrams (deployment, router internals and adapter plug-in, call sequence, state machine, client integration): `16-architecture-diagrams.md`.
 
 Always-on: OAuth front, router (Nginx is your existing one, outside this stack) (a few tens to low hundreds of MB in total, to measure). On-demand: browser containers (one at a time globally).
 

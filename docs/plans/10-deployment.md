@@ -33,7 +33,7 @@
 - cgroup v2 with delegation to user services (VERIFY: `systemctl --user` with `Delegate=yes`; `cat /sys/fs/cgroup/cgroup.controllers`).
 - `loginctl enable-linger mcpuser` so user services start at boot.
 - zram swap enabled on the host (spike S3/S7 decides size); disk encryption recommended.
-- **RAM:** the browser runtime needs about 1.5 GB (`memory.max`) on top of the always-on services (`06-…` "Measured budget"). Plan for at least 2 GB genuinely free when a runtime starts. The reference host (3.8 GB total, 1.0-1.7 GB available, swap nearly full) does not guarantee that. **Decision (the owner, 2026-10-01): no hardware upgrade for now; look into zram** (and, if needed, freeing memory during the routine window). Until that is done, treat RAM as the main operational risk: expect `budget_exceeded`/`oom_killed` errors and slower navigation under pressure.
+- **RAM:** the browser runtime needs about 1.5 GB (`memory.max`) on top of the always-on services (`06-…` "Measured budget"). Plan for at least 2 GB genuinely free when a runtime starts. The reference host (3.8 GB total, 1.0-1.7 GB available, swap nearly full) does not guarantee that. **Decision (the maintainer, 2026-10-01): no hardware upgrade for now; look into zram** (and, if needed, freeing memory during a client's run). Until that is done, treat RAM as the main operational risk: expect `budget_exceeded`/`oom_killed` errors and slower navigation under pressure.
 - Time sync (NTP), automatic security updates, UFW: allow inbound only from the Nginx host to the single published port (or nothing at all if Nginx runs on this host and the port is bound to `127.0.0.1`).
 - Record in `docs/measurements.md`: CPU arch, RAM, free RAM idle, disk free, Ubuntu version, runtime versions.
 
@@ -76,7 +76,7 @@ Closed by default. On the host: `docker compose exec router jobwatch dashboard s
 - **Local development** (`compose.dev.yml`, `AUTH=none`): no sign-in; `jobwatch dashboard start` and open `http://127.0.0.1:18933/dashboard/`.
 
 ## Google sign-in (the identity provider)
-Access is limited to the owner by the Google OAuth app itself: while the app is in **Testing** status only listed test users can sign in, and the front has no email allowlist of its own.
+Access is limited to the operator by the Google OAuth app itself: while the app is in **Testing** status only listed test users can sign in, and the front has no email allowlist of its own.
 1. Google Cloud Console → create a project (e.g. `jobwatch-mcp`) → **APIs & Services → OAuth consent screen**: user type **External**, app name, your support email; scopes `openid`, `email`, `profile` (non-sensitive, no verification needed); **Test users: add only your own Google account**; leave **Publishing status = Testing**. Do not publish the app.
 2. **Credentials → Create credentials → OAuth client ID → Web application**; **Authorized redirect URI: `https://mcp.example.com/callback`** (the front's OIDC callback, `{PROXY_BASE_URL}/callback`). Copy the client ID and secret into `.env` as `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
 3. Generate `TOKEN_SIGNING_SECRET=$(openssl rand -base64 48)` into `.env`.
@@ -97,7 +97,7 @@ Rules: route every path to the front; do not rewrite paths; no login page, WAF c
 ## Other hosts: macOS (Apple Silicon) and other Linux (decided 2026-10-01)
 The images may run on something other than the reference Ubuntu host, typically a Mac. What is portable and what is not:
 - **Router image:** multi-arch (`linux/amd64`, `linux/arm64`), built by the CI workflow with QEMU. Pull or build it on the Mac as usual.
-- **Browser image:** amd64 uses Google Chrome stable; **arm64 uses Debian Chromium** (Google ships no Linux arm64 Chrome). Build locally with `docker build -t jobwatch-browser:dev images/browser` (the Dockerfile selects the browser from `TARGETARCH`). **Do not use the arm64 image for the LinkedIn session:** Chromium reports a different brand list and other signals, so the logged-in profile and the daily routine stay on the amd64 reference host. Emulating amd64 Chrome on Apple Silicon is slow and crash-prone; not supported.
+- **Browser image:** amd64 uses Google Chrome stable; **arm64 uses Debian Chromium** (Google ships no Linux arm64 Chrome). Build locally with `docker build -t jobwatch-browser:dev images/browser` (the Dockerfile selects the browser from `TARGETARCH`). **Do not use the arm64 image for the LinkedIn session:** Chromium reports a different brand list and other signals, so the logged-in profile and a daily run stay on the amd64 reference host. Emulating amd64 Chrome on Apple Silicon is slow and crash-prone; not supported.
 - **Runtime:** Docker Desktop (or OrbStack/Colima) instead of rootless Docker. Replace the Docker socket line of `compose.yml` by `/var/run/docker.sock`. Its socket is root-equivalent inside the VM and the router then runs as `user: "0:0"`; acceptable for local development, **not for the production host**.
 - **No host paths:** profiles are named volumes and the seccomp profile is passed by file to the Docker CLI, so nothing depends on `/srv/...` or `XDG_RUNTIME_DIR`.
 - **Development without OAuth:** `docker compose -f deploy/compose.yml -f deploy/compose.dev.yml up router` runs only the router on `http://127.0.0.1:18932/mcp` with `AUTH=none` (accepted only on loopback). Test with the MCP Inspector or `claude mcp add --transport http jobwatch-dev http://127.0.0.1:18932/mcp`. The full front needs the public hostname and cannot run on a laptop without a tunnel; test it on the reference host.
@@ -117,7 +117,7 @@ merge of the release PR → tag vX.Y.Z + GitHub Release → build router image (
 - **Tags:** `X.Y.Z` (exact), `X.Y` (latest patch of a minor) and `latest`; the bare major is not published while the project is 0.x. To roll back, pin the previous version tag.
 - **Host side (`deploy/compose.yml`):** the router uses `image: notcheu/jobwatch-mcp:latest` and carries the label `com.centurylinklabs.watchtower.enable=true`. A `watchtower` service runs with `WATCHTOWER_LABEL_ENABLE=true`, so **only the router** auto-updates; the OAuth front stays pinned by digest (supply chain, `09-…`). Watchtower mounts the same rootless socket and the `mcpuser` user's `~/.docker/config.json` (read-only) to authenticate to the registry. Log in once on the host: `docker login <registry>` as `mcpuser`.
 - **Browser image:** not auto-updated (spawned containers are invisible to Watchtower, and rebuilding Chrome should be deliberate). Build and push it from a separate workflow triggered only by changes under `images/browser/`, and pull the new tag by hand, then bump `BROWSER_IMAGE`.
-- **Restart safety:** Watchtower may recreate the router while a call is running. On startup the router must reap orphan containers labelled `jobwatch.managed=true` and reconcile state from SQLite; a failed in-flight call is returned to Claude as an error and the routine retries. Set Watchtower to a quiet schedule (`WATCHTOWER_SCHEDULE`, e.g. after the daily routine) rather than the default poll interval.
+- **Restart safety:** Watchtower may recreate the router while a call is running. On startup the router must reap orphan containers labelled `jobwatch.managed=true` and reconcile state from SQLite; a failed in-flight call is returned to Claude as an error and the client retries. Set Watchtower to a quiet schedule (`WATCHTOWER_SCHEDULE`, e.g. after a daily run) rather than the default poll interval.
 - **Caveats to VERIFY:** the original `containrrr/watchtower` is archived, so pick a maintained fork and check it supports the rootless socket and current Docker API version; verify the registry is reachable from the host and uses valid TLS.
 
 ## Autostart
@@ -141,7 +141,7 @@ Rootless Docker starts at boot through `systemctl --user enable docker` + `login
 8. LinkedIn login through noVNC (`05-…`).
 
 ### Session expired / `needs_login` or `checkpoint`
-The routine notifies the owner. Procedure: `jobwatch login start linkedin` → SSH tunnel to the viewer → log in → `jobwatch login stop linkedin`. After a checkpoint wait 24 h and reduce budgets.
+The client notifies the operator. Procedure: `jobwatch login start linkedin` → SSH tunnel to the viewer → log in → `jobwatch login stop linkedin`. After a checkpoint wait 24 h and reduce budgets.
 
 ### Out of memory / runtime killed
 Look at `memory_report` and the call log (`peak_rss_mb`). Lower per-tool `max_cards`, enable resource blocking, raise `memory.max` only if the host has headroom, or reduce `renderer-process-limit`.
@@ -171,4 +171,4 @@ scrape_configs:
 ```
 - **Logs in Grafana:** Prometheus stores metrics, not log lines. To see the JSON logs in Grafana, ship container stdout to Loki (Grafana Alloy/Promtail reading Docker logs, or the Loki Docker logging driver) and add Loki as a data source; the log fields (`tool`, `platform`, `result`, `cold_start`, `peak_rss_mb`) can be parsed with `| json`. Skip this if you only want metrics dashboards.
 - **Suggested dashboard panels:** calls by result code, p95 duration per tool, runtime state timeline, peak RSS vs `memory.max`, cold starts per day, breaker open, queue wait.
-- **Alerts:** the routine itself reports `needs_login`/errors via its notification; optional Grafana alerts on `jw_breaker_open == 1`, peak RSS above 90% of the cap, or `up{job="jobwatch-router"} == 0`.
+- **Alerts:** the client itself reports `needs_login`/errors via its notification; optional Grafana alerts on `jw_breaker_open == 1`, peak RSS above 90% of the cap, or `up{job="jobwatch-router"} == 0`.

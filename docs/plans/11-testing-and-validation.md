@@ -8,7 +8,7 @@
 3. **Integration (local, real containers, no internet)**: serve saved sanitized HTML from a local static server (fake `www.linkedin.com` via a hosts override or a test-mode base URL) and run adapters end-to-end through a real browser container: spawn → extract → close → reap. Asserts lifecycle invariants (see `06-…`).
 4. **Live smoke (manual, off by default)**: real LinkedIn/APEC/WTTJ with the real profile, within budget; record cold start and peak RSS.
 5. **Protocol/auth**: MCP Inspector or a scripted client against the router alone (no auth), then against the full stack: 401 discovery, OAuth flow, token refresh, scopes, second-account rejection.
-6. **End-to-end**: add the connector in Claude, run a real tool call; then a **scheduled routine** run calling the tools unattended.
+6. **End-to-end**: add the connector in Claude, run a real tool call; then a **scheduled task** run calling the tools unattended.
 
 ## Lifecycle/memory tests (must pass before go-live)
 - **Cold/warm**: first call cold (record ms); second call within the TTL warm (no spawn).
@@ -29,11 +29,11 @@ Start a runtime, run the fingerprint self-check (`05-…`) and additionally open
 
 ## Acceptance criteria per phase
 See `12-roadmap.md` (exit criteria). Global acceptance for go-live:
-- [ ] Routine's daily run completes using only the orchestrator for LinkedIn (+ APEC/WTTJ if implemented) for 5 consecutive days without manual intervention.
+- [ ] A client's daily run completes using only the orchestrator for LinkedIn (+ APEC/WTTJ if implemented) for 5 consecutive days without manual intervention.
 - [ ] No managed container left running 5 minutes after the last call, on every day.
 - [ ] Peak container RSS ≤ configured `memory.max` with ≥ 20% margin; host never swaps heavily during runs.
 - [ ] Zero checkpoints/captchas in the 5-day window; otherwise budgets reduced and window restarted.
 - [ ] Security checklist in `09-…` fully ticked.
 
 ## Tooling
-`nx` (`nx affected -t lint typecheck test` in CI), `vitest`, `@jobwatch/sdk/testkit` (fakes + `describeAdapterContract` in every adapter package), `msw` (or undici `MockAgent`) to mock HTTP adapters, `eslint` + `prettier`, `tsc --noEmit` with `strict`, `husky`/`pre-commit` (eslint, secret scan), GitHub Actions or a local `npm run ci` (the owner's choice) running unit+contract+integration on the Ubuntu machine (integration needs the runtime; separate vitest project/tag, e.g. `npm run test:integration`).
+`nx` (`nx affected -t lint typecheck test` in CI), `vitest`, `@jobwatch/sdk/testkit` (fakes + `describeAdapterContract` in every adapter package), `msw` (or undici `MockAgent`) to mock HTTP adapters, `eslint` + `prettier`, `tsc --noEmit` with `strict`, `husky`/`pre-commit` (eslint, secret scan), GitHub Actions or a local `npm run ci` (the maintainer's choice) running unit+contract+integration on the Ubuntu machine (integration needs the runtime; separate vitest project/tag, e.g. `npm run test:integration`).

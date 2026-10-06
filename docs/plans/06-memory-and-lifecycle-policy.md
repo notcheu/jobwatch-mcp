@@ -71,7 +71,7 @@ Record `peak_rss_mb` per call (max observed `memory.current` during the lease) i
 `--disable-gpu`, `--disable-dev-shm-usage` (with explicit `--shm-size`), `--js-flags=--max-old-space-size=512`, `--renderer-process-limit=2`, `--disable-background-networking`, `--disable-extensions`, `--mute-audio`. Resource blocking (media/fonts) is optional and must be A/B-tested: it saves memory but changes the page-load profile relative to a normal user.
 
 ## Pacing interacts with lifecycle
-The idle TTL (120 s) must be longer than the typical gap between a routine's consecutive calls (seconds) and shorter than a long reasoning pause. Cold start costs a few seconds plus a page load; that is acceptable. Do not raise the TTL to "save" cold starts: RAM is the scarce resource. If a routine regularly exceeds the gap, add a client-side hint instead (a `keep_warm_s` argument capped at 300 s) — decide later.
+The idle TTL (120 s) must be longer than the typical gap between a client's consecutive calls (seconds) and shorter than a long reasoning pause. Cold start costs a few seconds plus a page load; that is acceptable. Do not raise the TTL to "save" cold starts: RAM is the scarce resource. If a client regularly exceeds the gap, add a client-side hint instead (a `keep_warm_s` argument capped at 300 s) — decide later.
 
 ## Measurement plan (Phase 0, S3) — record results in `docs/measurements.md`
 On the real machine, with the pinned Chrome image:

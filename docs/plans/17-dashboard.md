@@ -2,7 +2,7 @@
 
 > **Related docs:** Load to build or review the operator dashboard. Also load: `03` (config, ops tools, store), `04` (tool outputs), `06` (memory benchmark, which the dashboard must not move), `09` (threat model), `10` (compose, ports), `12` (roadmap). Follow a link only if the task needs it.
 
-**Status: plan, nothing built (2026-10-03). The owner answered the open questions the same day; their answers are folded in below and listed in section 12.** Decisions are tagged **DECIDED** (agreed with the owner) or **PROPOSED** (recommended, confirm before the step that needs it).
+**Status: plan, nothing built (2026-10-03). The maintainer answered the open questions the same day; their answers are folded in below and listed in section 12.** Decisions are tagged **DECIDED** (agreed with the maintainer) or **PROPOSED** (recommended, confirm before the step that needs it).
 
 ## 1. Purpose and scope
 
@@ -20,17 +20,17 @@ Not in scope: anything that touches a third-party site (the dashboard never call
 
 | # | Decision | Status |
 |---|---|---|
-| D1 | **On demand, not always running** (owner, 2026-10-03). The dashboard listener is off by default and started by `jobwatch dashboard start`; it stops after an idle timeout or `jobwatch dashboard stop`. | DECIDED |
-| D2 | Stack: **React + shadcn/ui + TanStack Table**, built with Vite; TanStack Query for data; shadcn charts (Recharts) for graphs. The two new workspaces `apps/dashboard` and `packages/dashboard-api` and the front-end dependencies are accepted (owner, 2026-10-03). | DECIDED |
+| D1 | **On demand, not always running** (the maintainer, 2026-10-03). The dashboard listener is off by default and started by `jobwatch dashboard start`; it stops after an idle timeout or `jobwatch dashboard stop`. | DECIDED |
+| D2 | Stack: **React + shadcn/ui + TanStack Table**, built with Vite; TanStack Query for data; shadcn charts (Recharts) for graphs. The two new workspaces `apps/dashboard` and `packages/dashboard-api` and the front-end dependencies are accepted (the maintainer, 2026-10-03). | DECIDED |
 | D3 | Layout: a **sidebar** to switch sections (analytics, runs, stored jobs, searches, tools and status) and **tabs** to switch between tools within a section. Stored jobs in a TanStack Table, a **detail panel on the right** on row click. | DECIDED |
 | D4 | The calls are **kept in memory** (a ring buffer in the router process). Each call keeps its **full parameters as a JSON object**, in memory only (D9). | DECIDED |
 | D5 | The server part runs **inside the router process** (it owns the memory buffer, the limiter and the registry), on its own listener, never on the MCP port. | PROPOSED |
-| D6 | Token counts are **estimates** computed from the size of the text sent to Claude, starting at 3.5 characters per token; the ratio is calibrated later against Claude's own usage data (owner, 2026-10-03). | DECIDED |
-| D7 | **Hot reload** of adapters (owner, 2026-10-03): enabling or disabling an adapter from the dashboard (or the CLI) takes effect in the running router without a restart (section 6.4). A "Restart router" button also exists (owner, 2026-10-03). | DECIDED |
-| D8 | The daily usage aggregates are **persisted**, so Lifetime and Historical survive a restart; the per-call history stays in memory (owner, 2026-10-03). | DECIDED |
-| D9 | The parameters of each call are kept **in memory only** as a JSON object, never written to the database, never logged, bounded in size, cleared on restart (owner, 2026-10-03; section 4.2.1). This is the only place the router keeps tool parameters other than search keywords. | DECIDED |
-| D11 | **Sign-in decisions (owner, 2026-10-03).** The dashboard has its own login screen with a **Sign in with Google** button and reuses the Google OAuth setup of the connector (same project; the client is configurable and defaults to the connector's, `DASHBOARD_OIDC_CLIENT_ID`). **No email allowlist**: who may sign in is decided by the Google OAuth app itself (its test users or its audience). **No extra Nginx layer.** **No sign-in at all when the router runs for local development** (`AUTH=none` on a loopback address): the dashboard opens directly. Timers: the dashboard stops after **30 minutes without a request**; a session lasts until then, with an **8 hour** cap; **writes need a sign-in within the last 10 minutes**. | DECIDED |
-| D10 | The dashboard is reached at **`https://<domain>/dashboard`** on the same public domain as the MCP endpoint (owner, 2026-10-03), not through an SSH tunnel. This makes it a public admin surface: it needs its own sign-in and the controls of section 8. | DECIDED, security design PROPOSED |
+| D6 | Token counts are **estimates** computed from the size of the text sent to Claude, starting at 3.5 characters per token; the ratio is calibrated later against Claude's own usage data (the maintainer, 2026-10-03). | DECIDED |
+| D7 | **Hot reload** of adapters (the maintainer, 2026-10-03): enabling or disabling an adapter from the dashboard (or the CLI) takes effect in the running router without a restart (section 6.4). A "Restart router" button also exists (the maintainer, 2026-10-03). | DECIDED |
+| D8 | The daily usage aggregates are **persisted**, so Lifetime and Historical survive a restart; the per-call history stays in memory (the maintainer, 2026-10-03). | DECIDED |
+| D9 | The parameters of each call are kept **in memory only** as a JSON object, never written to the database, never logged, bounded in size, cleared on restart (the maintainer, 2026-10-03; section 4.2.1). This is the only place the router keeps tool parameters other than search keywords. | DECIDED |
+| D11 | **Sign-in decisions (the maintainer, 2026-10-03).** The dashboard has its own login screen with a **Sign in with Google** button and reuses the Google OAuth setup of the connector (same project; the client is configurable and defaults to the connector's, `DASHBOARD_OIDC_CLIENT_ID`). **No email allowlist**: who may sign in is decided by the Google OAuth app itself (its test users or its audience). **No extra Nginx layer.** **No sign-in at all when the router runs for local development** (`AUTH=none` on a loopback address): the dashboard opens directly. Timers: the dashboard stops after **30 minutes without a request**; a session lasts until then, with an **8 hour** cap; **writes need a sign-in within the last 10 minutes**. | DECIDED |
+| D10 | The dashboard is reached at **`https://<domain>/dashboard`** on the same public domain as the MCP endpoint (the maintainer, 2026-10-03), not through an SSH tunnel. This makes it a public admin surface: it needs its own sign-in and the controls of section 8. | DECIDED, security design PROPOSED |
 
 ## 2. On-demand lifecycle (D1)
 
@@ -81,7 +81,7 @@ The dashboard API is a **public surface** for one authenticated operator, but it
    - The detail view shows the object as formatted JSON with a copy button, and a *Run again in Claude* hint is **not** offered (the dashboard never calls a tool).
 2. **In-flight calls**: the same buffer marks a call `running` between admission and settle, which gives "active calls" without polling.
 3. **Daily aggregates** (D8): a small table `tool_usage_daily (day, tool, platform, calls, errors, bytes, tokens, units, duration_ms_sum)` updated on each call and kept 400 days. It gives the analytics a **Lifetime** and **Historical** view that survives a restart, which the memory buffer cannot. The cost is one UPSERT per call. It holds counts, bytes and durations only, never parameters.
-4. **Token estimation** (D6). The router sends Claude the `content[0].text` of each result (the JSON body plus warnings). It cannot run Claude's tokenizer, and the Anthropic count-tokens API needs a key and a network call per result, which is out. The estimate is `ceil(characters / 3.5)` on that text (a first figure for compact JSON in English and French), configurable (`TOKEN_CHARS_PER_TOKEN`), shown with a "~" and explained in the UI. The owner will calibrate it later with Claude's own usage data (D6); until then it is an estimate. Because the number is the same function for every call, **comparisons between tools, between `detail` levels and over time are reliable even if the absolute value is off by 10 to 20 %**. A calibration note in the doc records one real comparison against Claude's reported usage when available.
+4. **Token estimation** (D6). The router sends Claude the `content[0].text` of each result (the JSON body plus warnings). It cannot run Claude's tokenizer, and the Anthropic count-tokens API needs a key and a network call per result, which is out. The estimate is `ceil(characters / 3.5)` on that text (a first figure for compact JSON in English and French), configurable (`TOKEN_CHARS_PER_TOKEN`), shown with a "~" and explained in the UI. The maintainer will calibrate it later with Claude's own usage data (D6); until then it is an estimate. Because the number is the same function for every call, **comparisons between tools, between `detail` levels and over time are reliable even if the absolute value is off by 10 to 20 %**. A calibration note in the doc records one real comparison against Claude's reported usage when available.
 5. **Text kept back** (PROPOSED): for tools that return jobs, the difference between the description length the database holds (`description_chars`) and the text returned (`summary` or `description`) is the volume the `detail` setting kept out of Claude's context. Computed from the job fields the tools already return, in the same hook; shown as "kept back by summaries". This is the dashboard's counterpart of "tokens saved" and the evidence for the `detail: summary` default.
 
 ## 5. API (dashboard listener, JSON, versioned `/api/v1`)
@@ -137,7 +137,7 @@ Search and filtering run in SQL (`Store.listJobs` gains `q` over title and compa
 
 **Overview.** Request health card (completed, failed, rate-limited, cached or stored), live activity card (active calls, queued browser calls, runtime state), then the headline numbers (tokens returned, calls, estimated tokens kept back) and the budget gauges (§7.2). The landing page for "is everything fine".
 
-**Runs (history).** TanStack Table over `/calls`: time, tool, platform, outcome badge, duration, units spent / reserved, size, estimated tokens, keywords. The keywords of a search show on the row (owner, 2026-10-03). A click opens the **detail view** on the right (same panel as a job): all the **parameters of the call as formatted JSON** with a copy button, the units reserved and spent, the size and estimated tokens returned, the warnings count, the argument hash and request id, and for a search a link to the jobs it listed. Filters: tool (also the tab), outcome, time range, a "only slow" and "only failed" toggle. Live badge for running calls. Banner: "kept in memory, cleared when the router restarts".
+**Runs (history).** TanStack Table over `/calls`: time, tool, platform, outcome badge, duration, units spent / reserved, size, estimated tokens, keywords. The keywords of a search show on the row (the maintainer, 2026-10-03). A click opens the **detail view** on the right (same panel as a job): all the **parameters of the call as formatted JSON** with a copy button, the units reserved and spent, the size and estimated tokens returned, the warnings count, the argument hash and request id, and for a search a link to the jobs it listed. Filters: tool (also the tab), outcome, time range, a "only slow" and "only failed" toggle. Live badge for running calls. Banner: "kept in memory, cleared when the router restarts".
 
 **Jobs (stored offers).** TanStack Table with server-side data:
 
@@ -154,7 +154,7 @@ Column visibility menu, a search box (`q`), filters for source / board / keyword
 
 **Searches.** A table of keywords: platform, keywords, runs, jobs found / returned / new, last run, with a small bar showing the new-to-found ratio so a keyword that only brings the same jobs back stands out. Click a row: jobs of that keyword (`found_by` filter on the Jobs table).
 
-**Tools & status.** One card per installed adapter (grouped by enabled and disabled) and one per utility (their own section, with the same switch and budget bars): kind (HTTP, browser), session state with the time it was checked, breaker (open, reason, until), the tools with their parameters, the rate usage bars for the hour and the day, and for an ATS the per-board usage list (busiest first). A **switch enables or disables** the adapter (D7): it writes `adapters.json` and reloads the registry at once; the card shows "applied, reconnect the Claude connector to see the new tool list". A separate *Restart router* action (confirm dialog) stays for the rare case it is needed. Adapters forced by `ADAPTERS` show the switch disabled with the reason. LinkedIn's switch warns that its budget needs the owner's approval (`docs/plans/09`).
+**Tools & status.** One card per installed adapter (grouped by enabled and disabled) and one per utility (their own section, with the same switch and budget bars): kind (HTTP, browser), session state with the time it was checked, breaker (open, reason, until), the tools with their parameters, the rate usage bars for the hour and the day, and for an ATS the per-board usage list (busiest first). A **switch enables or disables** the adapter (D7): it writes `adapters.json` and reloads the registry at once; the card shows "applied, reconnect the Claude connector to see the new tool list". A separate *Restart router* action (confirm dialog) stays for the rare case it is needed. Adapters forced by `ADAPTERS` show the switch disabled with the reason. LinkedIn's switch warns that its budget needs the operator's approval (`docs/plans/09`).
 
 **Analytics.** §7.
 
@@ -191,7 +191,7 @@ Rules: every estimated number carries a "~" and a tooltip; empty states say what
 
 ## 8. Security
 
-The dashboard exposes job-search data, the parameters of every call and a switch that changes which adapters are on. Reached at `https://<domain>/dashboard` (D10) it is a **public admin surface** on a host whose router holds the rootless Docker socket. The design below is the minimum; section 12 lists what still needs the owner's agreement.
+The dashboard exposes job-search data, the parameters of every call and a switch that changes which adapters are on. Reached at `https://<domain>/dashboard` (D10) it is a **public admin surface** on a host whose router holds the rootless Docker socket. The design below is the minimum; section 12 lists what still needs the maintainer's agreement.
 
 - **Off unless started, started only from the host.** The listener does not exist until `jobwatch dashboard start`, and nothing remote can start it (section 2). When it is off, `/dashboard` answers a static 503 from Nginx.
 - **Its own sign-in with Google, and an allowlist.** The OAuth front cannot be reused for the dashboard, but the **Google OAuth setup can** (verified 2026-10-03, section 8.1). The dashboard therefore does an OpenID Connect login itself, with its own login screen, using a Google OAuth client and one added redirect URI `https://<domain>/dashboard/auth/callback`: authorization code flow with PKCE, `state` and `nonce`, ID token checked (issuer, audience, signature, expiry), **`email_verified` true**. There is **no email allowlist** (D11): the Google OAuth app decides who can sign in, so keep it in Testing status with only your account as a test user, or the dashboard is open to every Google account the app admits.
@@ -205,7 +205,7 @@ The dashboard exposes job-search data, the parameters of every call and a switch
 - **Untrusted text.** Job text, company names, keywords and call parameters come from third-party sites or from Claude: rendered as text by React (no `dangerouslySetInnerHTML`; a lint rule forbids it), links only `https:` with `rel="noopener noreferrer"`.
 - **Writes.** Two, both inside the router's own data (`adapters.json`) or process (reload, restart). Neither touches a third-party platform, so the read-only rule of the project is untouched; both are logged with the actor's email and the action, no secret.
 - **No Docker surface.** The dashboard process has no endpoint that reaches the Docker API, and the runtime manager is not callable from it except through the existing read-only `status()`.
-- **One new secret.** The sign-in needs a Google client secret in the router's environment, where today only the OAuth front holds one. Preferably a **separate Google OAuth client for the dashboard** (its own secret and redirect URI), so a leak of one does not affect the connector (§12.3). Adding it to the router is a change to what the router holds, so it needs the owner's agreement (`docs/plans/09`).
+- **One new secret.** The sign-in needs a Google client secret in the router's environment, where today only the OAuth front holds one. Preferably a **separate Google OAuth client for the dashboard** (its own secret and redirect URI), so a leak of one does not affect the connector (§12.3). Adding it to the router is a change to what the router holds, so it needs the maintainer's agreement (`docs/plans/09`).
 - **Dependencies.** A UI adds hundreds of packages. `allowScripts` stays denied, the lockfile is committed, a CI job runs `npm audit --omit=dev --audit-level=high` for the dashboard workspace, and the production image contains only the built static files, not the front end's `node_modules`.
 
 ### 8.1 Verified: what of the OAuth setup can be reused (2026-10-03)
@@ -230,7 +230,7 @@ What was **not** verified, because it needs real Google credentials and a deploy
 |---|---|---|
 | Off unless started, started only from the host | pass | `manager.test.ts`, `reload.test.ts` (closed at startup, opens on `dashboard.start`, closes on stop, idle and shutdown); no MCP tool and no route starts it; `tests/dashboard/smoke.mjs` |
 | Own Google sign-in: code flow, PKCE S256, `state` bound to the browser, `nonce`, ID token verified, `email_verified` | pass | `dashboard.test.ts` against a fake Google: forged state, forged nonce, other audience, unverified or missing `email_verified`, expired token, forged code, replayed state are all refused with no session |
-| No email allowlist: the Google app decides | by decision (D11) | keep the Google app in Testing status with only the owner as a test user |
+| No email allowlist: the Google app decides | by decision (D11) | keep the Google app in Testing status with only the operator as a test user |
 | Session cookie `HttpOnly`, `Secure`, `SameSite=Strict`, path `/dashboard`, in memory, 8 hours, revoked by stop | pass | `dashboard.test.ts`, `manager.test.ts` |
 | Writes: CSRF header, exact Origin, sign-in within 10 minutes | pass | `dashboard.test.ts` (header, Origin, window), `reload.test.ts` (live), the smoke script |
 | Host must be the public host (no DNS rebinding) | pass | `dashboard.test.ts`, smoke script (421) |
@@ -245,7 +245,7 @@ What was **not** verified, because it needs real Google credentials and a deploy
 | Dependencies: scripts denied, lockfile, audit | pass | `allowScripts` unchanged; CI runs `npm audit --omit=dev --audit-level=high` (0 vulnerabilities today) and `npm run build` |
 | Nginx: own rate limit, small body, off-page while closed | pass | `nginx -t` on `deploy/nginx/mcp.example.com.conf` with throwaway certificates |
 | Real Google sign-in behind Nginx on the host | **not done** | needs the deployed domain and the redirect URI added in Google Cloud Console |
-| Penetration-style tests from outside (scan, brute force) | **not done** | for the owner's Phase 4 security checklist |
+| Penetration-style tests from outside (scan, brute force) | **not done** | for the operator's Phase 4 security checklist |
 
 ## 9. Testing
 
@@ -270,7 +270,7 @@ The measured benchmark remains the ceiling (`docs/plans/06`). The dashboard must
 
 | Step | Branch | Content | Exit |
 |---|---|---|---|
-| 0 | `docs/dashboard-plan` (merged), `docs/dashboard-plan-decisions` | this document, then the owner's answers folded in | owner agrees with the security design of section 8 |
+| 0 | `docs/dashboard-plan` (merged), `docs/dashboard-plan-decisions` | this document, then the maintainer's answers folded in | maintainer agrees with the security design of section 8 |
 | 1 | `feat/dashboard-call-log` | `ToolOutcome` gets sizes, units, estimated tokens and `params`; the call ring buffer; the token estimator; `memory_report` unchanged | unit tests; RSS recorded; leak tests for `params` |
 | 2 | `feat/hot-reload-adapters` (**built**) | `RegistryHolder`; the MCP server, `callTool`, guard policy and `memory_report` read through it; control socket (reused by step 4); CLI `adapters enable\|disable` reloads a running router | reload tests of section 9; a live reload on a real router |
 | 3 | `feat/dashboard-api` (**built; not mounted yet, step 4 starts it**) | `packages/dashboard-api` types; the listener under `/dashboard`; OIDC sign-in, sessions, headers, CSRF, allowlist; read endpoints (`overview`, `calls`, `jobs`, `searches`, `tools`, `usage`); `Store.listJobs` gains `q`, sort and offset; leak and contract tests; the **VERIFY** on the front | auth tests green; leak test green |
@@ -283,7 +283,7 @@ The measured benchmark remains the ceiling (`docs/plans/06`). The dashboard must
 
 Each step ends with `npm run ci` green and the docs updated in the same PR.
 
-## 12. Owner's answers (2026-10-03) and what is still open
+## 12. Maintainer's answers (2026-10-03) and what is still open
 
 | # | Question | Answer | Where it landed |
 |---|---|---|---|

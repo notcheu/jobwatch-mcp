@@ -112,7 +112,7 @@ describe('tools and status', () => {
     expect(seen.filter((url) => url.endsWith('/tools')).length).toBeGreaterThan(1); // the list is read again
   });
 
-  it("warns that LinkedIn needs the owner's approval of its budget before it is switched on", async () => {
+  it("warns that LinkedIn needs the operator's approval of its budget before it is switched on", async () => {
     mockApi({ '/me': me, '/tools': tools(linkedin) });
     renderApp('/tools');
     expect(await screen.findByText(/needs your approval/)).toBeInTheDocument();

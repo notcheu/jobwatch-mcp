@@ -1,6 +1,6 @@
 # 16 — Architecture diagrams
 
-> **Related docs:** Load for the visual picture. Also load: `00` (overview), `03` (router spec wins on conflicts), `06` (state machine), `10` (deployment and CI), `13` (routine integration). Follow a link only if the task needs it.
+> **Related docs:** Load for the visual picture. Also load: `00` (overview), `03` (router spec wins on conflicts), `06` (state machine), `10` (deployment and CI), `13` (using the tools from a client). Follow a link only if the task needs it.
 
 Visual companion to `00-overview.md`, `03-router-spec.md`, `06-…` and `13-…`. If a diagram and a numbered spec disagree, the spec wins; fix the diagram.
 
@@ -9,15 +9,14 @@ Visual companion to `00-overview.md`, `03-router-spec.md`, `06-…` and `13-…`
 ```mermaid
 flowchart LR
   subgraph Cloud["Anthropic cloud"]
-    Routine["job-watch routine<br/>scheduled task<br/>00-orchestrator.md ... 06-mail-template.md"]
-    Gmail["Gmail connector"]
-    Indeed["Indeed connector"]
+    Routine["Agent or scheduled task<br/>(any MCP client)"]
+    Other["Other connectors<br/>(mail, other job sites)"]
   end
 
   Nginx["Existing Nginx reverse proxy<br/>TLS, mcp.example.com"]
   Google["Google sign-in<br/>OAuth app in Testing mode,<br/>one test user"]
 
-  subgraph Host["Home Ubuntu host, rootless Docker, limited RAM"]
+  subgraph Host["Linux host, rootless Docker, limited RAM"]
     direction LR
 
     subgraph Core["network jobwatch-core, always-on, one published host port"]
@@ -63,15 +62,14 @@ flowchart LR
   Router -. "JSON logs on stdout,<br/>shipped by Alloy/Promtail" .-> Loki
   Prom --> Graf
   Loki --> Graf
-  Routine -.-> Gmail
-  Routine -.-> Indeed
+  Routine -.-> Other
 ```
 
 Notes:
 - Nginx is your existing reverse proxy, outside this stack. It is the only public entry point, and the front is the only service behind a published host port.
 - Browser containers are not in compose. The router spawns them on demand, with a memory cap, and reaps them after the idle grace period.
 - Prometheus and Grafana are your existing instances. The metrics endpoint is off by default, runs on its own port (not behind Nginx or the front), and Prometheus pulls from it. Grafana shows logs only if they are shipped to Loki; Prometheus itself stores metrics, not log lines.
-- Indeed and Gmail stay separate connectors, not going through the router.
+- Other connectors (mail, other job sites) stay separate and do not go through the router.
 
 ## 2. Router internals and how adapters plug in
 
@@ -133,7 +131,7 @@ Only enabled adapters reach `tools/list`. Handlers only receive `AdapterContext`
 ```mermaid
 sequenceDiagram
   autonumber
-  participant C as Claude routine
+  participant C as Claude (agent or scheduled task)
   participant F as OAuth front
   participant R as Router
   participant M as Runtime manager
@@ -181,55 +179,51 @@ stateDiagram-v2
   STOPPING --> COLD: container removed, profile kept
 ```
 
-## 5. How the job-watch routine plugs into the router
+## 5. How a client plugs into the router
 
-The routine keeps its profile, triage, mail template and memory. Only the "read sources" step changes. Each source step becomes one or a few tool calls.
+A client keeps its own profile, triage and memory. Only the "read sources" step goes through the router; each source becomes one or a few tool calls.
 
 ```mermaid
 flowchart TB
-  subgraph Routine["Job-watch routine, scheduled task"]
-    Orch["00-orchestrator.md<br/>entry point"]
-    Prof["01-profile.md<br/>titles, criteria, flags"]
-    LIs["02-linkedin.md"]
-    Oth["04-other-sources.md"]
-    Mem[("claude/offres-vues.md<br/>seen offers")]
-    Triage["Triage + dedup"]
-    Mail["05-mail-rules.md +<br/>06-mail-template.md"]
+  subgraph Client["Client: agent or scheduled task"]
+    Criteria["Search criteria<br/>keywords, locations"]
+    Seen[("Jobs already handled<br/>skip_ids, optional")]
+    Triage["Triage"]
+    Report["Report or notification"]
   end
 
   subgraph Tools["Router tools, catalog"]
     SS["session_status"]
     LS["linkedin_search"]
     LJ["linkedin_job"]
-    WM["wttj_matches<br/>Phase 3"]
-    AS["apec_search, apec_job<br/>Phase 3"]
-    AJ["ATS tools: teamtailor_jobs, greenhouse_jobs, ...<br/>Phase 3"]
+    WM["wttj_matches"]
+    AS["apec_search, apec_job"]
+    AJ["ATS tools: teamtailor_jobs, greenhouse_jobs, ..."]
+    AF["ats_find"]
+    ST["stored_jobs, stored_searches,<br/>stored_job_texts"]
     MR["memory_report"]
   end
 
-  Orch -- "1. connector availability" --> SS
-  Prof -- "keywords, locations" --> LIs
-  Mem -- "skip_ids" --> LIs
-  LIs --> LS
+  Client -- "1. session_status" --> SS
+  Criteria --> LS
+  Seen -- "skip_ids" --> LS
   LS -- "plausible cards" --> LJ
-  Oth --> WM
-  Oth --> AS
-  Oth --> AJ
+  Criteria --> WM
+  Criteria --> AS
+  AF -- "board handle" --> AJ
+  Criteria --> AF
 
-  SS & LS & LJ & WM & AS & AJ --> RouterBox["Router, see diagram 2"]
+  SS & LS & LJ & WM & AS & AJ & AF & ST --> RouterBox["Router, see diagram 2"]
   RouterBox -- "normalized cards" --> Triage
-  Prof -- "flags logic" --> Triage
-  Triage --> Mail
-  Triage -- "update" --> Mem
-  Mail -- "Gmail connector" --> Out(["HTML mail to the owner"])
+  Triage --> Report
 
-  SS -. "needs_login / checkpoint:<br/>notify, skip LinkedIn, continue" .-> Mail
-  RouterBox -. "rate_limited / busy: wait retry_after_s once<br/>adapter_broken: report in alerts" .-> Mail
+  SS -. "needs_login / checkpoint:<br/>notify, skip the platform, continue" .-> Report
+  RouterBox -. "rate_limited / busy: wait retry_after_s once<br/>adapter_broken: report and continue" .-> Report
 ```
 
-Fallbacks: if the connector is unreachable, the routine falls back to the Chrome-extension path when available, otherwise it reports all browser sources as failed (see `13-…`).
+If the connector is unreachable, the client reports every browser source as failed and retries later (see `13-…`).
 
-## 6. Deployment pipeline (CI to the Ubuntu host)
+## 6. Deployment pipeline (release to the host)
 
 ```mermaid
 flowchart LR
