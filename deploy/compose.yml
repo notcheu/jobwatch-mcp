@@ -17,13 +17,14 @@ services:
     environment:
       PROXY_BASE_URL: ${BASE_URL:?set BASE_URL in .env}
       LISTEN_ADDR: 0.0.0.0:${PORT:?set PORT in .env}
-      METRICS_ADDR: 127.0.0.1:9090          # inside the container only, never published
-      UPSTREAM_MCP_URL: http://router:${PORT:?set PORT in .env}/mcp   # the path is both the public mount and forwarded verbatim
+      UPSTREAM_MCP_URL: http://router:${PORT:?set PORT in .env}/mcp   # the front serves and forwards this same path (/mcp)
       REDIS_URL: redis://redis:6379/0
     depends_on:
       redis: { condition: service_healthy }
+    # The only published MCP port, the reverse proxy's target: the router's own MCP port is not published, only the front reaches it.
+    # Use the host's LAN IP instead of 127.0.0.1 if the proxy is on another machine or in a container.
     ports:
-      - "127.0.0.1:${PORT:?set PORT in .env}:${PORT:?set PORT in .env}"   # the only published MCP port, the reverse proxy's target. Use the host's LAN IP instead of 127.0.0.1 if the proxy is on another machine or in a container
+      - "127.0.0.1:${PORT:?set PORT in .env}:${PORT:?set PORT in .env}"
     networks: [ jobwatch-core ]
     mem_limit: 128m
     read_only: true
@@ -33,9 +34,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    user: "999:999"                          # its root entrypoint needs SETUID/SETGID, which cap_drop ALL removes
+    # Start as redis directly: the image's root entrypoint needs capabilities (chown, setuid) that cap_drop ALL removes.
+    user: "999:999"
     command: [ "redis-server", "--appendonly", "yes", "--maxmemory", "32mb", "--maxmemory-policy", "noeviction" ]
-    volumes: [ "redis-data:/data" ]          # named volume: a host directory would not be writable by uid 999 under rootless Docker
+    # Use a named volume: a host directory would not be writable by uid 999
+    volumes: [ "redis-data:/data" ]
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
@@ -50,7 +53,10 @@ services:
   router:
     image: notcheu/jobwatch-mcp:latest
     env_file: .env
-    user: "0:0"                              # the image runs as uid 1000, which cannot open the Docker socket nor write ./data. Under rootless Docker uid 0 is the Docker user on the host. Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
+    # The image runs as uid 1000, which cannot open the Docker socket nor write ./data.
+    # Under rootless Docker uid 0 is the Docker user on the host.
+    # Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
+    user: "0:0"
     read_only: true
     tmpfs: [ "/tmp:rw,size=64m" ]
     cap_drop: [ ALL ]
@@ -59,7 +65,7 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./data:/data"
     ports:
-      - "127.0.0.1:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}"   # the dashboard, for the reverse proxy; nothing listens until it is started
-      - "127.0.0.1:${METRICS_PORT:?set METRICS_PORT in .env}:${METRICS_PORT:?set METRICS_PORT in .env}"   # Prometheus scrape target; nothing listens unless metrics are enabled
-    networks: [ jobwatch-core, jobwatch-browsers ]   # the MCP port is not published: only the front reaches it
+      - "127.0.0.1:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}"   # reverse proxy target for /dashboard; closed until the dashboard is started
+      - "127.0.0.1:${METRICS_PORT:?set METRICS_PORT in .env}:${METRICS_PORT:?set METRICS_PORT in .env}"   # Prometheus scrape target; closed unless metrics are enabled
+    networks: [ jobwatch-core, jobwatch-browsers ]
     restart: unless-stopped
