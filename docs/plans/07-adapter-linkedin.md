@@ -1,20 +1,20 @@
 # 07 — LinkedIn adapter (with lessons learned from the Chrome-extension era)
 
-> **Related docs:** Load for the LinkedIn adapter. Also load: `04` (tool shapes), `03` (Adapter SDK), `05` (browser and fingerprint), `09` (usage budget and ToS), `13` (routine side), `14` (VERIFY items). Follow a link only if the task needs it.
+> **Related docs:** Load for the LinkedIn adapter. Also load: `04` (tool shapes), `03` (Adapter SDK), `05` (browser and fingerprint), `09` (usage budget and ToS), `13` (client side), `14` (VERIFY items). Follow a link only if the task needs it.
 
-The proven extraction logic is `../linkedin-extract.js` (and the procedure in `../02-linkedin.md`). This adapter must reproduce its behaviour server-side with better reliability. Everything below comes from real runs on 2026-09-29/30 unless tagged VERIFY.
+The extraction logic is in `packages/adapter-linkedin/src/{extract,parse}.ts`. Everything below comes from real runs on 2026-09-29/30 unless tagged VERIFY.
 
 ## Scope (read-only)
 Search results pages and job details pages only. No messaging, no profile views, no Easy Apply, no saving, no following.
 
 ## Layouts: A (classic `/jobs/search/`, primary since 2026-10-01) and B (AI `/jobs/search-results/`, kept for when it returns)
-LinkedIn serves two search UIs. On 2026-09-29/30 `/jobs/search-results/` (the new AI-assisted search, with a `semanticSearchBox`) worked and was used by the routine. On 2026-10-01 it answered "No results found" for every query (container and the owner's Chrome) and LinkedIn reverted to the classic `/jobs/search/` (the owner, 2026-10-01). **Decision: layout A is primary; layout B is preserved below and in code, because it may come back.**
+LinkedIn serves two search UIs. On 2026-09-29/30 `/jobs/search-results/` (the new AI-assisted search, with a `semanticSearchBox`) worked and was in use. On 2026-10-01 it answered "No results found" for every query (container and the maintainer's Chrome) and LinkedIn reverted to the classic `/jobs/search/` (the maintainer, 2026-10-01). **Decision: layout A is primary; layout B is preserved below and in code, because it may come back.**
 
 The adapter implements a `SearchLayout` per variant (`packages/adapter-linkedin/src/layouts/classic.ts` = A, `layouts/aiSearchResults.ts` = B) with the same interface (`searchUrl(args)`, `isLoaded(page)`, `readCards(page)`, `detailUrl(id)`, `readDescription(page, id)`). The adapter navigates with layout A. After load it detects which markup is present (A: `.scaffold-layout__list` / `li[data-occludable-job-id]`; B: `[componentKey=SearchResultsMainContent]` / `job-card-component-ref-*`) and uses the matching reader, so a silent switch by LinkedIn still parses. "No results found" on the canary query (a search known to have results) maps to `adapter_broken`, never to an empty list. A config flag `LINKEDIN_LAYOUT=classic|ai` chooses which URL is requested.
 
 ### Layout A: classic `/jobs/search/` (primary)
-Observed 2026-10-01 in the owner's Chrome (markers and counts only):
-- URL: `https://www.linkedin.com/jobs/search/?keywords=<urlencoded>&geoId=<id>|location=<name>&distance=0[&f_TPR=r86400][&start=<N>]`. LinkedIn adds `currentJobId=<first id>` to the URL on load. **Confirmed (S5, container, 2026-10-01): the routine's boolean `OR` keywords work** ("Staff Frontend Engineer OR Lead Frontend OR Frontend Tech Lead", Paris, no time filter): 25 cards on load, `STATE: ok`. `f_TPR` and `start=` paging are still to verify on layout A.
+Observed 2026-10-01 in the maintainer's Chrome (markers and counts only):
+- URL: `https://www.linkedin.com/jobs/search/?keywords=<urlencoded>&geoId=<id>|location=<name>&distance=0[&f_TPR=r86400][&start=<N>]`. LinkedIn adds `currentJobId=<first id>` to the URL on load. **Confirmed (S5, container, 2026-10-01): a client's boolean `OR` keywords work** ("Staff Frontend Engineer OR Lead Frontend OR Frontend Tech Lead", Paris, no time filter): 25 cards on load, `STATE: ok`. `f_TPR` and `start=` paging are still to verify on layout A.
 - Cards: `li[data-occludable-job-id]` (id = that attribute; 7 initially, more after scrolling; each has an `a[href*="/jobs/view/"]`); first three text lines are title / company / location (e.g. `European Union (Remote)`), as in layout B. Container `.scaffold-layout__list`; pagination `.jobs-search-pagination`; a promoted label appears in the list.
 - Details pane (split view, `currentJobId` in the URL): description in `#job-details` = `.jobs-box__html-content` = `.jobs-description__content` (same text, about 1.9 KB for the pane's default job); an "About the job" `h2` and the `job-details-jobs-unified-top-card` header exist; `h1` present. **Confirmed (S5).**
 - **`/jobs/view/<id>/` (logged in) serves the NEW markup, not the classic one, and does not redirect**: description in `[componentKey^=JobDetails_AboutTheJob_] [data-testid=expandable-text-box]` (1.8 KB and 5.6 KB for two jobs), "About the job" heading present, no `h1`, no `.jobs-description__content`. **Confirmed (S5).** So layout B's detail reader keeps working for single-job pages even while the search list is classic.
@@ -50,7 +50,7 @@ Navigate to `https://www.linkedin.com/jobs/` (allowed host only), wait for the m
 Reads up to 25 jobs by id with the same rules as the search tool. A job that is already stored is **judged from the database** with this call's terms (`read_from: "stored"`, no visit, no pacing, cost 0) unless `refresh: true`. Otherwise: navigate to the details URL, wait for the About-the-job element (12 s), read the full text, pace 2.5-5 s between jobs. `not_loaded` and `closed` go to `failed` and are **not stored**. Once the page is read and its title passes the terms, the job is **stored at once** (full description, max 20 000 characters); then, with `disallowed_scope: "title_then_description"`, a description match puts it in `excluded` (`reason: description`) but it stays in the database. A title match is excluded and **not stored**. The text returned is cut to `description_max_chars` (500-6000, default 3000) and the list is trimmed to fit the result size (the others come back in `not_returned_ids`).
 
 ### `linkedin_search`
-The tool for the daily routine, which also serves as a plain listing (`max_jobs: 0`, below). The page loading and card extraction are the same either way: build the URL from validated args (keywords URL-encoded; `OR` operators allowed), `goto`, wait for the cards (an empty page is `adapter_broken` unless it says "no results"), extract the cards in the page, post-filter `remote_only`, compute `work_mode` from the location suffix. With `max_jobs: 0` no job page is opened and `cards` holds every result (work mode, salary, posted time, promoted, easy apply, `known`).
+The tool for a daily run, which also serves as a plain listing (`max_jobs: 0`, below). The page loading and card extraction are the same either way: build the URL from validated args (keywords URL-encoded; `OR` operators allowed), `goto`, wait for the cards (an empty page is `adapter_broken` unless it says "no results"), extract the cards in the page, post-filter `remote_only`, compute `work_mode` from the location suffix. With `max_jobs: 0` no job page is opened and `cards` holds every result (work mode, salary, posted time, promoted, easy apply, `known`).
 
 One call scans `max_results` search results. One call scans `max_results` search results (25 per LinkedIn page, so 50 = pages 1 and 2, 250 = ten pages). For every search card, in order, cheapest check first:
 1. **In `skip_ids`** (your own "already reported" list): left alone entirely, reported in `known_ids`.
@@ -59,7 +59,7 @@ One call scans `max_results` search results. One call scans `max_results` search
 4. **Otherwise it is visited** (up to `max_jobs`, default 50, and a soft 200 s time budget): the page is read, the job is **stored immediately**, and only then judged on its description. A description that matches a disallowed term does not undo the storing, so a search with another list reads the job from the database, never from the page again.
 5. Jobs not visited because of `max_jobs` or the time budget come back in `remaining_ids`: **call again with the same arguments** (the pages are scanned again, 1 unit each; stored jobs cost nothing), or pass the ids to `linkedin_job` (25 per call), which skips the scan.
 
-Passing jobs are returned newly read first (`new: true`), then stored ones, **at most `max_results`** (so asking for 20 shows at most 20, and every one of them that passes is shown unless the 200 s reading budget ran out, in which case `remaining_ids` says so) and at most what fits the result size; anything that does not fit is named in `not_returned_ids`. Every returned job carries `source` (`linkedin`), `board` (`null`: LinkedIn has no company boards), `read_from` (`fetched` or `stored`), `new`, `first_seen` and `fetched_at`, so the routine can tell what it has not seen before. The router does not remember what it has already **reported**: to hide those, pass them in `skip_ids` or use `stored_jobs: "skip"`.
+Passing jobs are returned newly read first (`new: true`), then stored ones, **at most `max_results`** (so asking for 20 shows at most 20, and every one of them that passes is shown unless the 200 s reading budget ran out, in which case `remaining_ids` says so) and at most what fits the result size; anything that does not fit is named in `not_returned_ids`. Every returned job carries `source` (`linkedin`), `board` (`null`: LinkedIn has no company boards), `read_from` (`fetched` or `stored`), `new`, `first_seen` and `fetched_at`, so the client can tell what it has not seen before. The router does not remember what it has already **reported**: to hide those, pass them in `skip_ids` or use `stored_jobs: "skip"`.
 
 `disallowed_terms` has no built-in default and no environment variable: the caller sends the list with every call (whole words or phrases, case-insensitive, plain text, never a regex, which also rules out ReDoS). That is what lets one run search "full stack" and ignore "frontend", and another search "backend" and ignore "fullstack". A job rejected by a list is **not** remembered as rejected: it is judged again by every call, from the cheapest source available.
 
@@ -68,7 +68,7 @@ Passing jobs are returned newly read first (`new: true`), then stored ones, **at
 |---|---|---|---|
 | `session_status` | check the LinkedIn session before a run (`ok`, `needs_login`, `checkpoint`) | 1 | 1 |
 | `linkedin_job` | read specific jobs by id (up to 25). Stored ones come from the database with no visit | 25 | job pages visited, 0 for stored jobs |
-| `linkedin_search` | the routine: scan `max_results` results, read every job that is new and acceptable. `max_jobs: 0` = list the cards only | 35 (pages only with `max_jobs: 0`) | search pages + job pages visited |
+| `linkedin_search` | a client: scan `max_results` results, read every job that is new and acceptable. `max_jobs: 0` = list the cards only | 35 (pages only with `max_jobs: 0`) | search pages + job pages visited |
 
 Typical run, two searches over 50 results each (2 calls):
 ```
@@ -99,17 +99,17 @@ Jobs whose page was read (and whose title was accepted) live in the router's SQL
 ## Language
 Labels above are the **English** LinkedIn UI. Keep the account/browser language English (or add French variants: `Sponsorisé`, `il y a`, `Candidature simplifiée`). Decide in Phase 1 and record it; the router's `--lang` and `Accept-Language` must match the account.
 
-## Pacing and budget (defaults, to be approved by the owner before going live)
+## Pacing and budget (defaults, to be approved by the operator before going live)
 - Minimum 2.5 s (jittered 2.5–5 s) between navigations; never parallel tabs.
-- **Budget approved by the owner (2026-10-01): 200 per hour, 400 per day** (search page = 1, job page = 1), declared as `rate` by the adapter. At most 10 search pages + 25 job pages per call. This is high for one signed-in account: watch `memory_report` for the real daily spend and lower it at the first sign of friction (a `checkpoint`).
+- **Budget approved by the operator (2026-10-01): 200 per hour, 400 per day** (search page = 1, job page = 1), declared as `rate` by the adapter. At most 10 search pages + 25 job pages per call. This is high for one signed-in account: watch `memory_report` for the real daily spend and lower it at the first sign of friction (a `checkpoint`).
 - Circuit breaker: any checkpoint/authwall/captcha marker opens the breaker for 6 h and returns `checkpoint`; `needs_login` opens until `session_status` returns ok.
-- A typical daily routine needs ≈ 4–6 search pages + ≈ 15–25 job pages; the Wednesday sweep adds 5–10 pages + ≈ 20 jobs.
+- A typical daily run needs ≈ 4–6 search pages + ≈ 15–25 job pages; the Wednesday sweep adds 5–10 pages + ≈ 20 jobs.
 
 ## Known oddities
 - Once, during the scripted click-through, the tab ended up on `https://www.linkedin.com/notifications/` (a click landed on a navigation link). Navigation-based job opening avoids clicking anchors inside cards.
 - Returning a URL or query string from `javascript_tool` was blocked in the extension era; irrelevant here but explains why old notes avoid URLs.
 - Output limits (≈1500 chars) of the old tool are gone; the MCP return size cap is ours (60 KB).
-- LinkedIn search relevance is loose (returns unrelated roles); the router does **not** filter by relevance beyond explicit args; the routine triages.
+- LinkedIn search relevance is loose (returns unrelated roles); the router does **not** filter by relevance beyond explicit args; the client triages.
 
 ## Tests for this adapter
 - Fixture-based parser tests: saved **sanitized** HTML of a search page and a details page (store outside git or scrub; no personal data).
@@ -123,7 +123,7 @@ Labels above are the **English** LinkedIn UI. Keep the account/browser language 
 - Tested with a fake browser and synthetic data only. **VERIFY:** the in-page scripts and the `f_TPR` / `start=` parameters on layout A against the live site, from the reference host after a manual login.
 
 ## Verification status (updated 2026-10-02)
-- **First live run (2026-10-01, reference host):** the session check returned `ok` and the tools were listed, but `linkedin_search` skipped 18 of 25 cards and every job page came back `not_loaded`. Two causes, both found by reading the live search page and the original `linkedin-extract.js` / `linkedin-read-job.js`:
+- **First live run (2026-10-01, reference host):** the session check returned `ok` and the tools were listed, but `linkedin_search` skipped 18 of 25 cards and every job page came back `not_loaded`. Two causes, both found by reading the live search page and the page scripts:
   1. **The classic result list is virtualized.** LinkedIn renders only the cards near the viewport; the 25 `li[data-occludable-job-id]` exist at once but 18 of them are empty (7 were filled in the page inspected). The in-page reader now scrolls the result list in steps of 80 % of its height, keeps the fullest read of each card, and stops when all cards are read or two steps in a row add nothing, then scrolls back to the top.
   2. **The job description is rendered lazily.** The `JobDetails_AboutTheJob_` container exists before its text does, so reading once found nothing. The reader now polls inside the page, up to 10 s, until the text is not empty.
 - **Checked in a real Chromium container** against a synthetic page that behaves the same way (cards filled only near the viewport and emptied when they leave it, a description that appears 3 s after its container): 25 of 25 cards read in about 5.6 s (a single pass saw 4), the description read after 3.2 s, and `null` after 10 s when it never comes. This proves the scripts' logic, not LinkedIn's current markup.

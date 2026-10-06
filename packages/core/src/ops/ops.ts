@@ -93,8 +93,8 @@ const memoryReportSchema = z.object({
 });
 
 /**
- * The built-in `ops` adapter: `session_status` and `memory_report`. Always loaded, even when no adapter is enabled, so the
- * routine can always ask "are you alive and logged in?". They run on their own platform (`ops`), so a platform whose breaker
+ * The built-in `ops` adapter: `session_status` and `memory_report`. Always loaded, even when no adapter is enabled, so a
+ * client can always ask "are you alive and logged in?". They run on their own platform (`ops`), so a platform whose breaker
  * is open does not block them, and they never touch a site whose breaker says a verification is pending.
  */
 export function createOpsAdapter(deps: OpsDeps): McpModule {

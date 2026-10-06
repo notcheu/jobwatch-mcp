@@ -12,7 +12,7 @@ const good = {
 };
 
 describe('checkFingerprint', () => {
-  it('accepts what the reference host produced in spike S4 (real LinkedIn feed)', () => {
+  it('accepts what the reference setup produced in spike S4 (real LinkedIn feed)', () => {
     expect(checkFingerprint(good)).toEqual({ ok: true, problems: [] });
   });
 

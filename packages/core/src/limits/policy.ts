@@ -3,7 +3,7 @@ import type { McpModule, RatePolicy } from '@jobwatch/sdk';
 /**
  * Budgets used when an adapter does not declare `rate`. A browser platform is a logged-in account that can be restricted,
  * so its default is the conservative LinkedIn budget of docs/plans/07-adapter-linkedin.md; plain HTTP sources are cheap and polite.
- * LinkedIn's numbers are DEFAULTS PENDING THE OWNER'S APPROVAL (docs/plans/09-security.md): nothing is enabled until the owner turns it on.
+ * LinkedIn's numbers are conservative defaults (docs/plans/09-security.md): nothing is enabled until the operator turns it on.
  */
 export const DEFAULT_RATE = {
   browser: { perHour: 120, perDay: 300 },

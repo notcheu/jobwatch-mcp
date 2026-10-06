@@ -24,6 +24,3 @@ Browser runtime
 - Session cookies persisted with "Continue where you left off" (Brave issue) — https://github.com/brave/brave-browser/issues/28379
 - Headless Chromium RAM growth and fixes — https://dev.to/rendershot/headless-chromium-at-scale-four-fixes-for-a-fleet-that-kept-eating-ram-1mdp
 - Chromium memory practices and flags — https://webscraping.ai/faq/headless-chromium/what-are-the-best-practices-for-managing-memory-usage-in-headless-chromium
-
-Project context (local files, parent folder)
-- `../linkedin-extract.js`, `../02-linkedin.md`, `../04-other-sources.md`, `../01-profile.md`, `../00-orchestrator.md`

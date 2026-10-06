@@ -1,6 +1,6 @@
 # 04 — Catalog and v1 tool schemas
 
-> **Related docs:** Load for tool definitions and schemas. Also load: `03` (Adapter SDK, `defineHttpTool` or `defineBrowserTool`), `07`/`08` (platform behaviour behind each tool), `13` (how the routine calls the tools). Follow a link only if the task needs it.
+> **Related docs:** Load for tool definitions and schemas. Also load: `03` (Adapter SDK, `defineHttpTool` or `defineBrowserTool`), `07`/`08` (platform behaviour behind each tool), `13` (how the client calls the tools). Follow a link only if the task needs it.
 
 > **Source of truth.** Tool definitions are authored in code next to their handler (`defineHttpTool` or `defineBrowserTool`, see `03-…` "Adapter SDK"). The JSON below is the **generated, committed snapshot** (`jobwatch catalog gen`, one `catalog/` folder per adapter package, e.g. `packages/adapter-linkedin/catalog/`) that `tools/list` mirrors and that reviewers diff. Do not hand-edit it; a contract test fails on drift.
 
@@ -32,7 +32,7 @@ Rules: `additionalProperties: false` everywhere; every string has `maxLength`; e
 ### `session_status` (Phase 1)
 Input: `{ "platform": "linkedin" | "apec" | "wttj" | "all" }`.
 Output: `[{ platform, logged_in: bool, state: "ok"|"needs_login"|"checkpoint"|"unknown", checked_at, note }]`.
-Behaviour: opens the platform home page in the platform's browser (spawns it), checks logged-in markers. For LinkedIn a cached answer younger than 10 minutes may be returned (`cached: true`) to avoid needless page loads. The routine calls it first and notifies the owner when it is not `ok`.
+Behaviour: opens the platform home page in the platform's browser (spawns it), checks logged-in markers. For LinkedIn a cached answer younger than 10 minutes may be returned (`cached: true`) to avoid needless page loads. The client calls it first and notifies the operator when it is not `ok`.
 
 ### `linkedin_job` (Phase 1)
 Input: `{ "ids": ["<id>", ...] (maxItems 25), "refresh": false, "detail": "full" | "summary" | "none" (default full), "description_max_chars": 3000 (500-6000, with detail full), "disallowed_terms": ["…"] (maxItems 60, default none), "disallowed_scope": "title" | "title_then_description" }`.
@@ -57,7 +57,7 @@ Output: `{ jobs: [{ source, id, board, company, title, location, url, first_seen
 ### Returned text: `summary`, `description`, `detail` (all job tools)
 Every returned job has `summary`, `summary_kind` (`sections` | `excerpt` | null), `description`, `description_truncated` and `description_chars`. `detail: "summary"` (default of the search and board tools) fills `summary`; `detail: "full"` (default of the `*_job` tools) fills `description`; `none` fills neither. `max_results` is the most jobs returned (and examined); there is no `max_returned`. Details in `07`.
 
-### `linkedin_search` (Phase 1, the routine's tool)
+### `linkedin_search` (Phase 1, a client tool)
 Input: the search args `{ "keywords": "string (<=200)", "geo": "<place name> | <geoId string> (optional; default LINKEDIN_DEFAULT_LOCATION)", "posted_within": "last_24_hours | past_week | past_month | any", "remote_only": false, "max_results": 25, "page": 1 }` + `{ "skip_ids": [...] (maxItems 500), "stored_jobs": "evaluate" | "skip", "max_jobs": 50 (0-50, job pages to read; the call also stops reading after about 200 s), "detail": "summary" | "full" | "none" (default summary), "description_max_chars": 3000, "disallowed_terms": [...], "disallowed_scope": "title"|"title_then_description", "min_salary": 0, "salary_currency": "EUR" (required with min_salary) }`. No built-in terms: the caller sends them. `min_salary` is a yearly floor in whole currency units: a job whose stated salary is in that currency and below it is returned in `excluded` with `reason: "salary"`; unknown salary or another currency keeps the job. `linkedin_job`, `wttj_matches`/`wttj_job` and the company-board tools take the same two arguments.
 Output: `{ jobs: [as above, `read_from` "fetched" or "stored"], cards, known_ids, not_returned_ids, excluded, failed, remaining_ids, page, pages_loaded, scanned, has_more }`. `remaining_ids` non-empty = call again with the same arguments to continue. **One tool for searching and reading (decided 2026-10-02):** with `max_jobs: 0` no job page is opened and `cards` lists every result (work mode, salary, posted time, `known`); with `max_jobs` > 0 `cards` is empty. There is no separate list-only tool.
 
@@ -88,7 +88,7 @@ One dedicated adapter and tool per ATS (see `08`); there is no combined `ats_job
 See `08-adapters-other-sources.md` for inputs/outputs. All return the same normalized card shape: `{ id, source, title, company, location, work_mode, salary_text, posted_text, url, promoted? }`.
 
 ### `seen_filter`, `seen_mark` (Phase 4, optional state)
-`seen_filter({ platform, ids[] }) -> { unseen_ids[] }`; `seen_mark({ platform, items:[{id,title,company}] })` writes to the router's SQLite only. `seen_mark` is the only non-read-only tool: annotate `readOnlyHint: false` and `destructiveHint: false`, scope strictly to the router's own data. Decide with the owner whether the routine's memory stays in the Claude project (current) or moves here.
+`seen_filter({ platform, ids[] }) -> { unseen_ids[] }`; `seen_mark({ platform, items:[{id,title,company}] })` writes to the router's SQLite only. `seen_mark` is the only non-read-only tool: annotate `readOnlyHint: false` and `destructiveHint: false`, scope strictly to the router's own data. Decide with the maintainer whether a client's memory stays in the Claude project (current) or moves here.
 
 ### `memory_report` (Phase 1, ops)
 Output: `{ runtimes: [{platform, state, uptime_s, rss_mb, peak_rss_mb, last_call_at}], last_calls: [{tool, duration_ms, peak_rss_mb, cold_start, result}] }`.

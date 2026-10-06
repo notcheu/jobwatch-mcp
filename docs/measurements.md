@@ -123,14 +123,14 @@ Conclusions: a logged-in LinkedIn search page needs about **1.3-1.4 GB** in this
 | 3 | 1800 MB | `BLOCK=image,media,font` (resource types aborted) | no crash, **working set 1338 MB at the search stage (1611 MB overall max), peak 1683 MB**: blocking does **not** reduce the need. Still **0 cards**, no container. The selector diagnostic crashed on a null attribute (fixed) so the page markup is still unknown |
 Running tally: 6 automated LinkedIn page loads today beyond the sessions checks. Stop automated runs on the search page until the page is looked at by a human (noVNC) to see what it actually renders; a blank/skeleton/error page would also explain 0 cards and the odd memory.
 
-### S5 root cause found by reading the page (2026-10-01, the owner's Chrome, 4 loads of search pages)
+### S5 root cause found by reading the page (2026-10-01, the maintainer's Chrome, 4 loads of search pages)
 The three container runs had loaded **a "No results found" page** (`/jobs/search-results/` no longer returns results, see `07-…`), so the 1.3-1.6 GB memory figures describe a mostly empty page and **must not be used for budgeting**. In the same Chrome, the classic `/jobs/search/` URL returned real results with the legacy markup (7 cards, 7 `/jobs/view/` links). JS heap in that tab was 146 MB. Next measurement: the probe targets the classic `/jobs/search/` URL (LinkedIn reverted from the AI `/jobs/search-results/` UI; `SEARCH_URL` overrides it), supports both markups, scrolls the list 3 times, and tries more description selectors; run `pages` once. Until then V4 is **open, not failed**.
 
 ## S5 run on the classic layout (2026-10-01, cap 1800 MB, five loads, all `STATE: ok`, no checkpoint)
 | Stage | Page | gotoMs | Working set | memory.peak |
 |---|---|---|---|---|
 | `jobs_home` | `/jobs/` | 8.2 s | 774 MB | 860 MB |
-| `search` | `/jobs/search/` (routine OR query, 25 cards) | 25.6 s | **1749 MB** | 1800 MB |
+| `search` | `/jobs/search/` (boolean OR query, 25 cards) | 25.6 s | **1749 MB** | 1800 MB |
 | `view_1` | `/jobs/view/<id>/` | 12.0 s | 1699 MB | 1800 MB |
 | `view_2` | `/jobs/view/<id>/` | 27.6 s | 1513 MB | 1800 MB |
 | `split_view_1` | search with `currentJobId` | 19.8 s | 1673 MB | 1800 MB |
@@ -146,7 +146,7 @@ All three stages completed and read their data (25 cards; descriptions 1826 and 
 | `view_2` | 7.6 s | 1043 MB | 956 MB | 1100 MB |
 `kernel oom_kill events = 1`: the kernel killed one process (the page data was still obtained, so it was probably a helper or a spare renderer), and the search stage used 94 % of the cap as process memory. A 1100 MB cap is therefore not safe, and the router's 90 % watchdog (990 MB) would have aborted this very call. **Verdict: the realistic need is about 1.04 GB of process memory on the search page; budget `memory.max` 1500 MB (`high` 1200 MB).** Navigation was fast this time (7-17 s), so the 8-28 s of the previous run came from host memory pressure, not from LinkedIn. The host still has to provide about 2 GB free when a runtime starts.
 
-## Decisions after S5 (the owner, 2026-10-01)
+## Decisions after S5 (the maintainer, 2026-10-01)
 - No hardware upgrade for now; zram will be looked into. The 1500 MB browser budget stays; RAM remains the main operational risk (`10-…`).
 - **Exactly one tab, always** (recorded in `CLAUDE.md`, `05`, `06`, `03`): the router reuses the browser's single tab and parks it on `about:blank`, instead of opening a working tab next to a blank one. The spike probes (S4-S6) still call `newPage()`; they are throwaway.
 

@@ -104,7 +104,7 @@ export function createGuardedSession(page: PageLike, allowedHosts: readonly stri
       try {
         // Playwright evaluates a STRING as an expression, so `'() => 1'` would return the function itself, not 1 (found by the
         // integration test against a real browser). The contract is: a string is a function expression, called with `arg`
-        // (this is how `linkedin-extract.js` is written). The argument travels as JSON, so it must be JSON-serialisable.
+        // (the form the adapters' in-page scripts use). The argument travels as JSON, so it must be JSON-serialisable.
         if (typeof script === 'string') return (await page.evaluate(`(${script})(${arg === undefined ? '' : JSON.stringify(arg)})`)) as T;
         return (await page.evaluate(script as (arg: never) => unknown, arg)) as T;
       } catch (error) {
