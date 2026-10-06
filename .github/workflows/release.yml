@@ -1,11 +1,11 @@
 name: Release
 
-# Two things are released, each with its own version, tag, changelog and release pull request: the router (tag vX.Y.Z, image jobwatch-mcp) and
+# Two things are released, each with its own version, tag, changelog and release pull request: the router (tag jobwatch-router-vX.Y.Z, image jobwatch-mcp) and
 # the browser image (tag jobwatch-browser-vX.Y.Z, image jobwatch-browser, changes under images/browser).
 # Releases are on demand. Running this workflow by hand (Actions, Release, Run workflow, or `gh workflow run release.yml`) opens or updates the
 # release pull requests: version bump and changelog from the conventional PR titles. Merging one tags the release, creates the GitHub Release
 # and, in the same run, publishes its image. An ordinary merge to main does nothing: only the push of a release pull request's own commit
-# (`chore(main): release X.Y.Z` or `chore(main): release jobwatch-browser X.Y.Z`) starts the job.
+# (`chore(main): release jobwatch-router X.Y.Z` or `chore(main): release jobwatch-browser X.Y.Z`) starts the job.
 # (The images are built here and not from a `release: published` trigger: a release created with the default GITHUB_TOKEN does not start other workflows.)
 on:
   workflow_dispatch:
@@ -24,6 +24,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
       browser_release_created: ${{ steps.release.outputs['images/browser--release_created'] }}
       browser_tag_name: ${{ steps.release.outputs['images/browser--tag_name'] }}
       browser_version: ${{ steps.release.outputs['images/browser--version'] }}
@@ -96,8 +97,8 @@ jobs:
             ${{ env.GHCR_IMAGE }}
           # 0.1.0 -> 0.1.0, 0.1 and latest. The bare major (0) is not published: on 0.x it says nothing.
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag_name }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag_name }}
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.version }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.title=jobwatch-mcp
