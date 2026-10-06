@@ -10,9 +10,9 @@ The router and the browser image are released separately: each has its own versi
 |---|---|---|
 | What | the server, the CLI, the dashboard | `images/browser` (headful Chrome, noVNC login mode) |
 | Changes counted | everything except `images/browser` | only `images/browser` |
-| Git tag | `vX.Y.Z` | `jobwatch-browser-vX.Y.Z` |
+| Git tag | `jobwatch-router-vX.Y.Z` | `jobwatch-browser-vX.Y.Z` |
 | Changelog | `CHANGELOG.md` | `images/browser/CHANGELOG.md` |
-| Release PR title | `chore(main): release X.Y.Z` | `chore(main): release jobwatch-browser X.Y.Z` |
+| Release PR title | `chore(main): release jobwatch-router X.Y.Z` | `chore(main): release jobwatch-browser X.Y.Z` |
 | Docker Hub | `notcheu/jobwatch-mcp` | `notcheu/jobwatch-browser` |
 | GHCR | `ghcr.io/notcheu/jobwatch-mcp` | `ghcr.io/notcheu/jobwatch-browser` |
 
@@ -31,7 +31,7 @@ Which one a change belongs to is decided by the files it touches, not by its sco
    | any type with `!` (`feat!:`) or a `BREAKING CHANGE:` footer | major bump (minor while 0.x) |
 
 2. **Releases are on demand.** An ordinary merge to `main` does nothing. When you want to release, run the workflow by hand (`gh workflow run release.yml`, or Actions, Release, Run workflow): [release-please](https://github.com/googleapis/release-please) opens or updates a **release pull request**, and running it again refreshes that pull request with what has been merged since. There is one release pull request per release type. The router's bumps the version in `package.json` (and `apps/mcp/package.json`, which the server reports) and writes the new section of `CHANGELOG.md`; the browser's bumps `images/browser/version.txt` and writes `images/browser/CHANGELOG.md`. Never edit a version or a changelog by hand.
-3. **Merging the release pull request is the release.** Its squash commit is titled `chore(main): release X.Y.Z` (router) or `chore(main): release jobwatch-browser X.Y.Z` (browser), which is what starts the workflow by itself this time (if it was merged with another title, run the workflow by hand). release-please tags the release, creates the GitHub Release with the changelog, and the same workflow builds the image for `linux/amd64` and `linux/arm64` and pushes it:
+3. **Merging the release pull request is the release.** Its squash commit is titled `chore(main): release jobwatch-router X.Y.Z` (router) or `chore(main): release jobwatch-browser X.Y.Z` (browser), which is what starts the workflow by itself this time (if it was merged with another title, run the workflow by hand). release-please tags the release, creates the GitHub Release with the changelog, and the same workflow builds the image for `linux/amd64` and `linux/arm64` and pushes it:
 
    | Registry | Image | Tags |
    |---|---|---|

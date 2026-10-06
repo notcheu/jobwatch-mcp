@@ -109,7 +109,7 @@ Three workflows (`.github/workflows/`): `ci.yml` (tests on every pull request an
 
 ```
 manual run of release.yml → release-please opens/updates the release PR (version + CHANGELOG.md)
-merge of the release PR → tag vX.Y.Z + GitHub Release → build router image (Buildx, linux/amd64 + linux/arm64, provenance: false)
+merge of the release PR → tag jobwatch-router-vX.Y.Z + GitHub Release → build router image (Buildx, linux/amd64 + linux/arm64, provenance: false)
              → push notcheu/jobwatch-mcp and ghcr.io/<owner>/jobwatch-mcp: X.Y.Z, X.Y, latest → Watchtower (host, polls) → pulls + recreates router
 ```
 - **GitHub secrets:** `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (a Docker Hub access token with write access to `notcheu/jobwatch-mcp`); GHCR uses the workflow's own token. Without the Docker Hub secrets the release is still tagged but the image step skips itself with a warning. Optional `RELEASE_PLEASE_TOKEN` (see `docs/releasing.md`).

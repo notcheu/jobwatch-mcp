@@ -52,7 +52,8 @@
     ".": {
       "release-type": "node",
       "package-name": "jobwatch-mcp",
-      "include-component-in-tag": false,
+      "component": "jobwatch-router",
+      "include-component-in-tag": true,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": false,
       "extra-files": [
