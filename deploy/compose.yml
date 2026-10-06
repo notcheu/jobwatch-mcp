@@ -9,7 +9,7 @@ volumes:
 networks:
   # front <-> router and front <-> redis. Internet access is on: the front calls Google to sign you in.
   jobwatch-core:     { internal: false }
-    # router <-> the browsers it spawns. Internet access is on and unrestricted: the browsers load the job sites.
+  # router <-> the browsers it spawns. Internet access is on and unrestricted: the browsers load the job sites.
   jobwatch-browsers: { name: "${BROWSER_NETWORK:?set BROWSER_NETWORK in .env}", internal: false }
 
 services:
