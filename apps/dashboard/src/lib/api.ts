@@ -1,6 +1,7 @@
 import {
   API_PREFIX,
   adapterToggleSchema,
+  dataClearedSchema,
   callDetailSchema,
   callsPageSchema,
   jobDetailSchema,
@@ -13,6 +14,7 @@ import {
   toolsSchema,
   usageSchemaResponse,
   type AdapterToggle,
+  type DataCleared,
   type CallDetail,
   type CallsPage,
   type JobDetail,
@@ -100,6 +102,8 @@ export const api = {
   }): Promise<Usage> => request(usageSchemaResponse, `/usage${query(params)}`),
   setAdapter: (id: string, enabled: boolean): Promise<AdapterToggle> =>
     request(adapterToggleSchema, `/adapters/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+  clearData: (id: string): Promise<DataCleared> =>
+    request(dataClearedSchema, `/adapters/${encodeURIComponent(id)}/data`, { method: 'DELETE' }),
   restart: (force: boolean): Promise<Restart> =>
     request(restartSchema, '/router/restart', { method: 'POST', body: JSON.stringify({ force }) }),
 };

@@ -271,6 +271,25 @@ describe('jobs', () => {
     store.close();
   });
 
+  it('clears one platform: its jobs, searches and hits, and nothing else', () => {
+    const store = Store.open(':memory:', { jobRetentionDays: 7 });
+    store.putJob('ashby', job('4000000001'), 1000);
+    store.putJob('ashby', job('4000000002'), 1000);
+    store.putJob('lever', job('4000000001'), 1000);
+    store.recordSearch('ashby', { query: 'dev', found: ['4000000001', '4000000002'], returned: ['4000000001'] }, 1000);
+    store.recordSearch('lever', { query: 'dev', found: ['4000000001'], returned: ['4000000001'] }, 1000);
+    store.addUsage('ashby', 1000, 1);
+    expect(store.clearPlatform('ashby')).toEqual({ jobs: 2, searches: 1 });
+    expect(store.countJobs('ashby')).toBe(0);
+    expect(store.countJobs('lever')).toBe(1);
+    expect(store.searchStats({ since: 0, until: 2000, limit: 10 }).map((row) => row.platform)).toEqual(['lever']);
+    expect(store.foundBy('ashby', ['4000000001']).size).toBe(0);
+    expect(store.foundBy('lever', ['4000000001']).get('4000000001')).toEqual(['dev']);
+    expect(store.usageSince('ashby', 0)).toHaveLength(1); // a budget is not job data
+    expect(store.clearPlatform('ashby')).toEqual({ jobs: 0, searches: 0 });
+    store.close();
+  });
+
   it('rejects a retention that is not a sensible number of days', () => {
     for (const days of [0, -1, 1.5, 4000]) expect(() => Store.open(':memory:', { jobRetentionDays: days })).toThrow(StoreError);
   });

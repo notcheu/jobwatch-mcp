@@ -350,6 +350,53 @@ describe('adapters enable / disable', () => {
   });
 });
 
+describe('adapters clear-data', () => {
+  it('asks the router to clear one adapter and reports what went', async () => {
+    const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
+    const seen: unknown[] = [];
+    const control = await startControlServer(controlSocketPath(dataDir), {
+      'data.clear': async (request) => (seen.push(request), { platform: 'apec', jobs: 12, searches: 3 }),
+    });
+    try {
+      expect(await cli(['adapters', 'clear-data', 'apec', '--yes'])).toBe(0);
+    } finally {
+      await control.close();
+    }
+    expect(seen).toEqual([{ command: 'data.clear', adapter: 'apec' }]);
+    expect(out).toContain('Cleared apec: 12 job(s) and 3 search(es) removed.');
+  });
+
+  it('asks for --yes and never contacts the router without it', async () => {
+    expect(await cli(['adapters', 'clear-data', 'apec'])).toBe(1);
+    expect(err).toContain('--yes');
+  });
+
+  it('refuses an unknown id, a utility, a missing id and the utilities command', async () => {
+    expect(await cli(['adapters', 'clear-data', 'nope', '--yes'])).toBe(1);
+    expect(err).toContain('Unknown adapter: nope');
+    expect(await cli(['adapters', 'clear-data'])).toBe(1);
+    expect(await cli(['utilities', 'clear-data', 'x', '--yes'])).toBe(1);
+  });
+
+  it("says so when no router is running, and shows the router's own refusal", async () => {
+    expect(await cli(['adapters', 'clear-data', 'apec', '--yes'])).toBe(2);
+    expect(err).toContain('No router is running');
+    const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
+    const control = await startControlServer(controlSocketPath(dataDir), {
+      'data.clear': async () => {
+        throw new Error('No such adapter is installed.');
+      },
+    });
+    try {
+      err = '';
+      expect(await cli(['adapters', 'clear-data', 'apec', '--yes'])).toBe(1);
+    } finally {
+      await control.close();
+    }
+    expect(err).toContain('No such adapter is installed.');
+  });
+});
+
 describe('dashboard', () => {
   it('asks the running router to open it and says where, with the sign-in and the closing time', async () => {
     const { startControlServer, controlSocketPath } = await import('@jobwatch/core');

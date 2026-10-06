@@ -15,6 +15,7 @@ afterEach(async () => {
 async function setup(over: Partial<Changes> = {}) {
   const changes: Changes = {
     setAdapter: vi.fn(async () => ({ enabledAdapters: ['apec'], addedTools: ['apec_search', 'apec_job'], removedTools: [] })),
+    clearData: vi.fn(async () => ({ jobs: 12, searches: 3 })),
     running: vi.fn(() => 0),
     restart: vi.fn(),
     ...over,
@@ -99,6 +100,34 @@ describe('enable and disable an adapter', () => {
     expect((await t.send('PUT', '/adapters/apec', { enabled: 'yes' })).status).toBe(400);
     expect((await t.send('PUT', '/adapters/apec', { enabled: true, extra: 1 })).status).toBe(400);
     expect(t.changes.setAdapter).not.toHaveBeenCalled();
+  });
+});
+
+describe('clear the data of an adapter', () => {
+  it('forgets its jobs and searches, says how many, and logs who did it', async () => {
+    const t = await setup();
+    expect(await t.send('DELETE', '/adapters/ashby/data')).toEqual({ status: 200, body: { id: 'ashby', jobs: 12, searches: 3 } });
+    expect(t.changes.clearData).toHaveBeenCalledWith('ashby');
+    expect(t.entries.find((e) => e.msg === 'dashboard_data_cleared')).toMatchObject({
+      actor: 'me@example.com',
+      adapter: 'ashby',
+      jobs: 12,
+    });
+  });
+
+  it('shows the refusal of the router and refuses a bad id before it gets there', async () => {
+    const t = await setup({
+      clearData: async () => {
+        throw new ChangeRefused(400, 'not_an_adapter', 'A utility stores no jobs.');
+      },
+    });
+    expect(await t.send('DELETE', '/adapters/ats-discovery/data')).toEqual({
+      status: 400,
+      body: { error: 'not_an_adapter', message: 'A utility stores no jobs.' },
+    });
+    const other = await setup();
+    expect((await other.send('DELETE', '/adapters/Bad%20Id/data')).status).toBe(400);
+    expect(other.changes.clearData).not.toHaveBeenCalled();
   });
 });
 

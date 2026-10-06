@@ -159,6 +159,31 @@ describe('tools and status', () => {
   });
 });
 
+describe('clear stored data', () => {
+  it('asks before it clears, then says what was removed and that budgets are kept', async () => {
+    mockApi({ '/me': me, '/tools': tools(adapter()), '/adapters/teamtailor/data': { id: 'teamtailor', jobs: 12, searches: 1 } });
+    renderApp('/tools');
+    const user = userEvent.setup();
+    const call = () => vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/adapters/teamtailor/data'));
+    await user.click(await screen.findByRole('button', { name: /Clear stored data/ }));
+    expect(call()).toBeUndefined(); // one click is only the question
+    await user.click(screen.getByRole('button', { name: 'Yes, clear' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('12 stored jobs and 1 search removed. Its budget and history are kept.');
+    expect(call()?.[1]).toMatchObject({ method: 'DELETE' });
+    expect((call()?.[1]?.headers as Record<string, string>)['x-jw-csrf']).toBe('1');
+  });
+
+  it('can be cancelled, and is not offered on a utility', async () => {
+    mockApi({ '/me': me, '/tools': tools(adapter(), adapter({ id: 'ats-discovery', displayName: 'ATS discovery', role: 'utility' })) });
+    renderApp('/tools');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Clear stored data/ }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getAllByRole('button', { name: /Clear stored data/ })).toHaveLength(1);
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/data'))).toBe(false);
+  });
+});
+
 describe('restart', () => {
   it('asks before it restarts, then says the page reconnects by itself', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter()), '/router/restart': { restarting: true } });

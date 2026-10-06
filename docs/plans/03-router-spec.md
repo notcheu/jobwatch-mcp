@@ -214,6 +214,7 @@ jobwatch adapters list [--tools] [--json] [<id...>]
                                      tools/list returns; --json gives the full catalog entries; ids narrow the list
 jobwatch adapters enable  <id...>    add to adapters.json (validates the id exists in `installed`), then hot-reload a running router
 jobwatch adapters disable <id...>    remove from adapters.json, then hot-reload a running router
+jobwatch adapters clear-data <id> --yes   forget the jobs and searches an adapter stored (control command `data.clear`; budgets and history are kept)
 jobwatch linkedin-geo <text> [--save <name> [--pick <n>]] | --list | --forget <name>
                                      find the LinkedIn geoId of a place, remember names for places (needs the linkedin-geo utility)
 jobwatch login start|stop <platform>  browser login mode (05); only for enabled browser adapters
