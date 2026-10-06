@@ -32,7 +32,7 @@ Workspace layout and rules: `03-router-spec.md` ("Repo layout: Nx monorepo"). Bu
 **Exit**: from a local MCP client on the host, the LinkedIn tools return correct data within budgets; lifecycle invariants pass (cold/warm/reap/preempt/OOM); soak test 6 h green.
 
 ## Phase 2 — Public endpoint, OAuth, Claude integration
-Tasks: choose/configure the OAuth front; compose stack; router Docker image (`Dockerfile`) + GitHub Actions publish to the private registry + Watchtower on the host (`10-…` "CI/CD"); Nginx server block + hostname; connector added in Claude; acceptance checklist `02-…`; per-tool annotations verified in Claude UI; routine smoke test (S1 follow-up) with a minimal routine calling `session_status` and one search; secrets/runbooks documented.
+Tasks: choose/configure the OAuth front; compose stack; router Docker image (`Dockerfile`) + GitHub Actions publish (now the release workflow, `docs/releasing.md`) + Watchtower on the host (`10-…` "CI/CD"); Nginx server block + hostname; connector added in Claude; acceptance checklist `02-…`; per-tool annotations verified in Claude UI; routine smoke test (S1 follow-up) with a minimal routine calling `session_status` and one search; secrets/runbooks documented.
 **Exit**: a scheduled routine successfully calls `session_status` and `linkedin_search` unattended on 3 consecutive days; second-account sign-in rejected.
 
 ## Phase 3 — More adapters

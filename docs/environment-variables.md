@@ -118,7 +118,7 @@ Closed until `jobwatch dashboard start`. Sign-in variables are under [OAuth](#oa
 
 `compose.yml` has no defaults of its own: `PORT`, `BASE_URL`, `BROWSER_NETWORK`, `DASHBOARD_PORT` and `METRICS_PORT` are required in `.env` (Compose stops and names the missing one), and `deploy/.env.example` sets all of them. What only concerns the stack, not the server, is set in `compose.yml` itself and is not an environment variable: edit the file.
 
-- **Images:** `jobwatch-router:latest`, `redis:7-alpine` and the OAuth front `ghcr.io/babs/mcp-auth-proxy:1.4.1`.
+- **Images:** `notcheu/jobwatch-mcp:latest`, `redis:7-alpine` and the OAuth front `ghcr.io/babs/mcp-auth-proxy:1.4.1`.
 - **Published addresses:** the front's `PORT`, `DASHBOARD_PORT` and `METRICS_PORT` are published on `127.0.0.1`. Replace it by the host's LAN IP if the reverse proxy or Prometheus is on another machine or in a container.
 - **Docker socket:** `${XDG_RUNTIME_DIR}/docker.sock` (the rootless Docker socket of the user, Linux). On Docker Desktop (macOS) replace it by `/var/run/docker.sock`. Never a root socket.
 - **The front's own settings:** `PROXY_BASE_URL`, `UPSTREAM_MCP_URL`, `LISTEN_ADDR`, `METRICS_ADDR`.

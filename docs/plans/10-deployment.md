@@ -57,7 +57,7 @@ Browser containers are **not** declared in compose; the router spawns them with 
 ## Router image (`Dockerfile`)
 Multi-stage build from the repo root of the Nx workspace: `deps` (`npm ci`; the whole workspace, including `tools/`, must be copied so it matches the lockfile) → `build` (`nx run-many -t build -p @jobwatch/mcp @jobwatch/cli`, which bundles each app into one file with esbuild; the browser driver `playwright-core` will stay external and is listed in `apps/mcp/external-deps.package.json`, empty until step 6 (SQLite is Node's built-in `node:sqlite`, nothing native); adapter assets such as `extract.js` are inlined or copied) → `prod-deps` (installs only those external packages, pinned) → `runtime` (Node 26 slim, `tini`, a remote-only container CLI, non-root user `node`, `catalog/` baked in, `HEALTHCHECK` on `/healthz`). The filesystem is read-only at run time; state lives in `/data`.
 ```bash
-docker build -t jobwatch-router:dev .                       # run as mcpuser so it uses the rootless daemon
+docker build -t notcheu/jobwatch-mcp:dev .                       # run as mcpuser so it uses the rootless daemon
 docker compose build router
 docker compose up -d
 ```
@@ -104,17 +104,18 @@ The images may run on something other than the reference Ubuntu host, typically 
 - **Memory:** Docker Desktop's VM has its own memory limit (Settings → Resources); give it at least 3 GB to run Chromium plus the router. The Linux-only spike scripts (`spikes/host/*.sh`, GNU `date`, `hostname -I`, rootless checks) are reference host tools, not portable.
 - **Never** treat a Mac run as evidence for the budgets in `06-…`: those were measured on the amd64 reference host with Google Chrome.
 
-## CI/CD: build, publish, auto-update
-Same pattern as the TraderTavern project: GitHub Actions builds the image and pushes it to your **private registry**; **Watchtower** on the Ubuntu host notices the new digest and restarts the router. Workflow: `.github/workflows/docker-publish.yml`.
+## CI/CD: build, release, publish, auto-update
+Three workflows (`.github/workflows/`): `ci.yml` (tests on every pull request and push to `main`), `pr-title.yml` (the pull request title must be a conventional commit: squash merges use it as the commit message), and `release.yml` (versioning and publishing, described in [`docs/releasing.md`](../releasing.md)). **Watchtower** on the host, if you run it, notices a new digest and restarts the router.
 
 ```
-push to main → [test job: lint, typecheck, unit+contract, catalog drift] → build router image (Buildx, linux/amd64 + linux/arm64, provenance: false)
-             → push <registry>/jobwatch-router:latest → Watchtower (host, polls) → pulls + recreates router
+push to main → release-please opens/updates the release PR (version + CHANGELOG.md)
+merge of the release PR → tag vX.Y.Z + GitHub Release → build router image (Buildx, linux/amd64 + linux/arm64, provenance: false)
+             → push notcheu/jobwatch-mcp and ghcr.io/<owner>/jobwatch-mcp: X.Y.Z, X.Y, latest → Watchtower (host, polls) → pulls + recreates router
 ```
-- **GitHub secrets:** `REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD` (same names as TraderTavern). **They are not configured on this repository yet** (checked 2026-10-01 with `gh secret list`): until they are, the publish job skips itself with a notice instead of failing, so `main` stays green. Add them in the repository settings (Secrets and variables, Actions) to start publishing.
-- **`provenance: false` is required:** a provenance attestation turns the push into an OCI index with an `unknown/unknown` platform entry that Watchtower cannot resolve. Do not remove it.
-- **Single tag:** only `latest` is published, and Watchtower follows it. There is no versioned rollback tag; to roll back, revert the commit on `main` and let CI publish again.
-- **Host side (`deploy/compose.yml`):** the router uses `image: jobwatch-router:latest` and carries the label `com.centurylinklabs.watchtower.enable=true`. A `watchtower` service runs with `WATCHTOWER_LABEL_ENABLE=true`, so **only the router** auto-updates; the OAuth front stays pinned by digest (supply chain, `09-…`). Watchtower mounts the same rootless socket and the `mcpuser` user's `~/.docker/config.json` (read-only) to authenticate to the registry. Log in once on the host: `docker login <registry>` as `mcpuser`.
+- **GitHub secrets:** `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (a Docker Hub access token with write access to `notcheu/jobwatch-mcp`); GHCR uses the workflow's own token. Without the Docker Hub secrets the release is still tagged but the image step skips itself with a warning. Optional `RELEASE_PLEASE_TOKEN` (see `docs/releasing.md`).
+- **`provenance: false` is required:** a provenance attestation turns the push into an OCI index with an `unknown/unknown` platform entry that Watchtower cannot resolve. Do not remove it unless Watchtower stops being a supported way to update.
+- **Tags:** `X.Y.Z` (exact), `X.Y` (latest patch of a minor) and `latest`; the bare major is not published while the project is 0.x. To roll back, pin the previous version tag.
+- **Host side (`deploy/compose.yml`):** the router uses `image: notcheu/jobwatch-mcp:latest` and carries the label `com.centurylinklabs.watchtower.enable=true`. A `watchtower` service runs with `WATCHTOWER_LABEL_ENABLE=true`, so **only the router** auto-updates; the OAuth front stays pinned by digest (supply chain, `09-…`). Watchtower mounts the same rootless socket and the `mcpuser` user's `~/.docker/config.json` (read-only) to authenticate to the registry. Log in once on the host: `docker login <registry>` as `mcpuser`.
 - **Browser image:** not auto-updated (spawned containers are invisible to Watchtower, and rebuilding Chrome should be deliberate). Build and push it from a separate workflow triggered only by changes under `images/browser/`, and pull the new tag by hand, then bump `BROWSER_IMAGE`.
 - **Restart safety:** Watchtower may recreate the router while a call is running. On startup the router must reap orphan containers labelled `jobwatch.managed=true` and reconcile state from SQLite; a failed in-flight call is returned to Claude as an error and the routine retries. Set Watchtower to a quiet schedule (`WATCHTOWER_SCHEDULE`, e.g. after the daily routine) rather than the default poll interval.
 - **Caveats to VERIFY:** the original `containrrr/watchtower` is archived, so pick a maintained fork and check it supports the rootless socket and current Docker API version; verify the registry is reachable from the host and uses valid TLS.

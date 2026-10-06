@@ -1,4 +1,4 @@
-# Router image (Nx workspace). Build from the repo root:  docker build -t jobwatch-router:dev .
+# Router image (Nx workspace). Build from the repo root:  docker build -t notcheu/jobwatch-mcp:dev .
 # No `# syntax` directive on purpose: the BuildKit built-in frontend supports everything used here (cache mounts, named
 # stages), and the directive costs an extra Docker Hub round-trip (and dependency) on every build.
 # `nx run-many -t build` bundles apps/mcp and apps/cli to dist/apps/{mcp,cli}/main.js with esbuild. Packages that must stay
