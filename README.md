@@ -63,7 +63,7 @@ To use it from Claude on the web or desktop you also need a domain name with TLS
 #### Steps
 
 1. Create a folder and copy [`deploy/compose.yml`](deploy/compose.yml)
-2. Copy [`deploy/.env.example`](deploy/.env.example) to `.env` next to `compose.yml` (`chmod 600 .env`: it holds secrets once filled in; never commit it). It lists every setting, grouped by category. For a first run the defaults are enough, with a router image named `jobwatch-router:latest` on the host (pull and tag it, or [build your own](#build-your-own-image)). To use it from Claude on the web or desktop, fill in the OAuth block ([OAuth](docs/oauth.md)).
+2. Copy [`deploy/.env.example`](deploy/.env.example) to `.env` next to `compose.yml` (`chmod 600 .env`: it holds secrets once filled in; never commit it). It lists every setting, grouped by category. For a first run the defaults are enough, with the published router image `notcheu/jobwatch-mcp` (pin a version tag such as `0.1.0` in `compose.yml` for a reproducible install, or [build your own](#build-your-own-image)). To use it from Claude on the web or desktop, fill in the OAuth block ([OAuth](docs/oauth.md)).
 
 3. Prepare data folder:
 ```bash
@@ -407,7 +407,7 @@ The server is started on `http://127.0.0.1:18931/mcp` in watch mode.
 To run your own build instead of the published image, build the two images (the router and the browser). The browser image uses Google Chrome on amd64 and Chromium on arm64:
 
 ```bash
-docker build -t jobwatch-router:latest .      # the name compose.yml runs
+docker build -t notcheu/jobwatch-mcp:latest .      # the name compose.yml runs
 docker build -t jobwatch-browser:latest images/browser   # BROWSER_IMAGE's default
 ```
 
@@ -423,3 +423,7 @@ The repository is an Nx and npm-workspaces monorepo: `packages/sdk` (the adapter
 Tool definitions live in code and each adapter package has a generated `catalog/` snapshot: after changing a tool, run `npm run catalog:gen` and commit the result. To add a source, `npm run new:adapter -- <id> --kind http`, then follow the checklist in [`docs/plans/03-router-spec.md`](docs/plans/03-router-spec.md). Work happens on a branch, one pull request per step, squash-merged once `npm run ci` is green; the whole test suite must stay under five minutes.
 
 Contributing rules that matter most: keep every tool read-only, never commit secrets, cookies, browser profiles or captured pages (`deploy/.env`, `secrets/`, `profiles/` and `data/` are gitignored), and keep the browser to one instance at a time and to the tab limit `BROWSER_MAX_TABS`. The measured benchmark in `docs/measurements.md` is the ceiling for memory and request budgets; features work inside it.
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You can use, modify and redistribute the project, commercially or not, as long as everything you distribute or run as a network service on top of it is released under the same licence with its source. Releases and versioning: [`docs/releasing.md`](docs/releasing.md). Versions before 1.0.0 are not production ready and may change without notice.

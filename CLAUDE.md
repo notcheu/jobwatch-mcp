@@ -12,7 +12,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.exa
 - **Platforms:** production is the reference Ubuntu host (x86_64, rootless Docker). The images are multi-arch (amd64 + arm64) so they also run on a Mac (Docker Desktop, arm64) for development; the arm64 browser image uses Chromium (Google ships no Linux arm64 Chrome) and is **not** for the LinkedIn session. Never hard-code Linux-only paths: profiles are named Docker volumes, the Docker socket path comes from `DOCKER_SOCKET`.
 - **Runtime:** rootless Docker for a dedicated `mcpuser` user; always-on services (OAuth front, Redis, router) in the self-contained `deploy/compose.yml` (Watchtower is the user's choice: `docs/watchtower.md`); browser containers are spawned by the router, never declared in compose.
 - **Monorepo (Nx + npm workspaces):** `packages/sdk` (the adapter contract), `packages/core` (engine), `packages/mcp-modules` (the installed adapter map and utility map), `packages/adapter-<platform>` (one package per platform, depends on `sdk` only), `packages/utility-<name>` (one per utility, depends on `sdk` only), `apps/mcp` (server), `apps/cli` (`jobwatch`), `apps/dashboard` (the React operator dashboard, built to static files; imports only `packages/dashboard-api`, the shared response types). The dashboard is closed until `jobwatch dashboard start` and is designed in `docs/plans/17-dashboard.md`. Tool definitions live in code; each adapter package has a **generated** `catalog/` snapshot. Two kinds of module share one interface (`McpModule` in the SDK: id, platform, allowed hosts, request budget, tools): **adapters** (`packages/adapter-<platform>`, fetch jobs) and **utilities** (`packages/utility-<name>`, helper tools that fetch no jobs, HTTP only: `linkedin-geo`, `ats-discovery`). Adapters are enabled/disabled with `jobwatch adapters enable|disable <id>`, utilities with `jobwatch utilities enable|disable <id>` (`adapters.json`: `enabled` and `utilities`); nothing is enabled by default. The budget, the registry, the catalog and the dashboard work on both. Other commands: `jobwatch login start|stop <platform>` (manual sign-in via noVNC), `jobwatch catalog [--all]`, `jobwatch doctor`.
-- **Delivery:** GitHub Actions builds and pushes `jobwatch-router:latest` to a private registry; Watchtower on the host updates the router (`10-deployment.md`).
+- **Delivery:** `release-please` versions the project (semantic versioning, `CHANGELOG.md`, from the conventional PR titles); merging its release PR tags the release and GitHub Actions pushes `notcheu/jobwatch-mcp` (Docker Hub, and GHCR) as `X.Y.Z`, `X.Y` and `latest`. Watchtower on the host is optional (`docs/releasing.md`, `10-deployment.md`).
 
 ## Hard no rules
 - **Generic code is market, country, language and job agnostic.** Nothing in the SDK, the engine, the dashboard or a generic adapter (LinkedIn, WTTJ, the company-board ATS tools) may assume a place, a currency, a job family or a technology. Put it in a tool argument or in an environment variable (`docs/plans/03-router-spec.md`, "Market, country and job agnostic"). A market-specific adapter (Apec, a site's own ATS) may be specific, inside its package.
@@ -29,6 +29,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.exa
 - Commit after each big implementation step (a completed feature module, an adapter, a migration, or a self-contained chunk of a plan), unless the owner asks to work differently (e.g. pausing for manual review between steps).
 - **One branch and one pull request per roadmap step** (`phase-N/step-M-<name>`), opened as soon as the step is validated. Fill `.github/pull_request_template.md`: start with "This PR adds/implements/fixes/drops ..." and include any specific direction taken.
 - **PR title follows semantic release naming:** `<type>(<optional scope>): <summary>` with type `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf` or `wip`, imperative and lowercase after the colon.
+- **Never edit the version or `CHANGELOG.md` by hand:** `release-please` owns them. The PR title is what ends up in the changelog and decides the bump (`feat` minor, `fix` patch, `!` or `BREAKING CHANGE` major; while 0.x, breaking changes bump the minor).
 - **Merge with SQUASH, never a merge commit** (`gh pr merge --squash`), using the PR title as the subject and the PR description as the body. Wait for CI (`gh pr checks --watch`) before merging; never merge over a red check.
 - **The test suite must run in under 5 minutes** (CI enforces it with a 5-minute step cap; vitest per-test timeout is 10 s). If it gets slower, cut the slow tests and keep only the cheap ones; never raise the cap. Never use paths like `/proc/...` in tests: recursive `mkdir` spins forever there on Linux. Reproduce CI-only failures in `docker run node:26-bookworm-slim`.
 - Every phase ends with its exit criteria met and documented.
@@ -37,7 +38,7 @@ Request path: Claude → **existing Nginx reverse proxy** (TLS, `https://mcp.exa
 - Never commit, stage or push: `.env`, anything under `secrets/`, `profiles/` or `data/`, cookies, browser profiles, tokens, registry credentials, HAR files, or saved HTML of logged-in pages. Only `deploy/.env.example` (placeholders only) may be committed.
 - These are excluded via `.gitignore`. Do not remove or weaken those rules.
 - Whenever a file containing environment variables, credentials or captured page data is read, edited or analysed, double-check: (1) is it gitignored, and (2) would it expose a real key/secret/session if committed. If unsure, treat it as unsafe and flag it before staging.
-- CI secrets (`REGISTRY_URL`, `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`) live only in GitHub secrets; the host's registry login lives only in the `mcpuser` user's `~/.docker/config.json`.
+- CI secrets (`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, optional `RELEASE_PLEASE_TOKEN`) live only in GitHub secrets; the host's registry login, if any, lives only in the `mcpuser` user's `~/.docker/config.json`.
 
 ## Commands
 Use Node 26 (`nvm use`, `.nvmrc`). Everything below runs today.
@@ -56,7 +57,7 @@ npm run catalog:gen         # regenerate every adapter's catalog/ snapshot (runs
 npm run new:adapter -- <id> [--kind http|browser]   # scaffold a new adapter package, register it in packages/mcp-modules, first snapshot
 npm run new:utility -- <id>                          # scaffold a new utility package (always http), register it in packages/mcp-modules, first snapshot
 npm run jobwatch -- adapters list [--tools] [--json] [<id...>]|enable|disable <id...> | utilities list|enable|disable <id...> | login start|stop <platform> | linkedin-geo <text> [--save <name>] | dashboard start|stop|status | doctor   # which installed adapters the router plugs in (DATA_DIR=./data for local use)
-docker build -t jobwatch-router:dev .   # the router image (multi-arch in CI)
+docker build -t notcheu/jobwatch-mcp:dev .   # the router image (multi-arch in CI)
 docker compose up -d      # as mcpuser, in the folder holding compose.yml and .env
 ```
 Pinned versions: TypeScript 5.9.3 on purpose (`typescript-eslint` 8.71 supports TypeScript below 6.1 only; revisit before moving to TypeScript 7). After adding or removing a package, the Nx project graph cache can be stale for direct `eslint` runs: run any `nx` command (for example `npx nx show projects`) first. After changing any tool definition, run `catalog:gen` (a contract test fails on drift).
@@ -78,7 +79,7 @@ Pinned versions: TypeScript 5.9.3 on purpose (`typescript-eslint` 8.71 supports 
 ## Ask the owner before
 - Enabling any tool that writes state outside the router's own data directory, or exposing anything beyond the catalog.
 - Changing the LinkedIn usage budget (`09-security.md`).
-- Changing what the router can do through the Docker socket (new mounts, privileges, capabilities), the Watchtower scope, or the CI registry and its credentials.
+- Changing what the router can do through the Docker socket (new mounts, privileges, capabilities), the Watchtower scope, or the release pipeline, the registries and their credentials.
 
 ## Documentation — load only what the task needs, but any doc may be pulled in
 All numbered docs (`00-overview.md` … `16-architecture-diagrams.md`) live in **`docs/plans/`**; names below are relative to that folder. In code comments they are written with the full path (`docs/plans/05-browser-runtime.md`). Phase 0 measurements: `docs/measurements.md`.

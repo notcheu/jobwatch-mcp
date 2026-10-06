@@ -47,7 +47,7 @@ services:
     security_opt: [ "no-new-privileges:true" ]
     restart: unless-stopped
   router:
-    image: jobwatch-router:latest            # pushed by CI (.github/workflows/docker-publish.yml), or built with `docker build -t jobwatch-router:latest .`
+    image: notcheu/jobwatch-mcp:latest       # published on every release (docs/releasing.md); pin a version (notcheu/jobwatch-mcp:0.1.0) for a reproducible install, or build your own with `docker build -t notcheu/jobwatch-mcp:latest .`
     labels:
       - "com.centurylinklabs.watchtower.enable=true"   # only read by Watchtower, if you run it (docs/watchtower.md)
     env_file: .env   # every router setting: see .env.example and docs/environment-variables.md

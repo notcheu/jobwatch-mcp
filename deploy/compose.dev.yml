@@ -7,7 +7,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: jobwatch-router:dev
+    image: notcheu/jobwatch-mcp:dev
     labels: []                               # not managed by Watchtower
     user: "0:0"                              # Docker Desktop's socket is not owned by uid 1000
     environment:

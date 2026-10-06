@@ -2,6 +2,7 @@
   "name": "jobwatch-mcp",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "Self-hosted read-only MCP orchestrator for job-search sources (Nx monorepo).",
   "type": "module",
   "engines": {

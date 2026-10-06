@@ -234,10 +234,10 @@ Fallbacks: if the connector is unreachable, the routine falls back to the Chrome
 ```mermaid
 flowchart LR
   Dev["git push to main"] --> GHA
-  subgraph GHA["GitHub Actions, docker-publish.yml"]
-    Test["test job<br/>lint, typecheck, unit + contract,<br/>catalog drift check"] --> Build["Buildx build<br/>linux/amd64, provenance: false"]
+  subgraph GHA["GitHub Actions, release.yml"]
+    Test["test job<br/>lint, typecheck, unit + contract,<br/>catalog drift check"] --> Build["Buildx build on release<br/>linux/amd64 + arm64, provenance: false"]
   end
-  Build -- "push :latest" --> Reg[("Private registry")]
+  Build -- "push X.Y.Z, X.Y, latest" --> Reg[("Docker Hub + GHCR")]
   subgraph Host["Ubuntu host, rootless Docker"]
     WT["Watchtower<br/>label-enabled containers only"]
     RouterC["router container"]

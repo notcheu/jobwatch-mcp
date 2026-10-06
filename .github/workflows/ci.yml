@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  NX_DAEMON: 'false'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # format check + lint (incl. architecture rules) + typecheck + unit/contract tests.
+      # Integration tests need the browser runtime and run on the reference host only (see docs/plans/11-testing-and-validation.md).
+      # The whole suite must stay under 5 minutes (CLAUDE.md). A test that spins the CPU defeats vitest's own timeouts, so
+      # this step cap is what turns a hang into a quick failure instead of a 12-minute stall.
+      - run: npm run ci
+        timeout-minutes: 5
+      # The dashboard is a front end with many packages: fail on a known high or critical advisory in anything that ships
+      # (docs/plans/17-dashboard.md, section 8), and make sure every app, the interface included, still builds.
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build
+        timeout-minutes: 5

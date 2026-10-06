@@ -6,7 +6,7 @@ The router container carries the label `com.centurylinklabs.watchtower.enable=tr
 docker compose pull router && docker compose up -d router
 ```
 
-The router image is named `jobwatch-router:latest` in `compose.yml`. If you pull it from a private registry, prefix it there (`image: registry.example.com/jobwatch-router:latest`) in your copy of the file, after `docker login`.
+The router image is `notcheu/jobwatch-mcp:latest` in `compose.yml` (Docker Hub, also on GHCR), republished on every release. Watchtower follows the tag you put there: with `latest` it follows every release, with a version tag it never moves.
 
 ## Watchtower as a compose service
 
