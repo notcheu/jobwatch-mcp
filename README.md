@@ -224,6 +224,7 @@ Signing in uses Google, with the same OAuth client as the connector by default: 
 |---|---|
 | `adapters list [--tools] [--json] [<id...>]` | Installed adapters and whether each is enabled. `--tools` adds every tool with its parameters (required ones starred, defaults, cost); `--json` gives the full catalog entries; ids narrow the list. |
 | `adapters enable <id...>`, `adapters disable <id...>` | Enable or disable adapters. |
+| `adapters clear-data <id> --yes` | Forget the jobs and searches an adapter stored, so its next call starts fresh. Budgets and history are kept. The dashboard has the same button on each adapter. |
 | `utilities list\|enable\|disable ...` | The same for utilities. |
 | `login start <platform> [--port 6080]` | Start a visible browser on the platform's profile to sign in by hand (noVNC on loopback). |
 | `login stop <platform>` | Stop it; the profile keeps the session. |

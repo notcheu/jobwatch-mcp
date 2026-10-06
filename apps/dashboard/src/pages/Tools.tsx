@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ToolState } from '@jobwatch/dashboard-api';
-import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { AlertTriangle, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,6 +59,23 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
       setError(failure instanceof Error ? failure.message : 'The change failed.');
     },
   });
+  const [confirmClear, setConfirmClear] = useState(false);
+  const clear = useMutation({
+    mutationFn: () => api.clearData(adapter.id),
+    onSuccess: (result) => {
+      setError(undefined);
+      setConfirmClear(false);
+      onChanged(
+        `${adapter.displayName}: ${result.jobs} stored job${result.jobs === 1 ? '' : 's'} and ${result.searches} search${result.searches === 1 ? '' : 'es'} removed. Its budget and history are kept.`,
+      );
+      void client.invalidateQueries();
+    },
+    onError: (failure) => {
+      if (failure instanceof ApiError && failure.code === 'reauth_required') return onReauth();
+      setConfirmClear(false);
+      setError(failure instanceof Error ? failure.message : 'The change failed.');
+    },
+  });
   const warnsAboutBudget = adapter.id === 'linkedin';
   return (
     <Card aria-label={adapter.displayName} className={cn(!adapter.enabled && 'opacity-80')}>
@@ -102,6 +119,25 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
           <p role="alert" className="text-xs text-destructive">
             {error}
           </p>
+        )}
+        {adapter.role === 'adapter' && (
+          <div className="flex flex-wrap items-center gap-2">
+            {!confirmClear ? (
+              <Button variant="outline" size="sm" onClick={() => setConfirmClear(true)}>
+                <Trash2 className="size-3.5" /> Clear stored data
+              </Button>
+            ) : (
+              <>
+                <span className="text-xs text-muted-foreground">Deletes its stored jobs and searches. Budgets and history are kept.</span>
+                <Button variant="destructive" size="sm" disabled={clear.isPending} onClick={() => clear.mutate()}>
+                  Yes, clear
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setConfirmClear(false)}>
+                  Cancel
+                </Button>
+              </>
+            )}
+          </div>
         )}
         {adapter.rateHour !== null && adapter.rateDay !== null && (
           <div className="grid gap-2 sm:grid-cols-2">

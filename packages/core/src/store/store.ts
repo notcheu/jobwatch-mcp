@@ -638,6 +638,19 @@ export class Store {
     return out;
   }
 
+  /**
+   * Forget everything one platform stored: its jobs and its searches (with their hits), so the next call starts fresh. Usage, breaker,
+   * call log and daily analytics stay: they are not job data, and wiping the usage would reset a request budget.
+   */
+  clearPlatform(platform: string): { jobs: number; searches: number } {
+    return this.transaction(() => {
+      this.db.prepare('DELETE FROM search_hits WHERE run_id IN (SELECT id FROM search_runs WHERE platform = ?)').run(platform);
+      const searches = Number(this.db.prepare('DELETE FROM search_runs WHERE platform = ?').run(platform).changes);
+      const jobs = Number(this.db.prepare('DELETE FROM jobs WHERE platform = ?').run(platform).changes);
+      return { jobs, searches };
+    });
+  }
+
   /** Delete what is past retention. Returns how many rows went. */
   prune(now: number): { calls: number; usage: number; jobs: number } {
     const oldRuns = now - this.jobRetentionMs;

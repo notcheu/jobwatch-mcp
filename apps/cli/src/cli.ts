@@ -14,6 +14,7 @@ import {
 import { describeInstalledAdapters, describeInstalledUtilities, type ModuleEntry } from '@jobwatch/mcp-modules';
 import { buildCatalog, type CatalogEntry, type ModuleRole } from '@jobwatch/sdk';
 import type { DockerRunner, InstalledAdapters, InstalledModules, InstalledUtilities } from '@jobwatch/core';
+import { clearData } from './clearData';
 import { dashboard } from './dashboard';
 import { doctor } from './doctor';
 import { linkedinGeo } from './linkedinGeo';
@@ -45,6 +46,8 @@ Usage:
                                        parameters (what Claude will see), --json prints it as JSON; ids narrow the list
   jobwatch adapters enable <id...>     enable adapters (written to adapters.json)
   jobwatch adapters disable <id...>    disable adapters
+  jobwatch adapters clear-data <id> --yes
+                                       forget the jobs and searches an adapter stored (budgets and history are kept)
   jobwatch utilities list|enable|disable ...
                                        the same for utilities: helper tools that fetch no jobs (LinkedIn geoIds, ATS discovery)
   jobwatch login start <platform>      start a visible browser to sign in by hand (noVNC on loopback)
@@ -291,6 +294,7 @@ export async function run(argv: readonly string[], deps: Deps): Promise<number> 
       if (subcommand === 'list') return await list(deps, rest, role);
       if (subcommand === 'enable') return await toggle(deps, rest, true, role);
       if (subcommand === 'disable') return await toggle(deps, rest, false, role);
+      if (subcommand === 'clear-data' && role === 'adapter') return await clearData(deps, rest);
       deps.io.err(`Unknown ${command} command: ${subcommand ?? '(none)'}\n\n${USAGE}`);
       return EXIT.usage;
     }

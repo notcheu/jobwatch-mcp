@@ -1,4 +1,4 @@
-import { adapterToggleSchema, restartSchema, type AdapterToggle } from '@jobwatch/dashboard-api';
+import { adapterToggleSchema, dataClearedSchema, restartSchema, type AdapterToggle, type DataCleared } from '@jobwatch/dashboard-api';
 import type { EngineLogger } from '@jobwatch/core';
 import express, { type Router } from 'express';
 import { z } from 'zod';
@@ -16,10 +16,12 @@ export class ChangeRefused extends Error {
   }
 }
 
-/** The only two things the dashboard can change. Neither touches a third-party platform. */
+/** The only three things the dashboard can change. None touches a third-party platform. */
 export interface Changes {
   /** Turn an adapter on or off and reload the registry (hot reload). */
   setAdapter(id: string, enabled: boolean): Promise<Omit<AdapterToggle, 'id' | 'enabled' | 'reconnectNeeded'>>;
+  /** Forget the jobs and searches an adapter stored, so its next call starts fresh. Usage and budgets are left alone. */
+  clearData(id: string): Promise<Omit<DataCleared, 'id'>>;
   /** Number of calls still running. */
   running(): number;
   /** Stop the router process so the container's restart policy brings it back. */
@@ -50,6 +52,18 @@ export function registerWrites(router: Router, changes: Changes, logger: EngineL
         'dashboard_adapter_changed',
       );
       res.json(checked(adapterToggleSchema, { id, enabled, ...result, reconnectNeeded: true }));
+    } catch (error) {
+      if (error instanceof ChangeRefused) return refuse(res, error);
+      next(error);
+    }
+  });
+
+  router.delete('/adapters/:id/data', async (req, res, next) => {
+    try {
+      const id = adapterId.parse(req.params['id']);
+      const result = await changes.clearData(id);
+      logger.info({ actor: actor(res), adapter: id, ...result }, 'dashboard_data_cleared');
+      res.json(checked(dataClearedSchema, { id, ...result }));
     } catch (error) {
       if (error instanceof ChangeRefused) return refuse(res, error);
       next(error);

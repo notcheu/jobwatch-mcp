@@ -340,6 +340,21 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     return result;
   };
 
+  /**
+   * Forget what one adapter stored (jobs and searches) so its next call starts fresh (docs/plans/17-dashboard.md). Operator only: the CLI
+   * and the dashboard call it, never an MCP tool. Utilities store no jobs, so they are refused.
+   */
+  const clearAdapterData = async (id: string): Promise<{ platform: string; jobs: number; searches: number }> => {
+    const load = (table as Readonly<Record<string, (() => Promise<McpModule>) | undefined>>)[id];
+    if (load === undefined) throw new ChangeRefused(404, 'not_found', 'No such adapter is installed.');
+    const module = await load();
+    if (roleOf(module) === 'utility')
+      throw new ChangeRefused(400, 'not_an_adapter', 'A utility stores no jobs, so there is nothing to clear.');
+    const cleared = store.clearPlatform(module.platform);
+    logger.info({ adapter: id, platform: module.platform, ...cleared }, 'adapter_data_cleared');
+    return { platform: module.platform, ...cleared };
+  };
+
   // The host-side commands (`jobwatch adapters enable ...` reloads a running router) reach the router through a Unix socket in the
   // data directory. A router without a writable data directory (tests, read-only setups) simply has no control channel.
   // The dashboard listener starts only when the host asks for it through the control socket (docs/plans/17-dashboard.md).
@@ -413,6 +428,10 @@ export async function start(options: StartOptions): Promise<RunningServer> {
                 );
               }
             },
+            clearData: async (id) => {
+              const { jobs, searches } = await clearAdapterData(id);
+              return { jobs, searches };
+            },
             running: () => callLog.all().filter((call) => call.state === 'running').length,
             restart: () => void process.kill(process.pid, 'SIGTERM'),
           },
@@ -429,6 +448,13 @@ export async function start(options: StartOptions): Promise<RunningServer> {
           {
             ping: async () => ({ version: options.version }),
             'adapters.reload': async () => ({ ...(await reloadAdapters()) }),
+            'data.clear': async (request) => {
+              try {
+                return { ...(await clearAdapterData(String(request['adapter'] ?? ''))) };
+              } catch (error) {
+                throw error instanceof ChangeRefused ? new Error(error.message) : error;
+              }
+            },
             'dashboard.start': async (request) => ({
               ...(await dashboard.start(typeof request['ttlMinutes'] === 'number' ? { ttlMinutes: request['ttlMinutes'] } : {})),
             }),

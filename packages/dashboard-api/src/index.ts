@@ -192,6 +192,10 @@ export const adapterToggleSchema = z
   .strict();
 export type AdapterToggle = z.infer<typeof adapterToggleSchema>;
 
+/** What clearing an adapter's stored data removed. */
+export const dataClearedSchema = z.object({ id: z.string(), jobs: z.number(), searches: z.number() }).strict();
+export type DataCleared = z.infer<typeof dataClearedSchema>;
+
 export const restartSchema = z.object({ restarting: z.boolean() }).strict();
 export type Restart = z.infer<typeof restartSchema>;
 
