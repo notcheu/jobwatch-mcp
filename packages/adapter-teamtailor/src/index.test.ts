@@ -340,7 +340,6 @@ describe('the adapter declares what it reaches', () => {
   it('lists the teamtailor.com wildcard, is open for custom domains, and has its own budget', () => {
     expect(adapter.allowedHosts).toEqual(['*.teamtailor.com']);
     expect(adapter.kind === 'http' && adapter.openHttps).toBe(true);
-    expect(adapter.rate).toEqual({ perHour: 600, perDay: 3000 }); // a ceiling for the platform
     expect(adapter.keyRate).toEqual({ perHour: 20, perDay: 100 }); // the real budget: per company handle
   });
 });
@@ -531,6 +530,5 @@ describe('the budget per company board', () => {
 
   it('gives every company its own budget and the whole platform a high ceiling', () => {
     expect(adapter.keyRate).toEqual({ perHour: 20, perDay: 100 });
-    expect(adapter.rate).toEqual({ perHour: 600, perDay: 3000 });
   });
 });

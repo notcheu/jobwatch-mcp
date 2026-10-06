@@ -107,6 +107,17 @@ export type { RateStatus, UsageTicket, WindowUsage } from './limits/ratelimit';
 export { CHECKPOINT_TTL_S, CircuitBreaker } from './limits/breaker';
 export type { BreakerListener } from './limits/breaker';
 export { createGuard, policyFor } from './limits/guard';
+export {
+  BUDGETS_FILE,
+  BUDGET_MAX,
+  BUDGET_MIN,
+  BudgetLocked,
+  Budgets,
+  budgetBodySchema,
+  budgetEnvName,
+  readBudgetEnv,
+} from './limits/budgets';
+export type { Budget, BudgetDefaults, BudgetNumbers, BudgetSource, BudgetValue, BudgetWindow } from './limits/budgets';
 export { FakeBackend } from './runtime/fake';
 export { OPS_ADAPTER_ID, createOpsAdapter } from './ops/ops';
 export type { PlatformStatus } from './ops/ops';

@@ -580,11 +580,6 @@ describe('cost reporting', () => {
     await tools.job.handler(tools.job.input.parse({ ids }), c.ctx);
     expect(c.spent()).toBe(2); // the second call read both from the database
   });
-
-  it('the adapter declares the approved budget and every tool fits in it', () => {
-    expect(adapter.rate).toEqual({ perHour: 200, perDay: 400 });
-    for (const tool of adapter.tools) expect(tool.limits.cost).toBeLessThanOrEqual(200);
-  });
 });
 
 const LISBON: FakeHttpRoute = {

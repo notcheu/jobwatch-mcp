@@ -128,6 +128,5 @@ export default defineUtility({
   sdkApi: SDK_API_VERSION,
   platform: 'linkedin-geo',
   allowedHosts: ['www.linkedin.com'],
-  rate: { perHour: 60, perDay: 300 },
   tools: [locations],
 });

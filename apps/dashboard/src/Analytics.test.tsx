@@ -76,6 +76,10 @@ const adapters = {
       tools: [],
       rateHour: { used: 190, limit: 200 },
       rateDay: { used: 100, limit: 400 },
+      budget: {
+        hourly: { value: 600, source: 'default', default: 600, envVar: 'X_BUDGET_HOURLY' },
+        daily: { value: 3000, source: 'default', default: 3000, envVar: 'X_BUDGET_DAILY' },
+      },
       boards: [],
       breaker: null,
       session: null,
@@ -92,6 +96,10 @@ const adapters = {
       tools: [],
       rateHour: { used: 4, limit: 600 },
       rateDay: { used: 40, limit: 3000 },
+      budget: {
+        hourly: { value: 600, source: 'default', default: 600, envVar: 'X_BUDGET_HOURLY' },
+        daily: { value: 3000, source: 'default', default: 3000, envVar: 'X_BUDGET_DAILY' },
+      },
       boards: [
         { board: 'bsport', rateHour: { used: 19, limit: 20 }, rateDay: { used: 30, limit: 100 } },
         { board: 'quiet', rateHour: { used: 1, limit: 20 }, rateDay: { used: 2, limit: 100 } },

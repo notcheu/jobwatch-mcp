@@ -9,6 +9,7 @@ import {
   installedModules,
   installedUtilities,
   installedUtilityIds,
+  budgetDefaults,
   type InstalledAdapterMap,
   type InstalledModuleMap,
   type InstalledUtilityMap,
@@ -136,5 +137,40 @@ describe('describeInstalledUtilities and describeInstalledModules', () => {
       ['a', 'adapter'],
       ['geo', 'utility'],
     ]);
+  });
+});
+
+describe('the default budgets', () => {
+  it('have an entry for every installed module and none for a module that is not installed', () => {
+    expect(Object.keys(budgetDefaults).sort()).toEqual(Object.keys(installedModules).sort());
+  });
+
+  it('are whole numbers from 0 to 1000000, hourly and daily', () => {
+    for (const [id, budget] of Object.entries(budgetDefaults)) {
+      expect(Object.keys(budget).sort(), id).toEqual(['daily', 'hourly']);
+      for (const value of Object.values(budget)) expect(Number.isInteger(value) && value >= 0 && value <= 1_000_000, id).toBe(true);
+    }
+  });
+
+  it('leave room for the most expensive call of every tool, so no default makes a tool unrunnable', async () => {
+    for (const [id, load] of Object.entries(installedModules)) {
+      const budget = budgetDefaults[id];
+      for (const tool of (await load()).tools) {
+        expect(tool.limits.cost, `${id}/${tool.name} against hourly`).toBeLessThanOrEqual(budget?.hourly ?? 0);
+        expect(tool.limits.cost, `${id}/${tool.name} against daily`).toBeLessThanOrEqual(budget?.daily ?? 0);
+      }
+    }
+  });
+
+  it('keep the approved LinkedIn budget: changing it takes a decision (docs/plans/09-security.md), so this test says so', () => {
+    expect(budgetDefaults['linkedin']).toEqual({ hourly: 200, daily: 400 });
+  });
+
+  it('keep the other numbers that were declared by the modules before they moved here', () => {
+    expect(budgetDefaults['apec']).toEqual({ hourly: 100, daily: 300 });
+    expect(budgetDefaults['wttj']).toEqual({ hourly: 60, daily: 200 });
+    for (const id of ['ashby', 'greenhouse', 'lever', 'teamtailor']) expect(budgetDefaults[id], id).toEqual({ hourly: 600, daily: 3000 });
+    expect(budgetDefaults['ats-discovery']).toEqual({ hourly: 200, daily: 600 });
+    expect(budgetDefaults['linkedin-geo']).toEqual({ hourly: 60, daily: 300 });
   });
 });

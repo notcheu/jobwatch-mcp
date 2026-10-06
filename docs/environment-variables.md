@@ -9,6 +9,7 @@ All variables are optional unless noted. An empty value counts as "not set". The
 
 - [General](#general)
 - [Modules](#modules)
+- [Budgets](#budgets)
 - [OAuth](#oauth)
 - [Browser](#browser)
 - [Operator dashboard](#operator-dashboard)
@@ -40,6 +41,20 @@ See [Modules](../README.md#modules) in the README for what a module is.
 | `UTILITIES` | unset | The same for utilities (`linkedin-geo,ats-discovery`). |
 | `LINKEDIN_DEFAULT_LOCATION` | unset | Where LinkedIn searches look when a call gives no `geo`: a place name (`Berlin, Germany`) or a LinkedIn geoId. No place is built in. |
 | `LINKEDIN_GEO_ALIASES` | unset | Names for LinkedIn geoIds you use often (`home=104246759,europe=91000000`). |
+
+## Budgets
+
+How many requests a module may make, in any one hour and in any 24 hours (a call reserves its cost first and settles to what it really spent; a call that would go over is refused with `rate_limited`). Each module has an hourly and a daily number. Three layers set them, and **each window is resolved on its own**:
+
+1. **The environment**, `<MODULE ID>_BUDGET_HOURLY` and `<MODULE ID>_BUDGET_DAILY`: the id in capitals, `-` as `_`. They win. The dashboard shows their value and cannot change it.
+2. **What you save** from the dashboard (Tools & status, the settings menu of a module, Budget), kept in `<DATA_DIR>/budgets.json`. It applies to the next call, with no restart.
+3. **The defaults**, in [`packages/mcp-modules/src/budgets.json`](../packages/mcp-modules/src/budgets.json): one entry per installed module, `{ "hourly": n, "daily": n }`. Edit the file to change a default (a test pins the LinkedIn one, and checks that every tool still fits in its module's budget). A module with no entry keeps the budget it declares itself, or the engine default of its kind (browser 120 per hour and 300 per day, HTTP 600 and 3000).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LINKEDIN_BUDGET_HOURLY`, `LINKEDIN_BUDGET_DAILY` | unset | The budget of `linkedin`. The same pattern exists for every installed module: `APEC_BUDGET_*`, `WTTJ_BUDGET_*`, `ASHBY_BUDGET_*`, `GREENHOUSE_BUDGET_*`, `LEVER_BUDGET_*`, `TEAMTAILOR_BUDGET_*`, `ATS_DISCOVERY_BUDGET_*`, `LINKEDIN_GEO_BUDGET_*`. |
+
+A value that is not a whole number from 0 to 1000000 stops the server at startup and names the variable. Company boards (`greenhouse`, `lever`, `ashby`, `teamtailor`) also have a budget per board, set by the module (20 per hour and 100 per day); these variables set the budget of the platform as a whole. `budgets.json` is read at startup: edit it by hand only while the router is stopped.
 
 ## OAuth
 

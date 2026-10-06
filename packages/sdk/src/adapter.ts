@@ -32,7 +32,11 @@ export interface ModuleBase {
    * matches `bsport.teamtailor.com` but not `a.b.teamtailor.com` or the bare domain). Enforced by `BrowserSession` and `HttpClient`.
    */
   allowedHosts: readonly string[];
-  /** Budget for this platform. Omit to get the engine default for the adapter kind (browser: 120/hour, 300/day; http: 600/hour, 3000/day). */
+  /**
+   * Budget for this platform. Omit to get the engine default for the adapter kind (browser: 120/hour, 300/day; http: 600/hour, 3000/day).
+   * The installed modules do not set it: their budget is in `packages/mcp-modules/src/budgets.json`, and the operator can change it
+   * from the dashboard or with `<ID>_BUDGET_HOURLY` and `<ID>_BUDGET_DAILY`, both of which win over this.
+   */
   rate?: RatePolicy;
   /**
    * Budget of ONE company board (a key a tool names in `limits.keys`), separate from `rate`: `rate` caps the whole platform,

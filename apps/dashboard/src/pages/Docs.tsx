@@ -161,6 +161,9 @@ function ToolDetail({ tool, module }: { tool: ToolDoc; module: ModuleDoc }) {
 
 const tool = createColumnHelper<ToolDoc>();
 
+/** Fixed widths, so the columns line up from one module card to the next: Tool and Cost are set, Title takes the rest. */
+const TOOL_COLUMN_CLASS: Record<string, string> = { name: 'w-64', costMax: 'w-24 text-right' };
+
 /** The tools of one module, one row each; a row opens to its full documentation. */
 function ToolsTable({ module }: { module: ModuleDoc }) {
   const columns = [
@@ -172,7 +175,6 @@ function ToolsTable({ module }: { module: ModuleDoc }) {
           className="flex items-center gap-1.5 font-medium"
           aria-expanded={info.row.getIsExpanded()}
           aria-label={`${info.row.getIsExpanded() ? 'Hide' : 'Show'} ${info.getValue()}`}
-          onClick={info.row.getToggleExpandedHandler()}
         >
           {info.row.getIsExpanded() ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
           {info.getValue()}
@@ -180,7 +182,6 @@ function ToolsTable({ module }: { module: ModuleDoc }) {
       ),
     }),
     tool.accessor('title', { header: 'Title', cell: (info) => <span className="text-sm">{info.getValue()}</span> }),
-    tool.display({ id: 'annotations', header: 'Hints', cell: (info) => <Annotations tool={info.row.original} /> }),
     tool.accessor('costMax', { header: 'Cost', cell: (info) => <span className="tabular-nums">{info.getValue()}</span> }),
   ];
   const table = useReactTable({
@@ -192,12 +193,14 @@ function ToolsTable({ module }: { module: ModuleDoc }) {
     getRowId: (row) => row.name,
   });
   return (
-    <Table aria-label={`${module.displayName} tools`}>
+    <Table aria-label={`${module.displayName} tools`} className="table-fixed">
       <TableHeader>
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id} className="hover:bg-transparent">
             {group.headers.map((header) => (
-              <TableHead key={header.id}>{flexRender(header.column.columnDef.header, header.getContext())}</TableHead>
+              <TableHead key={header.id} className={TOOL_COLUMN_CLASS[header.column.id]}>
+                {flexRender(header.column.columnDef.header, header.getContext())}
+              </TableHead>
             ))}
           </TableRow>
         ))}
@@ -205,9 +208,12 @@ function ToolsTable({ module }: { module: ModuleDoc }) {
       <TableBody>
         {table.getRowModel().rows.map((row) => (
           <Fragment key={row.id}>
-            <TableRow>
+            {/* The whole row toggles; the button inside stays for the keyboard (its click bubbles up to the row). */}
+            <TableRow className="cursor-pointer" onClick={row.getToggleExpandedHandler()}>
               {row.getVisibleCells().map((cell) => (
-                <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                <TableCell key={cell.id} className={TOOL_COLUMN_CLASS[cell.column.id]}>
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableCell>
               ))}
             </TableRow>
             {row.getIsExpanded() && (
@@ -228,11 +234,15 @@ function ModuleCard({ module }: { module: ModuleDoc }) {
   return (
     <Card aria-label={module.displayName}>
       <CardHeader className="space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <CardTitle className="text-sm normal-case tracking-normal text-foreground">{module.displayName}</CardTitle>
-          <Badge variant="secondary">{module.kind === 'browser' ? 'browser' : 'HTTP'}</Badge>
-          <Badge variant={module.enabled ? 'success' : 'outline'}>{module.enabled ? 'enabled' : 'disabled'}</Badge>
-          <code className="text-xs text-muted-foreground">{module.id}</code>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-sm normal-case tracking-normal text-foreground">{module.displayName}</CardTitle>
+            <code className="text-xs text-muted-foreground">{module.id}</code>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Badge variant="secondary">{module.kind === 'browser' ? 'browser' : 'HTTP'}</Badge>
+            <Badge variant={module.enabled ? 'success' : 'outline'}>{module.enabled ? 'enabled' : 'disabled'}</Badge>
+          </div>
         </div>
         <p className="text-xs text-muted-foreground">{module.description}</p>
       </CardHeader>

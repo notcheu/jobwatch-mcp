@@ -12,10 +12,16 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+const budget = {
+  hourly: { value: 50, source: 'config' as const, default: 200, envVar: 'PROBE_BUDGET_HOURLY' },
+  daily: { value: 500, source: 'default' as const, default: 500, envVar: 'PROBE_BUDGET_DAILY' },
+};
+
 async function setup(over: Partial<Changes> = {}) {
   const changes: Changes = {
     setAdapter: vi.fn(async () => ({ enabledAdapters: ['apec'], addedTools: ['apec_search', 'apec_job'], removedTools: [] })),
     clearData: vi.fn(async () => ({ jobs: 12, searches: 3 })),
+    setBudget: vi.fn(async () => budget),
     running: vi.fn(() => 0),
     restart: vi.fn(),
     ...over,
@@ -128,6 +134,47 @@ describe('clear the data of an adapter', () => {
     const other = await setup();
     expect((await other.send('DELETE', '/adapters/Bad%20Id/data')).status).toBe(400);
     expect(other.changes.clearData).not.toHaveBeenCalled();
+  });
+});
+
+describe('the budget of an adapter', () => {
+  it('saves the windows it is given, answers with the budget that applies, and logs who did it', async () => {
+    const t = await setup();
+    expect(await t.send('PUT', '/adapters/probe/budget', { hourly: 50 })).toEqual({ status: 200, body: { id: 'probe', budget } });
+    expect(t.changes.setBudget).toHaveBeenCalledWith('probe', { hourly: 50 });
+    expect(t.entries.find((e) => e.msg === 'dashboard_budget_changed')).toMatchObject({
+      actor: 'me@example.com',
+      adapter: 'probe',
+      hourly: 50,
+    });
+    await t.send('PUT', '/adapters/probe/budget', { hourly: 0, daily: 1_000_000 });
+    expect(t.changes.setBudget).toHaveBeenLastCalledWith('probe', { hourly: 0, daily: 1_000_000 }); // both bounds are allowed
+  });
+
+  it('refuses a body that is empty, out of range, fractional, mistyped or has another key, before it reaches the router', async () => {
+    const t = await setup();
+    for (const body of [{}, { hourly: -1 }, { daily: 1_000_001 }, { hourly: 1.5 }, { daily: '5' }, { hourly: 5, weekly: 1 }, undefined]) {
+      expect((await t.send('PUT', '/adapters/probe/budget', body)).status, JSON.stringify(body)).toBe(400);
+    }
+    expect((await t.send('PUT', '/adapters/Bad%20Id/budget', { hourly: 1 })).status).toBe(400);
+    expect(t.changes.setBudget).not.toHaveBeenCalled();
+  });
+
+  it('shows the refusal of the router: the environment sets it, or no such module', async () => {
+    for (const [status, code] of [
+      [409, 'env_locked'],
+      [404, 'not_found'],
+    ] as const) {
+      const t = await setup({
+        setBudget: async () => {
+          throw new ChangeRefused(status, code, `because ${code}`);
+        },
+      });
+      expect(await t.send('PUT', '/adapters/probe/budget', { daily: 5 })).toEqual({
+        status,
+        body: { error: code, message: `because ${code}` },
+      });
+    }
   });
 });
 

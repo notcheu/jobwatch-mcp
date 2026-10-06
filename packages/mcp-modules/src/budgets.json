@@ -1,0 +1,11 @@
+{
+  "apec": { "hourly": 100, "daily": 300 },
+  "ashby": { "hourly": 600, "daily": 3000 },
+  "ats-discovery": { "hourly": 200, "daily": 600 },
+  "greenhouse": { "hourly": 600, "daily": 3000 },
+  "lever": { "hourly": 600, "daily": 3000 },
+  "linkedin": { "hourly": 200, "daily": 400 },
+  "linkedin-geo": { "hourly": 60, "daily": 300 },
+  "teamtailor": { "hourly": 600, "daily": 3000 },
+  "wttj": { "hourly": 60, "daily": 200 }
+}

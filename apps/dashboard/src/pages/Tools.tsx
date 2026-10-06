@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ToolState } from '@jobwatch/dashboard-api';
-import { AlertTriangle, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Gauge, Power, RotateCcw, Settings as SettingsIcon, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { BudgetDialog } from '@/components/BudgetDialog';
+import { ActionsMenu } from '@/components/ui/actions-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ApiError, api, navigation } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -60,6 +62,7 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
     },
   });
   const [confirmClear, setConfirmClear] = useState(false);
+  const [budgetOpen, setBudgetOpen] = useState(false);
   const clear = useMutation({
     mutationFn: () => api.clearData(adapter.id),
     onSuccess: (result) => {
@@ -76,68 +79,84 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
       setError(failure instanceof Error ? failure.message : 'The change failed.');
     },
   });
-  const warnsAboutBudget = adapter.id === 'linkedin';
   return (
     <Card aria-label={adapter.displayName} className={cn(!adapter.enabled && 'opacity-80')}>
       <CardHeader className="flex-row items-start justify-between gap-2 space-y-0">
-        <div className="space-y-1">
-          <CardTitle className="text-sm normal-case tracking-normal text-foreground">{adapter.displayName}</CardTitle>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="secondary">{adapter.role === 'utility' ? 'utility' : adapter.kind === 'browser' ? 'browser' : 'HTTP'}</Badge>
-            <Badge variant={adapter.enabled ? 'success' : 'outline'}>{adapter.enabled ? 'enabled' : 'disabled'}</Badge>
-            {adapter.session !== null && (
-              <Badge variant={SESSION_BADGE[adapter.session.state].variant} title={adapter.session.note ?? undefined}>
-                {SESSION_BADGE[adapter.session.state].label} · {ago(adapter.session.checkedAt)}
-              </Badge>
-            )}
-            {adapter.enabled && adapter.kind === 'browser' && adapter.session === null && (
-              <Badge variant="outline">session not checked</Badge>
-            )}
-            {adapter.breaker !== null && <Badge variant="destructive">breaker open: {adapter.breaker.reason}</Badge>}
-          </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <CardTitle className="mr-1 text-sm normal-case tracking-normal text-foreground">{adapter.displayName}</CardTitle>
+          <Badge variant="secondary">{adapter.role === 'utility' ? 'utility' : adapter.kind === 'browser' ? 'browser' : 'HTTP'}</Badge>
+          <Badge variant={adapter.enabled ? 'success' : 'outline'}>{adapter.enabled ? 'enabled' : 'disabled'}</Badge>
+          {adapter.session !== null && (
+            <Badge variant={SESSION_BADGE[adapter.session.state].variant} title={adapter.session.note ?? undefined}>
+              {SESSION_BADGE[adapter.session.state].label} · {ago(adapter.session.checkedAt)}
+            </Badge>
+          )}
+          {adapter.enabled && adapter.kind === 'browser' && adapter.session === null && (
+            <Badge variant="outline">session not checked</Badge>
+          )}
+          {adapter.breaker !== null && <Badge variant="destructive">breaker open: {adapter.breaker.reason}</Badge>}
         </div>
-        <Switch
-          aria-label={`${adapter.enabled ? 'Disable' : 'Enable'} ${adapter.displayName}`}
-          checked={adapter.enabled}
-          disabled={adapter.pinned || toggle.isPending}
-          onCheckedChange={(enabled) => toggle.mutate(enabled)}
+        <ActionsMenu
+          label={`Settings of ${adapter.displayName}`}
+          icon={<SettingsIcon className="size-4" />}
+          actions={[
+            {
+              id: 'toggle',
+              label: adapter.enabled ? 'Disable' : 'Enable',
+              icon: <Power className="size-4" />,
+              // ADAPTERS or UTILITIES sets the list: the page already says so at the top
+              disabled: adapter.pinned || toggle.isPending,
+              hint: adapter.pinned ? `Set by ${adapter.role === 'adapter' ? 'ADAPTERS' : 'UTILITIES'}` : undefined,
+              onSelect: () => toggle.mutate(!adapter.enabled),
+            },
+            { id: 'budget', label: 'Budget…', icon: <Gauge className="size-4" />, onSelect: () => setBudgetOpen(true) },
+            ...(adapter.role === 'adapter'
+              ? [
+                  {
+                    id: 'clear',
+                    label: 'Clear stored data…',
+                    icon: <Trash2 className="size-4" />,
+                    destructive: true,
+                    onSelect: () => setConfirmClear(true),
+                  },
+                ]
+              : []),
+          ]}
         />
+        <BudgetDialog
+          open={budgetOpen}
+          id={adapter.id}
+          name={adapter.displayName}
+          budget={adapter.budget}
+          onClose={() => setBudgetOpen(false)}
+          onSaved={onChanged}
+          onReauth={onReauth}
+        />
+        <Dialog open={confirmClear} onOpenChange={(open) => !clear.isPending && setConfirmClear(open)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Clear the stored data of {adapter.displayName}?</DialogTitle>
+              <DialogDescription>
+                This deletes every job and search {adapter.displayName} stored, so its next call starts fresh. It cannot be undone. The
+                usage budget and the call history are kept.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setConfirmClear(false)} disabled={clear.isPending}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={() => clear.mutate()} disabled={clear.isPending}>
+                Clear data
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardHeader>
       <CardContent className="space-y-3">
-        {adapter.pinned && (
-          <p className="text-xs text-muted-foreground">
-            The list of {adapter.role}s is set by {adapter.role === 'adapter' ? 'ADAPTERS' : 'UTILITIES'}: unset it to change it here.
-          </p>
-        )}
-        {warnsAboutBudget && !adapter.enabled && (
-          <p className="flex items-start gap-1.5 text-xs text-warning">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> LinkedIn has a strict usage budget that needs your approval before it is
-            switched on (docs/plans/09-security.md).
-          </p>
-        )}
         {error !== undefined && (
           <p role="alert" className="text-xs text-destructive">
             {error}
           </p>
-        )}
-        {adapter.role === 'adapter' && (
-          <div className="flex flex-wrap items-center gap-2">
-            {!confirmClear ? (
-              <Button variant="outline" size="sm" onClick={() => setConfirmClear(true)}>
-                <Trash2 className="size-3.5" /> Clear stored data
-              </Button>
-            ) : (
-              <>
-                <span className="text-xs text-muted-foreground">Deletes its stored jobs and searches. Budgets and history are kept.</span>
-                <Button variant="destructive" size="sm" disabled={clear.isPending} onClick={() => clear.mutate()}>
-                  Yes, clear
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setConfirmClear(false)}>
-                  Cancel
-                </Button>
-              </>
-            )}
-          </div>
         )}
         {adapter.rateHour !== null && adapter.rateDay !== null && (
           <div className="grid gap-2 sm:grid-cols-2">
@@ -217,6 +236,10 @@ export function Tools() {
   const off = adapters.filter((adapter) => adapter.role === 'adapter' && !adapter.enabled);
   const utilities = adapters.filter((adapter) => adapter.role === 'utility');
   const runtime = tools.data?.runtime;
+  // ADAPTERS and UTILITIES each pin one list: say which, once, at the top, instead of on every card
+  const pinned = (['adapter', 'utility'] as const)
+    .filter((role) => adapters.some((module) => module.role === role && module.pinned))
+    .map((role) => ({ plural: role === 'adapter' ? 'adapters' : 'utilities', variable: role === 'adapter' ? 'ADAPTERS' : 'UTILITIES' }));
 
   return (
     <div className="w-full space-y-5 overflow-auto p-5">
@@ -228,6 +251,19 @@ export function Tools() {
           </Button>
         </div>
       )}
+      {pinned.map(({ plural, variable }) => (
+        <div
+          key={variable}
+          role="alert"
+          className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            <code>{variable}</code> is set in the environment, so the {plural} cannot be enabled or disabled here. Unset{' '}
+            <code>{variable}</code> to change them.
+          </span>
+        </div>
+      ))}
       {notice !== undefined && (
         <div role="status" className="rounded-md border border-success/40 bg-success/10 p-3 text-sm">
           {notice}

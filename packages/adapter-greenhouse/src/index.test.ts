@@ -224,6 +224,5 @@ describe('the budget per company board', () => {
 
   it('gives every company its own budget and the whole platform a high ceiling', () => {
     expect(adapter.keyRate).toEqual({ perHour: 20, perDay: 100 });
-    expect(adapter.rate).toEqual({ perHour: 600, perDay: 3000 });
   });
 });

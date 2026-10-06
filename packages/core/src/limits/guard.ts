@@ -1,4 +1,4 @@
-import type { McpModule, BaseContext, ErasedTool, JobwatchError } from '@jobwatch/sdk';
+import type { McpModule, BaseContext, ErasedTool, JobwatchError, RatePolicy } from '@jobwatch/sdk';
 import type { Admission, CallGuard } from '../call';
 import type { CircuitBreaker } from './breaker';
 import { effectiveRate } from './policy';
@@ -89,10 +89,15 @@ export function budgetKeys(tool: ErasedTool<BaseContext>, args: unknown): string
   return [...clean];
 }
 
-/** Policy lookup for a set of loaded adapters: unknown platforms fall back to the strictest default. */
-export function policyFor(adapters: readonly McpModule[]) {
-  const byPlatform = new Map(adapters.map((adapter) => [adapter.platform, effectiveRate(adapter)] as const));
-  const byKey = new Map(adapters.map((adapter) => [adapter.platform, adapter.keyRate ?? effectiveRate(adapter)] as const));
+/**
+ * Policy lookup for a set of loaded adapters: unknown platforms fall back to the strictest default. `budgetOf` is what the operator
+ * configured for a module (environment, dashboard, defaults file) given what the module declares; it is called on every lookup, so a
+ * budget changed from the dashboard applies to the next call.
+ */
+export function policyFor(adapters: readonly McpModule[], budgetOf?: (moduleId: string, declared: RatePolicy) => RatePolicy) {
+  const rateOf = (adapter: McpModule): RatePolicy => budgetOf?.(adapter.id, effectiveRate(adapter)) ?? effectiveRate(adapter);
+  const byPlatform = new Map(adapters.map((adapter) => [adapter.platform, rateOf(adapter)] as const));
+  const byKey = new Map(adapters.map((adapter) => [adapter.platform, adapter.keyRate ?? rateOf(adapter)] as const));
   return (platform: string) => {
     // `greenhouse#algolia`: the budget of one board of a platform, not of the platform
     const at = platform.indexOf('#');

@@ -29,6 +29,10 @@ export const tools = {
       tools: [],
       rateHour: null,
       rateDay: null,
+      budget: {
+        hourly: { value: 600, source: 'default', default: 600, envVar: 'X_BUDGET_HOURLY' },
+        daily: { value: 3000, source: 'default', default: 3000, envVar: 'X_BUDGET_DAILY' },
+      },
       boards: [],
       breaker: null,
       session: null,
@@ -45,6 +49,10 @@ export const tools = {
       tools: [],
       rateHour: null,
       rateDay: null,
+      budget: {
+        hourly: { value: 600, source: 'default', default: 600, envVar: 'X_BUDGET_HOURLY' },
+        daily: { value: 3000, source: 'default', default: 3000, envVar: 'X_BUDGET_DAILY' },
+      },
       boards: [],
       breaker: null,
       session: null,
@@ -61,6 +69,10 @@ export const tools = {
       tools: [],
       rateHour: null,
       rateDay: null,
+      budget: {
+        hourly: { value: 600, source: 'default', default: 600, envVar: 'X_BUDGET_HOURLY' },
+        daily: { value: 3000, source: 'default', default: 3000, envVar: 'X_BUDGET_DAILY' },
+      },
       boards: [],
       breaker: null,
       session: null,

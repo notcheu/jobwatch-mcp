@@ -1,6 +1,6 @@
 // `npm run dev:dashboard`: the dashboard interface with hot reload (Vite) on top of the router that `npm run dev` runs.
 // It opens the router's dashboard listener (what `jobwatch dashboard start` does, through the control socket), points the Vite proxy at it,
-// and closes the listener again when you stop it. Start `npm run dev` first, in another terminal. Variables: ./.env.local, then the shell.
+// keeps it open (`npm run dev` restarts the router on every change of the server, which closes the listener), and closes it when you stop. Start `npm run dev` first, in another terminal. Variables: ./.env.local, then the shell.
 import { spawn } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
@@ -51,6 +51,10 @@ const vite = spawn('npm', ['run', 'dev', '-w', '@jobwatch/dashboard'], {
   cwd: fileURLToPath(new URL('..', import.meta.url)), // the repo root: the workspace is found from there
   env: { ...process.env, DASHBOARD_PROXY_TARGET: target },
 });
+
+// Starting it again while it runs only renews its idle countdown, so this also reopens it after a restart of the router.
+const keepOpen = setInterval(() => void control({ command: 'dashboard.start', ttlMinutes: 1440 }).catch(() => undefined), 5000);
+keepOpen.unref();
 
 let closing = false;
 const stop = async (code) => {
