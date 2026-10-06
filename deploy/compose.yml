@@ -17,6 +17,7 @@ services:
     environment:
       PROXY_BASE_URL: ${BASE_URL:?set BASE_URL in .env}
       LISTEN_ADDR: 0.0.0.0:${PORT:?set PORT in .env}
+      METRICS_ADDR: 127.0.0.1:9090          # inside the container only, never published
       UPSTREAM_MCP_URL: http://router:${PORT:?set PORT in .env}/mcp   # the front serves and forwards this same path (/mcp)
       REDIS_URL: redis://redis:6379/0
     depends_on:

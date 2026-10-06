@@ -43,7 +43,7 @@ See [Modules](../README.md#modules) in the README for what a module is.
 
 ## OAuth
 
-Needed only for the public deployment behind the OAuth front. The front's own `PROXY_BASE_URL` (= `BASE_URL`), `UPSTREAM_MCP_URL` (`http://router:${PORT}/mcp`), and `LISTEN_ADDR` (`0.0.0.0:${PORT}`) are set in `compose.yml`, not here. Step by step: [`oauth.md`](oauth.md).
+Needed only for the public deployment behind the OAuth front. The front's own `PROXY_BASE_URL` (= `BASE_URL`), `UPSTREAM_MCP_URL` (`http://router:${PORT}/mcp`), `LISTEN_ADDR` (`0.0.0.0:${PORT}`) and `METRICS_ADDR` (`127.0.0.1:9090`, never published) are set in `compose.yml`, not here. Step by step: [`oauth.md`](oauth.md).
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -120,4 +120,4 @@ Closed until `jobwatch dashboard start`. Sign-in variables are under [OAuth](#oa
 - **Images:** `notcheu/jobwatch-mcp:latest`, `redis:7-alpine` and the OAuth front `ghcr.io/babs/mcp-auth-proxy:1.4.1`.
 - **Published addresses:** the front's `PORT`, `DASHBOARD_PORT` and `METRICS_PORT` are published on `127.0.0.1`. Replace it by the host's LAN IP if the reverse proxy or Prometheus is on another machine or in a container.
 - **Docker socket:** `/var/run/docker.sock` (Docker Desktop and a default install). For the rootless Docker socket of a dedicated user, add `compose.rootless.yml` ([`rootless-docker.md`](rootless-docker.md)); for any other, edit the mount in `compose.yml`.
-- **The front's own settings:** `PROXY_BASE_URL`, `UPSTREAM_MCP_URL`, `LISTEN_ADDR`.
+- **The front's own settings:** `PROXY_BASE_URL`, `UPSTREAM_MCP_URL`, `LISTEN_ADDR`, `METRICS_ADDR`.
