@@ -3,5 +3,6 @@
 # Host setup and why this is recommended on a server: docs/rootless-docker.md.
 services:
   router:
+    user: "0:0"                              # uid 0 in the container is the Docker user on the host: it owns ./data and can open the socket. Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
     volumes:
       - "${XDG_RUNTIME_DIR:?run Compose as the rootless Docker user (XDG_RUNTIME_DIR is unset)}/docker.sock:/var/run/docker.sock"   # replaces the base file's mount of the same container path

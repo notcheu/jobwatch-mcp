@@ -8,10 +8,12 @@ volumes:
 networks:
   jobwatch-core:     { internal: false }     # front <-> router, front <-> redis (the front needs egress to reach Google)
   jobwatch-browsers: { name: "${BROWSER_NETWORK:?set BROWSER_NETWORK in .env}", internal: false }   # router <-> spawned browsers; egress is open
+
 services:
-  front:                                     # OAuth 2.1 authorization server + reverse proxy
+  # OAuth 2.1 authorization server + reverse proxy
+  front:
     image: ghcr.io/babs/mcp-auth-proxy:1.4.1
-    env_file: .env   # OIDC_*, TOKEN_SIGNING_SECRET, TRUSTED_PROXY_CIDRS
+    env_file: .env
     environment:
       PROXY_BASE_URL: ${BASE_URL:?set BASE_URL in .env}
       LISTEN_ADDR: 0.0.0.0:${PORT:?set PORT in .env}
@@ -28,6 +30,7 @@ services:
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
     restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     user: "999:999"                          # its root entrypoint needs SETUID/SETGID, which cap_drop ALL removes
@@ -43,18 +46,17 @@ services:
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
     restart: unless-stopped
+
   router:
-    image: notcheu/jobwatch-mcp:latest       # pin a version (notcheu/jobwatch-mcp:0.1.0) for a reproducible install, or build your own with `docker build -t notcheu/jobwatch-mcp:latest .`
+    image: notcheu/jobwatch-mcp:latest
     env_file: .env
-    user: "0:0"                              # owns ./data and can open the Docker socket (under rootless Docker it is the Docker user on the host). Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
     read_only: true
     tmpfs: [ "/tmp:rw,size=64m" ]
     cap_drop: [ ALL ]
     security_opt: [ "no-new-privileges:true" ]
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"   # gives the router control of that daemon, so use a dedicated user's (compose.rootless.yml). Edit the left side for another socket
+      - "/var/run/docker.sock:/var/run/docker.sock"
       - "./data:/data"
-      # Browser profiles are named Docker volumes created by the router: no host paths.
     ports:
       - "127.0.0.1:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}"   # the dashboard, for the reverse proxy; nothing listens until it is started
       - "127.0.0.1:${METRICS_PORT:?set METRICS_PORT in .env}:${METRICS_PORT:?set METRICS_PORT in .env}"   # Prometheus scrape target; nothing listens unless metrics are enabled
