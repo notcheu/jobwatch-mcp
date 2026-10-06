@@ -1,9 +1,12 @@
 name: Release
 
-# Every push to main updates (or opens) the release pull request: version bump and CHANGELOG.md from the conventional PR titles.
-# Merging that pull request tags the release, creates the GitHub Release and, in the same run, publishes the router image.
+# Releases are on demand. Running this workflow by hand (Actions, Release, Run workflow, or `gh workflow run release.yml`) opens or updates the
+# release pull request: version bump and CHANGELOG.md from the conventional PR titles. Merging that pull request tags the release, creates the
+# GitHub Release and, in the same run, publishes the router image. An ordinary merge to main does nothing: only the push of the release
+# pull request's own commit (`chore(main): release X.Y.Z`) starts the job.
 # (The image is built here and not from a `release: published` trigger: a release created with the default GITHUB_TOKEN does not start other workflows.)
 on:
+  workflow_dispatch:
   push:
     branches: [main]
 
@@ -14,6 +17,7 @@ permissions:
 
 jobs:
   release-please:
+    if: "github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'chore(main): release')"
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
