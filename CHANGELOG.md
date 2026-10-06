@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/notcheu/jobwatch-mcp/compare/v0.1.0...v0.1.1) (2026-10-06)
+
+
+### Refactoring
+
+* **deploy:** make rootless Docker and Watchtower compose add-ons ([#82](https://github.com/notcheu/jobwatch-mcp/issues/82)) ([bd82ce8](https://github.com/notcheu/jobwatch-mcp/commit/bd82ce83d58448ee6fddf18c981e4b3145086b2a))
+
 ## 0.1.0 (2026-10-06)
 
 
