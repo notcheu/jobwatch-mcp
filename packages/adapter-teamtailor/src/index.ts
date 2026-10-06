@@ -56,6 +56,18 @@ const teamtailorJobs = defineHttpTool({
     keys: (args) => [...new Set(args.boards.flatMap((board) => resolveBoard(board.trim())?.label ?? []))],
     outputMaxBytes: 262_144,
   },
+  examples: [
+    {
+      title: 'Open jobs that match a title',
+      prompt: 'List the open Teamtailor jobs of <company> whose title matches <job title>, posted in the last month.',
+      input: { boards: ['<company>'], title_any: ['<job title>'], posted_within: 'past_month' },
+    },
+    {
+      title: 'Only what is new',
+      prompt: 'Check <company> and <other company> on Teamtailor and show only the jobs you have not stored before.',
+      input: { boards: ['<company>', '<other company>'], only_new: true },
+    },
+  ],
   handler: (args, ctx) => runBoardTool(ctx, 'teamtailor', teamtailor, args),
 });
 

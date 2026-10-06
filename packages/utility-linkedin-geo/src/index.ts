@@ -62,6 +62,18 @@ export const locations = defineHttpTool({
   output,
   annotations: { readOnlyHint: true, openWorldHint: true, idempotentHint: false },
   limits: { timeoutS: 30, cost: 1, outputMaxBytes: 32_768 },
+  examples: [
+    {
+      title: 'Find a place',
+      prompt: 'Find the LinkedIn location id for <place>.',
+      input: { query: '<place>' },
+    },
+    {
+      title: 'List the saved places',
+      prompt: 'List the LinkedIn places I saved under a name.',
+      input: { list: true },
+    },
+  ],
   handler: async (args, { http, memory }) => {
     const modes = [
       args.query !== undefined,

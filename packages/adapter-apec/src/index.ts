@@ -176,6 +176,13 @@ const job = defineBrowserTool({
   }),
   annotations,
   limits: { timeoutS: 300, cost: 1 + 25, estimate: (args) => 1 + new Set(args.ids).size, outputMaxBytes: 262_144 },
+  examples: [
+    {
+      title: 'Read one offer in full',
+      prompt: 'Read the full description of the Apec offer 178000000W.',
+      input: { ids: ['178000000W'], detail: 'full' },
+    },
+  ],
   handler: async (args, ctx) => {
     const matches = termMatcher(args.disallowed_terms);
     let opened = false;
@@ -251,6 +258,18 @@ const search = defineBrowserTool({
     estimate: (args) => 1 + searchPagesFor(args.max_results) + Math.min(args.max_jobs, args.max_results),
     outputMaxBytes: 262_144,
   },
+  examples: [
+    {
+      title: 'Permanent roles in Paris',
+      prompt: 'Search Apec for "chef de projet" CDI offers in Paris (75) published in the past week.',
+      input: { keywords: 'chef de projet', departments: ['75'], cdi_only: true, posted_within: 'past_week' },
+    },
+    {
+      title: 'With a salary floor',
+      prompt: 'Search Apec for "développeur" offers paying at least 50 k€ and skip the ones that mention "stage".',
+      input: { keywords: 'développeur', min_salary_k: 50, disallowed_terms: ['stage'] },
+    },
+  ],
   handler: async (args, ctx) => {
     const deadline = Date.now() + READ_BUDGET_MS;
     await openApec(ctx);

@@ -2,6 +2,7 @@ import {
   API_PREFIX,
   adapterToggleSchema,
   dataClearedSchema,
+  docsSchema,
   callDetailSchema,
   callsPageSchema,
   jobDetailSchema,
@@ -15,6 +16,7 @@ import {
   usageSchemaResponse,
   type AdapterToggle,
   type DataCleared,
+  type Docs,
   type CallDetail,
   type CallsPage,
   type JobDetail,
@@ -91,6 +93,7 @@ export const api = {
     request(jobDetailSchema, `/jobs/${encodeURIComponent(source)}/${encodeURIComponent(id)}`),
   searches: (params: { since?: string; until?: string; source?: string }): Promise<Searches> =>
     request(searchesSchema, `/searches${query(params)}`),
+  docs: (): Promise<Docs> => request(docsSchema, '/docs'),
   tools: (): Promise<Tools> => request(toolsSchema, '/tools'),
   settings: (): Promise<Settings> => request(settingsSchema, '/settings'),
   usage: (params: {

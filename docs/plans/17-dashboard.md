@@ -97,6 +97,7 @@ All paths are under the `/dashboard` prefix (`/dashboard/api/v1/...`). All `GET`
 | `GET /api/v1/jobs?q&source&board&found_by&from&to&dateField&sort&dir&page&pageSize` | page of jobs **without description**, total count; server-side sort, filter and paging for TanStack Table |
 | `GET /api/v1/jobs/:source/:id` | one job with description, summary, outline sections, hints, dates, `found_by`, url |
 | `GET /api/v1/searches?since&until&source` | keyword statistics (same data as `stored_searches`) |
+| `GET /api/v1/docs` | per installed module, enabled or not: description, role, kind, enabled, allowed hosts, and per tool: description, annotations, cost, parameters (from the input JSON Schema), smallest input, examples. No database content |
 | `GET /api/v1/tools` | per adapter: id, kind, enabled, tools with parameters (from the catalog), rate usage (hour, day, limit), per-board usage, breaker, session state |
 | `PUT /api/v1/adapters/:id` `{ "enabled": bool }` | writes `adapters.json` and **hot-reloads** the registry (D7); answers `{ applied: true, tools: [...added or removed], reconnectNeeded: true }` |
 | `DELETE /api/v1/adapters/:id/data` | behind a confirm button: forgets the jobs and searches the adapter stored (`jobs`, `search_runs`, `search_hits` of its platform), so its next call starts fresh; answers `{ id, jobs, searches }` (rows removed). Usage, budgets, the breaker, the call log and the daily analytics are kept: clearing never resets a request budget. Adapters only: a utility stores no jobs |
@@ -130,7 +131,7 @@ Search and filtering run in SQL (`Store.listJobs` gains `q` over title and compa
 └──────────┴─────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Sidebar** (shadcn `Sidebar`, collapsible to icons): Overview, Analytics, Runs, Jobs, Searches, Tools & status, Settings (idle timeout, theme, token ratio, buffer size, read-only display of limits).
+- **Sidebar** (shadcn `Sidebar`, collapsible to icons): Overview, Analytics, Runs, Jobs, Searches, Tools & status, Docs, Settings (idle timeout, theme, token ratio, buffer size, read-only display of limits).
 - **Tabs** (shadcn `Tabs`) under the header: *All* plus one tab per **enabled** adapter. The selected tab filters the current section by platform and is kept in the URL (`?tool=linkedin`), so a view is a link.
 - **Detail panel**: shadcn `Sheet` (side right) or a resizable `ResizablePanel` pair on wide screens, so the table stays visible beside it. Closes with Escape; the selected row is in the URL (`/jobs/linkedin/4000000001`).
 
@@ -156,6 +157,8 @@ Column visibility menu, a search box (`q`), filters for source / board / keyword
 **Searches.** A table of keywords: platform, keywords, runs, jobs found / returned / new, last run, with a small bar showing the new-to-found ratio so a keyword that only brings the same jobs back stands out. Click a row: jobs of that keyword (`found_by` filter on the Jobs table).
 
 **Tools & status.** One card per installed adapter (grouped by enabled and disabled) and one per utility (their own section, with the same switch and budget bars): kind (HTTP, browser), session state with the time it was checked, breaker (open, reason, until), the tools with their parameters, the rate usage bars for the hour and the day, and for an ATS the per-board usage list (busiest first). A **switch enables or disables** the adapter (D7): it writes `adapters.json` and reloads the registry at once; the card shows "applied, reconnect the Claude connector to see the new tool list". A separate *Restart router* action (confirm dialog) stays for the rare case it is needed. Adapters forced by `ADAPTERS` show the switch disabled with the reason. LinkedIn's switch warns that its budget needs the operator's approval (`docs/plans/09`).
+
+**Docs.** What each tool does, read-only. Two tabs, Adapters and Utilities (`?kind=utilities`); one card per installed module with its description, kind and whether it is enabled (the page shows it, it cannot change it: use Tools & status or the CLI). A card is a TanStack table of its tools; a row opens to the description, the hints (read-only, idempotent, open-world, browser), the allowed hosts, the cost, a **parameter table** (name, type, required, default, allowed values, min, max, description) read from the tool's input JSON Schema by `describeParams` in the SDK, the tool's **examples** and the smallest accepted input (`sampleInput`), each with a copy button. An example is `{ title, prompt, input }`: the `prompt` is a sentence to paste in a Claude session, the `input` the arguments that call sends. Authors write them in the tool definition (`examples`, at most 5, never sent in `tools/list`); the registry check parses every `input` with the tool's own schema, so an example cannot drift. In a generic module the values the reader must replace are `<angle brackets>` (a place, a job title): generic code assumes no market or job family.
 
 **Analytics.** §7.
 

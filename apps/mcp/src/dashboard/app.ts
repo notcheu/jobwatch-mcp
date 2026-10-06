@@ -7,6 +7,7 @@ import { ZodError } from 'zod';
 import {
   checked,
   getCall,
+  getDocs,
   getJob,
   getOverview,
   getSettings,
@@ -275,6 +276,10 @@ export function createDashboardApp(deps: DashboardDeps): Express {
   api.get(
     '/tools',
     wrap(() => getTools(deps)),
+  );
+  api.get(
+    '/docs',
+    wrap(() => getDocs(deps)),
   );
   api.get(
     '/usage',

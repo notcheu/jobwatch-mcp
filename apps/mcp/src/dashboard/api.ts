@@ -1,6 +1,7 @@
 import {
   callDetailSchema,
   callRowSchema,
+  docsSchema,
   callsPageSchema,
   jobDetailSchema,
   jobsPageSchema,
@@ -10,6 +11,7 @@ import {
   toolsSchema,
   usageSchemaResponse,
   type CallDetail,
+  type Docs,
   type CallsPage,
   type JobDetail,
   type JobsPage,
@@ -33,7 +35,7 @@ import {
   type RuntimeManager,
   type Store,
 } from '@jobwatch/core';
-import { buildCatalog, extractHints, summarizeJob } from '@jobwatch/sdk';
+import { buildCatalog, describeParams, extractHints, sampleInput, summarizeJob } from '@jobwatch/sdk';
 import { z } from 'zod';
 
 /** What the dashboard reads. Nothing here can start a browser, call a site or spend a rate-limit unit. */
@@ -318,6 +320,49 @@ export async function getTools(data: DashboardData): Promise<Tools> {
       waiting: status?.waiting ?? 0,
     },
   });
+}
+
+// ---------------------------------------------------------------------------------------------------------- docs
+
+/**
+ * What the Docs page shows for every installed module, enabled or not: the description, the annotations, the hosts, the arguments
+ * read from the tool's JSON Schema, and the worked examples its author wrote. Nothing here comes from the database.
+ */
+export async function getDocs(data: DashboardData): Promise<Docs> {
+  const enabled = new Set(data.registry().enabled.map((adapter) => adapter.id));
+  const modules = [];
+  for (const entry of await describeInstalledModules(data.installed)) {
+    const load = data.installed[entry.id];
+    if (entry.summary === undefined || load === undefined) continue;
+    const module = await load();
+    const catalog = buildCatalog(module);
+    modules.push({
+      id: entry.id,
+      displayName: entry.summary.displayName,
+      description: module.description,
+      role: entry.summary.role,
+      kind: entry.summary.kind,
+      enabled: enabled.has(entry.id),
+      allowedHosts: [...module.allowedHosts],
+      openHttps: module.kind === 'http' && module.openHttps === true,
+      tools: catalog.map((tool, index) => ({
+        name: tool.name,
+        title: tool.title,
+        description: tool.description,
+        annotations: {
+          readOnly: tool.annotations.readOnlyHint,
+          idempotent: tool.annotations.idempotentHint,
+          openWorld: tool.annotations.openWorldHint,
+        },
+        needsBrowser: tool.needs_browser,
+        costMax: tool.limits.rate.cost,
+        params: describeParams(tool.inputSchema),
+        sampleInput: sampleInput(tool.inputSchema),
+        examples: (module.tools[index]?.examples ?? []).map((example) => ({ ...example, input: { ...example.input } })),
+      })),
+    });
+  }
+  return checked(docsSchema, { modules });
 }
 
 // -------------------------------------------------------------------------------------------------------- overview

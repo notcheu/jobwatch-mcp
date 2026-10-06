@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, BarChart3, Briefcase, LogOut, Moon, Search, Settings, Sun, Wrench, Zap } from 'lucide-react';
+import { Activity, BarChart3, BookOpen, Briefcase, LogOut, Moon, Search, Settings, Sun, Wrench, Zap } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ const SECTIONS = [
   { to: '/jobs', label: 'Jobs', icon: Briefcase, end: false, tabs: true },
   { to: '/searches', label: 'Searches', icon: Search, end: false, tabs: true },
   { to: '/tools', label: 'Tools & status', icon: Wrench, end: false, tabs: false },
+  { to: '/docs', label: 'Docs', icon: BookOpen, end: false, tabs: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false, tabs: false },
 ] as const;
 

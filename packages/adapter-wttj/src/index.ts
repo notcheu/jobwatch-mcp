@@ -174,6 +174,13 @@ const job = defineBrowserTool({
   }),
   annotations,
   limits: { timeoutS: 300, cost: 25, estimate: (args) => new Set(args.urls).size, outputMaxBytes: 262_144 },
+  examples: [
+    {
+      title: 'Read one job in full',
+      prompt: 'Read the full description of the Welcome to the Jungle job at <job URL>.',
+      input: { urls: ['https://www.welcometothejungle.com/fr/companies/company-slug/jobs/offer-slug'], detail: 'full' },
+    },
+  ],
   handler: async (args, ctx) => {
     const refs = new Map<string, JobRef>();
     for (const url of args.urls) {
@@ -258,6 +265,13 @@ const matches = defineBrowserTool({
     estimate: (args) => pagesFor(args.max_results) + Math.min(args.max_jobs, args.max_results),
     outputMaxBytes: 262_144,
   },
+  examples: [
+    {
+      title: "This week's matches",
+      prompt: 'Show the Welcome to the Jungle jobs matched to my profile from the past week.',
+      input: { posted_within: 'past_week', max_results: 20 },
+    },
+  ],
   handler: async (args, ctx) => {
     const deadline = Date.now() + READ_BUDGET_MS;
     const found = await readMatches(ctx, args.max_results);

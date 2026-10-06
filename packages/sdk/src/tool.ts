@@ -51,6 +51,20 @@ export interface AdapterResult<O extends object = Record<string, unknown>> {
   cost?: number;
 }
 
+/**
+ * A worked example of one tool, shown in the operator dashboard (never sent to Claude, so it costs no tokens in `tools/list`).
+ * `prompt` is what to paste in a Claude session to run it; `input` is the argument object that call sends. The registry check
+ * parses `input` with the tool's own schema, so an example cannot drift from the tool. In a generic module, write values the reader
+ * must replace as `<angle brackets>` (a place, a job title): the SDK assumes no market, language or job family.
+ */
+export interface ToolExample {
+  /** Short, what the example does. */
+  title: string;
+  /** A sentence to paste in Claude. */
+  prompt: string;
+  input: Readonly<Record<string, unknown>>;
+}
+
 export interface ToolDefinition<I, O extends object, C extends BaseContext> {
   /** snake_case, globally unique, e.g. `apec_search`. */
   name: string;
@@ -62,6 +76,8 @@ export interface ToolDefinition<I, O extends object, C extends BaseContext> {
   output: z.ZodType<O>;
   annotations: ToolAnnotations;
   limits: ToolLimits<I>;
+  /** Optional worked examples for the dashboard, at most 5 (`ToolExample`). */
+  examples?: readonly ToolExample[];
   handler: (args: I, ctx: C) => Promise<AdapterResult<O>>;
 }
 
@@ -78,6 +94,7 @@ export interface ErasedTool<C extends BaseContext> {
   output: z.ZodType;
   annotations: ToolAnnotations;
   limits: ToolLimits;
+  examples?: readonly ToolExample[];
   handler: (args: never, ctx: C) => Promise<AdapterResult>;
 }
 

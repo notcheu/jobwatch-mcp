@@ -74,6 +74,13 @@ export const atsFind = defineHttpTool({
       }, 0),
     outputMaxBytes: 32_768,
   },
+  examples: [
+    {
+      title: 'Which job board does a company use',
+      prompt: 'Which job board (Ashby, Greenhouse, Lever, Teamtailor) does <company> use, and what is its board name?',
+      input: { companies: ['<company>'] },
+    },
+  ],
   handler: async (args, { http }) => {
     const warnings: string[] = [];
     const wanted: readonly AtsId[] = args.ats ?? ATS_IDS;
