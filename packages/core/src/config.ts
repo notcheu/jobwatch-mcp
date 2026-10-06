@@ -186,7 +186,12 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       maxTabs: parsed.BROWSER_MAX_TABS,
       dashboard: {
         port: parsed.DASHBOARD_PORT,
-        url: parsed.DASHBOARD_URL ?? `${baseUrl.origin}/dashboard/`,
+        // Behind the reverse proxy the dashboard is at BASE_URL/dashboard/. With AUTH=none there is no proxy: it is on its own port.
+        url:
+          parsed.DASHBOARD_URL ??
+          (parsed.AUTH === 'none'
+            ? `${baseUrl.protocol}//${baseUrl.hostname}:${parsed.DASHBOARD_PORT}/dashboard/`
+            : `${baseUrl.origin}/dashboard/`),
         staticDir: parsed.DASHBOARD_STATIC_DIR,
         idleS: parsed.DASHBOARD_IDLE_S,
         sessionMaxS: parsed.DASHBOARD_SESSION_MAX_S,

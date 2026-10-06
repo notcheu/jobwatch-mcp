@@ -259,6 +259,24 @@ describe('dashboard sign-in config', () => {
   });
 });
 
+describe('dashboard address', () => {
+  it('is the public URL behind the reverse proxy', () => {
+    expect(loadConfig(base).config.dashboard.url).toBe('https://mcp.example.com/dashboard/');
+  });
+
+  it('is its own port when there is no proxy (AUTH=none), because the MCP port does not serve it', () => {
+    const local = { AUTH: 'none', BASE_URL: 'http://127.0.0.1:18931' };
+    expect(loadConfig(local).config.dashboard.url).toBe('http://127.0.0.1:8090/dashboard/');
+    expect(loadConfig({ ...local, DASHBOARD_PORT: '18933' }).config.dashboard.url).toBe('http://127.0.0.1:18933/dashboard/');
+  });
+
+  it('takes DASHBOARD_URL over both', () => {
+    expect(
+      loadConfig({ AUTH: 'none', BASE_URL: 'http://127.0.0.1:18931', DASHBOARD_URL: 'http://localhost:9/d/' }).config.dashboard.url,
+    ).toBe('http://localhost:9/d/');
+  });
+});
+
 describe('browser mode', () => {
   it('is docker by default', () => {
     expect(loadConfig(base).config).toMatchObject({ browserMode: 'docker', browserCdpAddress: undefined });

@@ -68,6 +68,8 @@ export interface RunningServer {
   reloadAdapters(): Promise<ReloadResult>;
   /** The MCP listener. */
   mcp: HttpServer;
+  /** Where the MCP endpoint is: the address the process listens on, and the public URL clients use (`BASE_URL`), both ending in `/mcp`. */
+  endpoints: { listen: string; public: string };
   /** The metrics listener, when enabled. */
   metrics: HttpServer | undefined;
   /** Stop accepting connections and wait for in-flight requests (force after `graceMs`). */
@@ -325,10 +327,12 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   if (metricsServer) await listen(metricsServer, options.metricsPort ?? config.metrics.port, config.listenHost);
 
   const address = mcpServer.address();
-  logger.info(
-    { port: typeof address === 'object' && address ? address.port : config.port, metrics: metricsServer !== undefined },
-    'listening',
-  );
+  const port = typeof address === 'object' && address ? address.port : config.port;
+  const endpoints = {
+    listen: `http://${config.listenHost.includes(':') ? `[${config.listenHost}]` : config.listenHost}:${port}/mcp`,
+    public: `${config.baseUrl}/mcp`,
+  };
+  logger.info({ port, url: endpoints.listen, metrics: metricsServer !== undefined }, 'listening');
 
   /** Hot reload (docs/plans/17-dashboard.md, section 6.4): re-read `adapters.json` and swap the registry. */
   const pinnedByEnv = config.adaptersFromEnv !== undefined || config.utilitiesFromEnv !== undefined;
@@ -361,6 +365,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const dashboard = new DashboardManager(
     {
       port: config.dashboard.port,
+      host: config.auth === 'front' ? '0.0.0.0' : config.listenHost,
       url: config.dashboard.url,
       publicOrigin: new URL(config.baseUrl).origin,
       authRequired: config.auth === 'front',
@@ -489,6 +494,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     },
     reloadAdapters,
     mcp: mcpServer,
+    endpoints,
     metrics: metricsServer,
     close: (graceMs = 10_000) => {
       closing ??= (async () => {

@@ -364,6 +364,14 @@ describe('lifecycle', () => {
     await expect(server.stop()).resolves.toBeUndefined();
   });
 
+  it('reports where the MCP endpoint is, with the real port, and the public URL clients use', async () => {
+    server = await startTestServer();
+    const port = server.url.port;
+    // the public URL is BASE_URL, which need not be the port the process listens on
+    expect(server.running.endpoints).toEqual({ listen: `http://127.0.0.1:${port}/mcp`, public: 'http://127.0.0.1:18999/mcp' });
+    expect(server.logs()).toContain(`"url":"http://127.0.0.1:${port}/mcp"`);
+  });
+
   it('stops listening on close', async () => {
     server = await startTestServer();
     const url = new URL('/healthz', server.url);

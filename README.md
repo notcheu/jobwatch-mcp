@@ -38,7 +38,7 @@ npm run build
 npm run start
 ```
 
-The MCP server is started on `http://127.0.0.1:18931/mcp`.
+The MCP server prints its address when it is ready: `MCP server listening on http://127.0.0.1:18931/mcp`.
 
 The browser modules (`linkedin`, `apec`, `wttj`) need a Chrome instance. From source they use **your own Chrome** by default, so there is nothing to pull. To use the Docker browser image instead, see [Browser: the Docker image or your own Chrome](#browser-the-docker-image-or-your-own-chrome).
 
@@ -214,7 +214,7 @@ jobwatch dashboard status
 jobwatch dashboard stop
 ```
 
-Signing in uses Google, with the same OAuth client as the connector by default: add `https://<your domain>/dashboard/auth/callback` to that client's authorized redirect URIs in Google Cloud Console. The Google app decides who can sign in (keep it in Testing status with only your account as a test user); the dashboard has no allowlist of its own. Changes made from the dashboard need a sign-in within the last 10 minutes. When the router runs for local development (`AUTH=none`, see `deploy/compose.dev.yml`) there is no sign-in and it is at `http://127.0.0.1:18933/dashboard/`. Behind a reverse proxy, route `/dashboard` to the dashboard port (`deploy/nginx/mcp.example.com.conf` already maps it for Nginx; see [`docs/reverse-proxy.md`](docs/reverse-proxy.md)). The interface is a React app in `apps/dashboard` (`npm run build` produces it; `npm run dev -w @jobwatch/dashboard` serves it with hot reload and proxies the API to a dashboard started on `127.0.0.1:18933`). The design is in [`docs/plans/17-dashboard.md`](docs/plans/17-dashboard.md).
+Signing in uses Google, with the same OAuth client as the connector by default: add `https://<your domain>/dashboard/auth/callback` to that client's authorized redirect URIs in Google Cloud Console. The Google app decides who can sign in (keep it in Testing status with only your account as a test user); the dashboard has no allowlist of its own. Changes made from the dashboard need a sign-in within the last 10 minutes. When the router runs for local development (`AUTH=none`, see `deploy/compose.dev.yml`) there is no sign-in and it is at `http://127.0.0.1:<DASHBOARD_PORT>/dashboard/` (default port 8090; the command prints the exact address). Behind a reverse proxy, route `/dashboard` to the dashboard port (`deploy/nginx/mcp.example.com.conf` already maps it for Nginx; see [`docs/reverse-proxy.md`](docs/reverse-proxy.md)). The interface is a React app in `apps/dashboard` (`npm run build` produces it). To work on it, start the server with `npm run dev`, then run `npm run dev:dashboard` in a second terminal: it opens the dashboard of that server and serves the interface with hot reload at `http://localhost:5173/dashboard/`. The design is in [`docs/plans/17-dashboard.md`](docs/plans/17-dashboard.md).
 
 ## Commands
 
@@ -250,7 +250,8 @@ Exit codes: 0 ok, 1 usage or configuration error, 2 an installed adapter is brok
 | `npm run test:integration` | Drive a real browser container (needs Docker; never in CI). |
 | `npm run test:dashboard` | Smoke-test the built router and dashboard (run `npm run build` first; not in CI). |
 | `npm run dev` | Run the server from the sources with watch and restart, configured by `.env.local`. |
-| `npm run jobwatch -- <args>` | Build and run the CLI. |
+| `npm run dev:dashboard` | Serve the dashboard interface with hot reload (Vite, `http://localhost:5173/dashboard/`) on top of the server that `npm run dev` runs: it opens the server's dashboard, proxies the API to it and closes it when you stop. |
+| `npm run jobwatch -- <args>` | Build and run the CLI with the environment of `npm run dev` (`.env.local`, then `.env`), so it reaches the local server's data folder and control socket (`dashboard start`, `adapters enable`). |
 
 ## Tools and example queries
 
@@ -266,7 +267,7 @@ Every environment variable, grouped by category (general, modules, OAuth, browse
 npm run dev
 ```
 
-The server is started on `http://127.0.0.1:18931/mcp` in watch mode.
+The server restarts on every change and prints its address when it is ready (`MCP server listening on http://127.0.0.1:18931/mcp`). To open the dashboard of that local server, run `npm run jobwatch -- dashboard start` in another terminal.
 
 ### Build your own image
 
