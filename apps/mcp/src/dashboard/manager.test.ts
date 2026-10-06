@@ -18,6 +18,7 @@ async function build(over: Partial<DashboardSettings> = {}) {
   const registry = await loadModules(['probe'], installedFixtures);
   const settings: DashboardSettings = {
     port: 0,
+    host: '127.0.0.1',
     url: 'https://jobs.example.com/dashboard/',
     publicOrigin: 'https://jobs.example.com',
     authRequired: false,
@@ -132,7 +133,7 @@ describe('DashboardManager', () => {
 
   it('fails cleanly when the port is taken', async () => {
     const blocker = createServer();
-    await new Promise<void>((resolve) => blocker.listen(0, '0.0.0.0', resolve));
+    await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
     const m = await build({ port: (blocker.address() as AddressInfo).port });
     await expect(m.start()).rejects.toThrow();
     expect(m.running).toBe(false);

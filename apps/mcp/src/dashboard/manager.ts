@@ -6,6 +6,8 @@ import { SessionStore } from './sessions';
 
 export interface DashboardSettings {
   port: number;
+  /** The interface it binds. Sign-in required: every interface (the reverse proxy reaches it). No sign-in (local development): the MCP listen address, loopback. */
+  host: string;
   /** Where the operator opens the dashboard. */
   url: string;
   /** `https://<domain>`: the origin it is served from. */
@@ -106,7 +108,7 @@ export class DashboardManager {
     const server = createServer(app);
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
-      server.listen(settings.port, '0.0.0.0', () => {
+      server.listen(settings.port, settings.host, () => {
         server.off('error', reject);
         resolve();
       });

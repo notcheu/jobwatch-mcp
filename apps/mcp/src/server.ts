@@ -365,6 +365,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const dashboard = new DashboardManager(
     {
       port: config.dashboard.port,
+      host: config.auth === 'front' ? '0.0.0.0' : config.listenHost,
       url: config.dashboard.url,
       publicOrigin: new URL(config.baseUrl).origin,
       authRequired: config.auth === 'front',
