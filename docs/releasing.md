@@ -14,8 +14,8 @@ Versions follow [semantic versioning](https://semver.org). The project is **0.x:
    | `build`, `ci`, `test`, `chore`, `wip` | not listed, no bump on their own |
    | any type with `!` (`feat!:`) or a `BREAKING CHANGE:` footer | major bump (minor while 0.x) |
 
-2. Every push to `main` makes [release-please](https://github.com/googleapis/release-please) open or update a **release pull request**: it bumps the version in `package.json` (and `apps/mcp/package.json`, which the server reports) and writes the new section of `CHANGELOG.md`. Never edit the version or the changelog by hand.
-3. **Merging the release pull request is the release.** release-please tags `vX.Y.Z`, creates the GitHub Release with the changelog, and the same workflow builds the router image for `linux/amd64` and `linux/arm64` and pushes it:
+2. **Releases are on demand.** An ordinary merge to `main` does nothing. When you want to release, run the workflow by hand (`gh workflow run release.yml`, or Actions, Release, Run workflow): [release-please](https://github.com/googleapis/release-please) opens or updates a **release pull request**, and running it again refreshes that pull request with what has been merged since. It bumps the version in `package.json` (and `apps/mcp/package.json`, which the server reports) and writes the new section of `CHANGELOG.md`. Never edit the version or the changelog by hand.
+3. **Merging the release pull request is the release.** Its squash commit is titled `chore(main): release X.Y.Z`, which is what starts the workflow by itself this time (if it was merged with another title, run the workflow by hand). release-please tags `vX.Y.Z`, creates the GitHub Release with the changelog, and the same workflow builds the router image for `linux/amd64` and `linux/arm64` and pushes it:
 
    | Registry | Image | Tags |
    |---|---|---|

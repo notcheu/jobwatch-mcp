@@ -108,7 +108,7 @@ The images may run on something other than the reference Ubuntu host, typically 
 Three workflows (`.github/workflows/`): `ci.yml` (tests on every pull request and push to `main`), `pr-title.yml` (the pull request title must be a conventional commit: squash merges use it as the commit message), and `release.yml` (versioning and publishing, described in [`docs/releasing.md`](../releasing.md)). **Watchtower** on the host, if you run it, notices a new digest and restarts the router.
 
 ```
-push to main → release-please opens/updates the release PR (version + CHANGELOG.md)
+manual run of release.yml → release-please opens/updates the release PR (version + CHANGELOG.md)
 merge of the release PR → tag vX.Y.Z + GitHub Release → build router image (Buildx, linux/amd64 + linux/arm64, provenance: false)
              → push notcheu/jobwatch-mcp and ghcr.io/<owner>/jobwatch-mcp: X.Y.Z, X.Y, latest → Watchtower (host, polls) → pulls + recreates router
 ```
