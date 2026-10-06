@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.1](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.1.0...jobwatch-router-v0.1.1) (2026-10-06)
+
+
+### Refactoring
+
+* **deploy:** make rootless Docker and Watchtower compose add-ons ([#82](https://github.com/notcheu/jobwatch-mcp/issues/82)) ([bd82ce8](https://github.com/notcheu/jobwatch-mcp/commit/bd82ce83d58448ee6fddf18c981e4b3145086b2a))
+
+
+### Documentation
+
+* default BROWSER_IMAGE to the published browser image ([#86](https://github.com/notcheu/jobwatch-mcp/issues/86)) ([d4c6848](https://github.com/notcheu/jobwatch-mcp/commit/d4c68488bb1a906d7ff0dca49cad831762962b46))
+
 ## 0.1.0 (2026-10-06)
 
 

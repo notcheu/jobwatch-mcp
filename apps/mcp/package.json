@@ -1,6 +1,6 @@
 {
   "name": "@jobwatch/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "The router: stateless Streamable HTTP MCP server. Composition root of core and the enabled adapters.",
   "type": "module",
