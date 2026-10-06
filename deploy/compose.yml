@@ -1,13 +1,16 @@
-# Copy this file next to a `.env` file (copy .env.example) and run `docker compose up -d`. Data lands in ./data.
-# PORT, BASE_URL, BROWSER_NETWORK, DASHBOARD_PORT and METRICS_PORT must be set in `.env`, or Compose stops and says which.
-# Settings live in `.env`; this file only holds what is tied to its own layout (images, networks, the Docker socket, what is published).
+# Copy this file next to a `.env` file (copy .env.example) and run `docker compose up -d`.
+# Data lands in ./data.
+# PORT, BASE_URL, BROWSER_NETWORK, DASHBOARD_PORT and METRICS_PORT must be set in `.env`.
 # Add-ons: compose.rootless.yml (rootless Docker), compose.watchtower.yml (automatic updates).
+
 name: jobwatch
 volumes:
   redis-data:
 networks:
-  jobwatch-core:     { internal: false }     # front <-> router, front <-> redis (the front needs egress to reach Google)
-  jobwatch-browsers: { name: "${BROWSER_NETWORK:?set BROWSER_NETWORK in .env}", internal: false }   # router <-> spawned browsers; egress is open
+  # front <-> router and front <-> redis. Internet access is on: the front calls Google to sign you in.
+  jobwatch-core:     { internal: false }
+    # router <-> the browsers it spawns. Internet access is on and unrestricted: the browsers load the job sites.
+  jobwatch-browsers: { name: "${BROWSER_NETWORK:?set BROWSER_NETWORK in .env}", internal: false }
 
 services:
   # OAuth 2.1 authorization server + reverse proxy
@@ -17,8 +20,9 @@ services:
     environment:
       PROXY_BASE_URL: ${BASE_URL:?set BASE_URL in .env}
       LISTEN_ADDR: 0.0.0.0:${PORT:?set PORT in .env}
-      METRICS_ADDR: 127.0.0.1:9090          # inside the container only, never published
-      UPSTREAM_MCP_URL: http://router:${PORT:?set PORT in .env}/mcp   # the front serves and forwards this same path (/mcp)
+      METRICS_ADDR: 127.0.0.1:9090
+      # The front serves and forwards this same path (/mcp)
+      UPSTREAM_MCP_URL: http://router:${PORT:?set PORT in .env}/mcp
       REDIS_URL: redis://redis:6379/0
     depends_on:
       redis: { condition: service_healthy }
@@ -35,7 +39,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    # Start as redis directly: the image's root entrypoint needs capabilities (chown, setuid) that cap_drop ALL removes.
+    # Start as redis user directly: the image's root entrypoint needs capabilities (chown, setuid) that cap_drop ALL removes.
     user: "999:999"
     command: [ "redis-server", "--appendonly", "yes", "--maxmemory", "32mb", "--maxmemory-policy", "noeviction" ]
     # Use a named volume: a host directory would not be writable by uid 999
@@ -66,7 +70,9 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./data:/data"
     ports:
-      - "127.0.0.1:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}"   # reverse proxy target for /dashboard; closed until the dashboard is started
-      - "127.0.0.1:${METRICS_PORT:?set METRICS_PORT in .env}:${METRICS_PORT:?set METRICS_PORT in .env}"   # Prometheus scrape target; closed unless metrics are enabled
+      # reverse proxy target for /dashboard; closed until the dashboard is started
+      - "127.0.0.1:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}:${DASHBOARD_PORT:?set DASHBOARD_PORT in .env}"
+      # Prometheus scrape target; closed unless metrics are enabled
+      - "127.0.0.1:${METRICS_PORT:?set METRICS_PORT in .env}:${METRICS_PORT:?set METRICS_PORT in .env}"
     networks: [ jobwatch-core, jobwatch-browsers ]
     restart: unless-stopped
