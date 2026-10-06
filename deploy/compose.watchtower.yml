@@ -1,12 +1,11 @@
 # Watchtower add-on: keeps the router image up to date (docs/watchtower.md).
 # docker compose -f compose.yml -f compose.watchtower.yml up -d
-# Set WATCHTOWER_IMAGE in `.env` to the Watchtower image you chose (pin it by digest).
 services:
   router:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"   # only the labelled router is updated
   watchtower:
-    image: ${WATCHTOWER_IMAGE:?set WATCHTOWER_IMAGE in .env}
+    image: nickfedor/watchtower:1.22.3        # a maintained fork of the archived containrrr/watchtower, pinned to the version this stack was tested with
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
       WATCHTOWER_LABEL_ENABLE: "true"

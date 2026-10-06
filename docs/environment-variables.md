@@ -121,5 +121,3 @@ Closed until `jobwatch dashboard start`. Sign-in variables are under [OAuth](#oa
 - **Published addresses:** the front's `PORT`, `DASHBOARD_PORT` and `METRICS_PORT` are published on `127.0.0.1`. Replace it by the host's LAN IP if the reverse proxy or Prometheus is on another machine or in a container.
 - **Docker socket:** `/var/run/docker.sock` (Docker Desktop and a default install). For the rootless Docker socket of a dedicated user, add `compose.rootless.yml` ([`rootless-docker.md`](rootless-docker.md)); for any other, edit the mount in `compose.yml`.
 - **The front's own settings:** `PROXY_BASE_URL`, `UPSTREAM_MCP_URL`, `LISTEN_ADDR`, `METRICS_ADDR`.
-
-The Watchtower variable (`WATCHTOWER_IMAGE`) belongs to the optional service described in [`watchtower.md`](watchtower.md).

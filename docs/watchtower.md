@@ -10,7 +10,7 @@ The router image is `notcheu/jobwatch-mcp:latest` in `compose.yml` (Docker Hub, 
 
 ## Watchtower as a compose add-on
 
-[`deploy/compose.watchtower.yml`](../deploy/compose.watchtower.yml) adds the Watchtower service and the `com.centurylinklabs.watchtower.enable=true` label on the router (the base `compose.yml` has neither). Set `WATCHTOWER_IMAGE` in `.env` to the image you chose (pin it by digest), then:
+[`deploy/compose.watchtower.yml`](../deploy/compose.watchtower.yml) adds the Watchtower service and the `com.centurylinklabs.watchtower.enable=true` label on the router (the base `compose.yml` has neither). It uses `nickfedor/watchtower`, a maintained fork of the archived `containrrr/watchtower`, pinned to a version (edit the tag in the file to move it). Start it with:
 
 ```bash
 docker compose -f compose.yml -f compose.watchtower.yml up -d
