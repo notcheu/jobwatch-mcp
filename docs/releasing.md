@@ -24,9 +24,9 @@ Versions follow [semantic versioning](https://semver.org). The project is **0.x:
 
    The browser image is not published yet.
 
-## First release (0.1.0)
+## First release
 
-`release-please-config.json` has `"release-as": "0.1.0"` so the first release is 0.1.0 whatever the commits say. **Remove that line right after the first release is published**, otherwise the next release pull request would propose 0.1.0 again.
+The first release was `0.1.0` (forced with `release-as` in `release-please-config.json`, since removed). From now on the version comes from the commits: a `feat` bumps the minor, a `fix` the patch, and a breaking change also the minor while the project is 0.x.
 
 ## One-time setup
 
