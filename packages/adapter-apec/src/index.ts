@@ -337,6 +337,5 @@ export default defineAdapter({
   kind: 'browser',
   allowedHosts: ['www.apec.fr'],
   sessionCheck: checkSession,
-  rate: { perHour: 100, perDay: 300 },
   tools: [search, job],
 });

@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
-import { CallLog, CircuitBreaker, RateLimiter, Store, createLogger, loadModules, policyFor } from '@jobwatch/core';
+import { Budgets, CallLog, CircuitBreaker, RateLimiter, Store, createLogger, loadModules, policyFor } from '@jobwatch/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installedFixtures } from '../harness';
 import { DashboardManager, type DashboardSettings } from './manager';
@@ -40,7 +41,8 @@ async function build(over: Partial<DashboardSettings> = {}) {
       breaker: new CircuitBreaker(store, () => Date.now()),
       registry: () => registry,
       installed: installedFixtures,
-      pinned: false,
+      budgets: await Budgets.load({ dataDir: tmpdir(), env: {}, ids: [], defaults: {} }),
+      pinned: { adapters: false, utilities: false },
       runtime: () => undefined,
       sessionStates: () => new Map(),
       settings: {

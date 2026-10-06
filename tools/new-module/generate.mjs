@@ -198,6 +198,23 @@ export function addInstalledLine(source, id, role = 'adapter') {
   return `${source.slice(0, beginLineEnd)}${lines.join('\n')}\n${source.slice(endLineStart)}`;
 }
 
+/** The budget a new module starts with (the engine default of its kind, `DEFAULT_RATE` in @jobwatch/core): edit it in budgets.json. */
+const STARTING_BUDGET = { browser: { hourly: 120, daily: 300 }, http: { hourly: 600, daily: 3000 } };
+
+/**
+ * Add an entry for the new module to packages/mcp-modules/src/budgets.json (its default hourly and daily budget), keeping keys sorted.
+ * @param {string} budgetsText content of that file
+ * @param {string} id
+ * @param {'http' | 'browser'} kind
+ */
+export function addBudgetEntry(budgetsText, id, kind) {
+  validateId(id);
+  const json = JSON.parse(budgetsText);
+  if (json[id] !== undefined) throw new Error(`"${id}" already has a budget in packages/mcp-modules/src/budgets.json.`);
+  const entries = Object.entries({ ...json, [id]: STARTING_BUDGET[kind] }).sort(([a], [b]) => a.localeCompare(b));
+  return `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`;
+}
+
 /**
  * Add the dependency on the new package to packages/mcp-modules/package.json, keeping keys sorted.
  * @param {string} packageJsonText

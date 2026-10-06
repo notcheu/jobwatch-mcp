@@ -24,8 +24,10 @@ import {
 import { describeInstalledModules } from '@jobwatch/mcp-modules';
 import {
   JOB_SORT_COLUMNS,
+  effectiveRate,
   type CallEntry,
   type CallLog,
+  type Budgets,
   type CircuitBreaker,
   type InstalledModules,
   type PlatformStatus,
@@ -46,10 +48,11 @@ export interface DashboardData {
   callLog: CallLog;
   limiter: RateLimiter;
   breaker: CircuitBreaker;
+  budgets: Budgets;
   registry: () => Registry;
   installed: InstalledModules;
-  /** `ADAPTERS` pins the list of adapters. */
-  pinned: boolean;
+  /** `ADAPTERS` pins the list of adapters, `UTILITIES` the list of utilities: each is changed from the environment only. */
+  pinned: { adapters: boolean; utilities: boolean };
   runtime: () => RuntimeManager | undefined;
   /** The limits in force, shown read only (no secret in it). */
   settings: Settings;
@@ -272,7 +275,8 @@ export async function getTools(data: DashboardData): Promise<Tools> {
   for (const entry of await describeInstalledModules(data.installed)) {
     const load = data.installed[entry.id];
     if (entry.summary === undefined || load === undefined) continue;
-    const catalog = buildCatalog(await load());
+    const module = await load();
+    const catalog = buildCatalog(module);
     const isOn = enabled.has(entry.id);
     const platform = entry.summary.platform;
     const rate = isOn ? data.limiter.status(platform) : undefined;
@@ -294,7 +298,7 @@ export async function getTools(data: DashboardData): Promise<Tools> {
       role: entry.summary.role,
       kind: entry.summary.kind,
       enabled: isOn,
-      pinned: data.pinned,
+      pinned: entry.summary.role === 'utility' ? data.pinned.utilities : data.pinned.adapters,
       hosts: [...entry.summary.allowedHosts],
       tools: catalog.map((tool) => ({
         name: tool.name,
@@ -304,6 +308,7 @@ export async function getTools(data: DashboardData): Promise<Tools> {
       })),
       rateHour: rate?.hour ?? null,
       rateDay: rate?.day ?? null,
+      budget: data.budgets.get(entry.id, effectiveRate(module)),
       boards,
       breaker: open ? { reason: open.reason, until: open.until === null ? null : iso(open.until) } : null,
       session: sessionOf(data, platform, entry.summary.kind),

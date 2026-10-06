@@ -1,6 +1,7 @@
 import {
   API_PREFIX,
   adapterToggleSchema,
+  budgetUpdatedSchema,
   dataClearedSchema,
   docsSchema,
   callDetailSchema,
@@ -15,6 +16,7 @@ import {
   toolsSchema,
   usageSchemaResponse,
   type AdapterToggle,
+  type BudgetUpdated,
   type DataCleared,
   type Docs,
   type CallDetail,
@@ -105,6 +107,8 @@ export const api = {
   }): Promise<Usage> => request(usageSchemaResponse, `/usage${query(params)}`),
   setAdapter: (id: string, enabled: boolean): Promise<AdapterToggle> =>
     request(adapterToggleSchema, `/adapters/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+  setBudget: (id: string, budget: { hourly?: number; daily?: number }): Promise<BudgetUpdated> =>
+    request(budgetUpdatedSchema, `/adapters/${encodeURIComponent(id)}/budget`, { method: 'PUT', body: JSON.stringify(budget) }),
   clearData: (id: string): Promise<DataCleared> =>
     request(dataClearedSchema, `/adapters/${encodeURIComponent(id)}/data`, { method: 'DELETE' }),
   restart: (force: boolean): Promise<Restart> =>

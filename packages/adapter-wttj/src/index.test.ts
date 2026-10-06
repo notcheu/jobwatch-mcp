@@ -434,7 +434,6 @@ describe('what the adapter does on the site', () => {
   it('is a browser adapter on www.welcometothejungle.com only, with a strict budget', () => {
     expect(adapter.kind).toBe('browser');
     expect(adapter.allowedHosts).toEqual(['www.welcometothejungle.com']);
-    expect(adapter.rate).toEqual({ perHour: 60, perDay: 200 });
   });
 
   it('never leaves the matches and job pages: only those URLs are visited', async () => {

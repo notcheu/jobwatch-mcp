@@ -389,7 +389,6 @@ export function createLinkedinAdapter(options: LinkedinOptions = {}) {
     kind: 'browser',
     allowedHosts: HOSTS,
     sessionCheck: checkSession,
-    rate: { perHour: 200, perDay: 400 },
     tools: [search, job],
   });
 }

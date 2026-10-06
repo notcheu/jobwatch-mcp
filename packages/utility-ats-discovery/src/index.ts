@@ -127,6 +127,5 @@ export default defineUtility({
   platform: 'ats-discovery',
   allowedHosts: ['boards-api.greenhouse.io', 'api.lever.co', 'api.ashbyhq.com', '*.teamtailor.com'],
   // a lookup is a handful of small requests; the budget is for a few companies a day, not a crawl
-  rate: { perHour: 200, perDay: 600 },
   tools: [atsFind],
 });

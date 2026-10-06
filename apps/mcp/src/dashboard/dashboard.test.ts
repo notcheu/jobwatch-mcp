@@ -1,8 +1,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- the tests read JSON answers field by field; their shapes are pinned by the strict schemas of dashboard-api */
 import { createServer, request as httpRequest, type Server } from 'node:http';
+import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
 import { createHash } from 'node:crypto';
-import { CallLog, CircuitBreaker, RateLimiter, Store, createLogger, createRegistryHolder, loadModules, policyFor } from '@jobwatch/core';
+import {
+  Budgets,
+  CallLog,
+  CircuitBreaker,
+  RateLimiter,
+  Store,
+  createLogger,
+  createRegistryHolder,
+  loadModules,
+  policyFor,
+} from '@jobwatch/core';
 import { exportJWK, generateKeyPair, SignJWT, createLocalJWKSet, type JWK } from 'jose';
 import { afterEach, describe, expect, it } from 'vitest';
 import { installedFixtures } from '../harness';
@@ -172,7 +183,8 @@ async function build(over: Partial<DashboardDeps> = {}, authRequired = false, oi
     breaker,
     registry: () => holder.current(),
     installed: installedFixtures,
-    pinned: false,
+    budgets: await Budgets.load({ dataDir: tmpdir(), env: {}, ids: ['probe', 'other'], defaults: { probe: { hourly: 50, daily: 500 } } }),
+    pinned: { adapters: false, utilities: false },
     runtime: () => undefined,
     settings: {
       signIn: 'none',

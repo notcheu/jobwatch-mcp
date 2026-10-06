@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { ROLES, addInstalledLine, addModulesDependency, moduleFiles, validateId } from './generate.mjs';
+import { ROLES, addBudgetEntry, addInstalledLine, addModulesDependency, moduleFiles, validateId } from './generate.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 // The first argument is the role, given by the npm script: `new:adapter` or `new:utility`.
@@ -44,15 +44,19 @@ if (existsSync(join(root, 'packages', dirName))) fail(`packages/${dirName} alrea
 
 const installedPath = join(root, 'packages/mcp-modules/src/index.ts');
 const adaptersPackagePath = join(root, 'packages/mcp-modules/package.json');
+const budgetsPath = join(root, 'packages/mcp-modules/src/budgets.json');
 /** @type {string} */
 let installedSource;
 /** @type {string} */
 let adaptersPackage;
+/** @type {string} */
+let budgets;
 /** @type {import('./generate.mjs').GeneratedFile[]} */
 let files;
 try {
   installedSource = addInstalledLine(await readFile(installedPath, 'utf8'), id, role);
   adaptersPackage = addModulesDependency(await readFile(adaptersPackagePath, 'utf8'), id, role);
+  budgets = addBudgetEntry(await readFile(budgetsPath, 'utf8'), id, kind);
   files = moduleFiles({ id, role, kind, ...(values.name ? { displayName: values.name } : {}) });
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error));
@@ -65,7 +69,10 @@ for (const file of files) {
 }
 await writeFile(installedPath, installedSource);
 await writeFile(adaptersPackagePath, adaptersPackage);
-console.log(`created packages/${dirName} (${role}, ${kind}) and registered it in packages/mcp-modules`);
+await writeFile(budgetsPath, budgets);
+console.log(
+  `created packages/${dirName} (${role}, ${kind}) and registered it in packages/mcp-modules (with a starting budget in budgets.json)`,
+);
 
 // Generated sources are formatted like hand-written ones, so `npm run format:check` stays green.
 {

@@ -418,6 +418,5 @@ describe('what the adapter reaches', () => {
   it('is a browser adapter on www.apec.fr only, with its own budget', () => {
     expect(adapter.kind).toBe('browser');
     expect(adapter.allowedHosts).toEqual(['www.apec.fr']);
-    expect(adapter.rate).toEqual({ perHour: 100, perDay: 300 });
   });
 });

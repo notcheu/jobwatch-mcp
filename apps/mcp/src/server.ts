@@ -31,6 +31,10 @@ import {
   loadConfig,
   type ConnectBrowser,
   policyFor,
+  Budgets,
+  BudgetLocked,
+  type BudgetDefaults,
+  effectiveRate,
   isPinned,
   pinVariable,
   resolveEnabledModules,
@@ -43,7 +47,7 @@ import {
   type RuntimeBackend,
   type RuntimeHooks,
 } from '@jobwatch/core';
-import { installedModules } from '@jobwatch/mcp-modules';
+import { budgetDefaults, installedModules } from '@jobwatch/mcp-modules';
 import { roleOf, type McpModule } from '@jobwatch/sdk';
 import { createApp, type AppDeps } from './app';
 import { DashboardManager } from './dashboard/manager';
@@ -99,6 +103,8 @@ export interface StartOptions {
   metricsPort?: number;
   /** Path of the control socket; `false` disables it (tests). Default: `control.sock` in the data directory. */
   controlSocket?: string | false;
+  /** Default budgets per module id (`budgets.json` of mcp-modules). Tests that inject `installed` get none unless they pass some. */
+  budgetDefaults?: BudgetDefaults;
 }
 
 const listen = (server: HttpServer, port: number, host: string): Promise<void> =>
@@ -156,7 +162,16 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     else logger.info({ platform }, 'breaker_closed');
   });
   let policyAdapters = enabledOnly.adapters;
-  const limiter = new RateLimiter(store, clock, (platform) => policyFor(policyAdapters)(platform));
+  // The budget of every installed module: the environment, then what the dashboard saved, then budgets.json. A bad value stops the start.
+  const budgets = await Budgets.load({
+    dataDir: config.dataDir,
+    env: options.env,
+    ids: Object.keys(table),
+    defaults: options.budgetDefaults ?? (options.installed === undefined ? budgetDefaults : {}),
+  });
+  const limiter = new RateLimiter(store, clock, (platform) =>
+    policyFor(policyAdapters, (id, declared) => budgets.policy(id, declared))(platform),
+  );
   for (const open of breaker.all()) {
     metrics?.setBreaker(open.platform, open.reason);
     logger.warn({ platform: open.platform, reason: open.reason, since: new Date(open.openedAt).toISOString() }, 'breaker_still_open');
@@ -337,7 +352,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   /** Hot reload (docs/plans/17-dashboard.md, section 6.4): re-read `adapters.json` and swap the registry. */
   const pinnedByEnv = config.adaptersFromEnv !== undefined || config.utilitiesFromEnv !== undefined;
   const reloadAdapters = async (): Promise<ReloadResult> => {
-    if (pinnedByEnv) throw new Error('ADAPTERS or UTILITIES sets the enabled list; unset it to change it without a restart.');
+    // A list set by ADAPTERS or UTILITIES stays as the variable says; the other one is re-read from the file.
     const wanted = await resolveEnabledModules(config);
     const result = await holder.reload(wanted.ids);
     logger.info({ enabled: result.enabled, added: result.addedAdapters, removed: result.removedAdapters }, 'adapters_reloaded');
@@ -384,7 +399,8 @@ export async function start(options: StartOptions): Promise<RunningServer> {
       breaker,
       registry: () => holder.current(),
       installed: table,
-      pinned: pinnedByEnv,
+      budgets,
+      pinned: { adapters: isPinned(config, 'adapters'), utilities: isPinned(config, 'utilities') },
       runtime: () => runtime,
       sessionStates: () => sessionCache,
       settings: {
@@ -431,6 +447,16 @@ export async function start(options: StartOptions): Promise<RunningServer> {
                   'not_loadable',
                   error instanceof Error ? (error.message.split('\n')[0] ?? 'The adapter did not load.') : 'The adapter did not load.',
                 );
+              }
+            },
+            setBudget: async (id, change) => {
+              const load = (table as Readonly<Record<string, (() => Promise<McpModule>) | undefined>>)[id];
+              if (load === undefined) throw new ChangeRefused(404, 'not_found', 'No such adapter or utility is installed.');
+              try {
+                return await budgets.set(id, change, effectiveRate(await load()));
+              } catch (error) {
+                if (error instanceof BudgetLocked) throw new ChangeRefused(409, 'env_locked', error.message);
+                throw error;
               }
             },
             clearData: async (id) => {

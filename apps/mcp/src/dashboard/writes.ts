@@ -1,5 +1,13 @@
-import { adapterToggleSchema, dataClearedSchema, restartSchema, type AdapterToggle, type DataCleared } from '@jobwatch/dashboard-api';
-import type { EngineLogger } from '@jobwatch/core';
+import {
+  adapterToggleSchema,
+  budgetUpdatedSchema,
+  dataClearedSchema,
+  restartSchema,
+  type AdapterToggle,
+  type Budget,
+  type DataCleared,
+} from '@jobwatch/dashboard-api';
+import { BUDGET_MAX, BUDGET_MIN, type EngineLogger } from '@jobwatch/core';
 import express, { type Router } from 'express';
 import { z } from 'zod';
 import { checked } from './api';
@@ -16,12 +24,14 @@ export class ChangeRefused extends Error {
   }
 }
 
-/** The only three things the dashboard can change. None touches a third-party platform. */
+/** The only four things the dashboard can change. None touches a third-party platform. */
 export interface Changes {
   /** Turn an adapter on or off and reload the registry (hot reload). */
   setAdapter(id: string, enabled: boolean): Promise<Omit<AdapterToggle, 'id' | 'enabled' | 'reconnectNeeded'>>;
   /** Forget the jobs and searches an adapter stored, so its next call starts fresh. Usage and budgets are left alone. */
   clearData(id: string): Promise<Omit<DataCleared, 'id'>>;
+  /** Save the request budget of an adapter or utility (the windows not set by the environment). Applies to the next call. */
+  setBudget(id: string, change: { hourly?: number; daily?: number }): Promise<Budget>;
   /** Number of calls still running. */
   running(): number;
   /** Stop the router process so the container's restart policy brings it back. */
@@ -30,6 +40,11 @@ export interface Changes {
 
 const adapterId = z.string().regex(/^[a-z][a-z0-9-]{1,31}$/);
 const toggleBody = z.object({ enabled: z.boolean() }).strict();
+const budgetAmount = z.number().int().min(BUDGET_MIN).max(BUDGET_MAX);
+const budgetBody = z
+  .object({ hourly: budgetAmount.optional(), daily: budgetAmount.optional() })
+  .strict()
+  .refine((body) => body.hourly !== undefined || body.daily !== undefined, { message: 'send hourly, daily or both' });
 const restartBody = z.object({ force: z.boolean().default(false) }).strict();
 
 /**
@@ -52,6 +67,19 @@ export function registerWrites(router: Router, changes: Changes, logger: EngineL
         'dashboard_adapter_changed',
       );
       res.json(checked(adapterToggleSchema, { id, enabled, ...result, reconnectNeeded: true }));
+    } catch (error) {
+      if (error instanceof ChangeRefused) return refuse(res, error);
+      next(error);
+    }
+  });
+
+  router.put('/adapters/:id/budget', async (req, res, next) => {
+    try {
+      const id = adapterId.parse(req.params['id']);
+      const change = budgetBody.parse(req.body);
+      const budget = await changes.setBudget(id, change);
+      logger.info({ actor: actor(res), adapter: id, ...change }, 'dashboard_budget_changed');
+      res.json(checked(budgetUpdatedSchema, { id, budget }));
     } catch (error) {
       if (error instanceof ChangeRefused) return refuse(res, error);
       next(error);

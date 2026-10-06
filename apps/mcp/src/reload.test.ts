@@ -73,9 +73,12 @@ describe('hot reload of adapters', () => {
     expect(await toolNames(url)).toContain('probe_echo');
   });
 
-  it('is refused while ADAPTERS pins the list', async () => {
-    const { server } = await boot({ ADAPTERS: 'probe' });
-    await expect(server.reloadAdapters()).rejects.toThrow('ADAPTERS');
+  it('keeps the list ADAPTERS pins, and still reads the other one from the file', async () => {
+    await enable(['other']); // the file is ignored for the adapters while ADAPTERS is set
+    const { server, url } = await boot({ ADAPTERS: 'probe' });
+    const result = await server.reloadAdapters();
+    expect(result.enabled).toEqual(['probe']);
+    expect(await toolNames(url)).not.toContain('other_ping');
   });
 
   it('can be triggered through the control socket in the data directory', async () => {

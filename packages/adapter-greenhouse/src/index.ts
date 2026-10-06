@@ -72,7 +72,6 @@ export default defineAdapter({
   allowedHosts: ['boards-api.greenhouse.io'],
   // one budget per company board (a request every 3 minutes at most, a few a day in practice), and a high ceiling for the platform
   keyRate: { perHour: 20, perDay: 100 },
-  rate: { perHour: 600, perDay: 3000 },
   tools: [greenhouseJobs],
 });
 

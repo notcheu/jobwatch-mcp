@@ -1,4 +1,5 @@
 import type { AdapterModule, McpModule, UtilityModule } from '@jobwatch/sdk';
+import budgetsFile from './budgets.json' with { type: 'json' };
 
 /** Same shapes as `InstalledAdapters`, `InstalledUtilities` and `InstalledModules` in @jobwatch/core (structural typing; this package may not depend on core). */
 export type InstalledAdapterMap = Readonly<Record<string, () => Promise<AdapterModule>>>;
@@ -46,3 +47,10 @@ const sortedIds = (map: Readonly<Record<string, unknown>>): string[] => Object.k
 export const installedAdapterIds = (map: InstalledAdapterMap = installedAdapters): string[] => sortedIds(map);
 /** Ids of all installed utilities, sorted. */
 export const installedUtilityIds = (map: InstalledUtilityMap = installedUtilities): string[] => sortedIds(map);
+
+/**
+ * THE DEFAULT BUDGETS: requests per hour and per day of each installed module (`budgets.json`, next to this file; edit it by hand).
+ * They apply until someone saves another budget from the dashboard, and an environment variable
+ * (`LINKEDIN_BUDGET_HOURLY`, `LINKEDIN_BUDGET_DAILY`) wins over both. A module with no entry gets the engine default of its kind.
+ */
+export const budgetDefaults: Readonly<Record<string, { readonly hourly: number; readonly daily: number }>> = budgetsFile;

@@ -134,6 +134,22 @@ export type Searches = z.infer<typeof searchesSchema>;
 
 const usageSchema = z.object({ used: z.number(), limit: z.number() }).strict();
 
+/** One window of a module's budget: what applies, where it comes from, and the variable that would pin it (it wins over the rest). */
+export const budgetValueSchema = z
+  .object({
+    value: z.number(),
+    source: z.enum(['env', 'config', 'default']),
+    /** What it is when nothing is set: the defaults file, else what the module declares. */
+    default: z.number(),
+    envVar: z.string(),
+  })
+  .strict();
+export type BudgetValue = z.infer<typeof budgetValueSchema>;
+export const budgetSchema = z.object({ hourly: budgetValueSchema, daily: budgetValueSchema }).strict();
+export type Budget = z.infer<typeof budgetSchema>;
+export const budgetUpdatedSchema = z.object({ id: z.string(), budget: budgetSchema }).strict();
+export type BudgetUpdated = z.infer<typeof budgetUpdatedSchema>;
+
 export const toolStateSchema = z
   .object({
     id: z.string(),
@@ -143,12 +159,14 @@ export const toolStateSchema = z
     role: z.enum(['adapter', 'utility']),
     kind: z.enum(['browser', 'http']),
     enabled: z.boolean(),
-    /** Present when ADAPTERS pins the list: the switch is disabled and says why. */
+    /** True when ADAPTERS (for an adapter) or UTILITIES (for a utility) pins the list: the switch is disabled, the page says why. */
     pinned: z.boolean(),
     hosts: z.array(z.string()),
     tools: z.array(z.object({ name: z.string(), title: z.string(), costMax: z.number(), params: z.array(z.string()) }).strict()),
     rateHour: usageSchema.nullable(),
     rateDay: usageSchema.nullable(),
+    /** The request budget, enabled or not. */
+    budget: budgetSchema,
     boards: z.array(z.object({ board: z.string(), rateHour: usageSchema, rateDay: usageSchema }).strict()),
     breaker: z.object({ reason: z.string(), until: iso.nullable() }).strict().nullable(),
     /** What the last `session_status` found, if it ran; the dashboard never runs a check. */

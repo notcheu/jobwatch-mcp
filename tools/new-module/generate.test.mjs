@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addInstalledLine, addModulesDependency, moduleFiles, validateId } from './generate.mjs';
+import { addBudgetEntry, addInstalledLine, addModulesDependency, moduleFiles, validateId } from './generate.mjs';
 
 const source = `export const installedAdapters = {
   // <adapters:begin>
@@ -181,5 +181,22 @@ describe('utilities', () => {
     expect(Object.keys(JSON.parse(addModulesDependency('{"dependencies":{}}', 'geo', 'utility')).dependencies)).toEqual([
       '@jobwatch/utility-geo',
     ]);
+  });
+});
+
+describe('addBudgetEntry', () => {
+  const budgets = JSON.stringify({ linkedin: { hourly: 200, daily: 400 }, apec: { hourly: 100, daily: 300 } });
+
+  it('adds the starting budget of the kind, keeping the keys sorted', () => {
+    const http = JSON.parse(addBudgetEntry(budgets, 'greenhouse', 'http'));
+    expect(Object.keys(http)).toEqual(['apec', 'greenhouse', 'linkedin']);
+    expect(http.greenhouse).toEqual({ hourly: 600, daily: 3000 });
+    expect(JSON.parse(addBudgetEntry(budgets, 'wttj', 'browser')).wttj).toEqual({ hourly: 120, daily: 300 });
+  });
+
+  it('leaves the other entries as they are, and refuses a module that has one already or a bad id', () => {
+    expect(JSON.parse(addBudgetEntry(budgets, 'ashby', 'http')).linkedin).toEqual({ hourly: 200, daily: 400 });
+    expect(() => addBudgetEntry(budgets, 'linkedin', 'browser')).toThrow(/already has a budget/);
+    expect(() => addBudgetEntry(budgets, 'Bad Id', 'http')).toThrow();
   });
 });

@@ -106,6 +106,20 @@ describe('docs', () => {
     expect(screen.queryByRole('table', { name: 'Parameters' })).not.toBeInTheDocument();
   });
 
+  it('opens and closes a tool from anywhere on its row, once per click', async () => {
+    mockApi({ '/me': me, '/tools': tools, '/docs': docs });
+    renderApp('/docs');
+    const user = userEvent.setup();
+    await user.click(await screen.findByText('Search jobs (read-only)'));
+    expect(screen.getByRole('table', { name: 'Parameters' })).toBeInTheDocument();
+    await user.click(screen.getByText('Search jobs (read-only)'));
+    expect(screen.queryByRole('table', { name: 'Parameters' })).not.toBeInTheDocument();
+    await user.click(screen.getByText('60')); // the cost cell
+    expect(screen.getByRole('table', { name: 'Parameters' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Hide linkedin_search' })); // the button does not toggle twice
+    expect(screen.queryByRole('table', { name: 'Parameters' })).not.toBeInTheDocument();
+  });
+
   it('copies an example prompt and its input, and the smallest input, and says so', async () => {
     mockApi({ '/me': me, '/tools': tools, '/docs': docs });
     renderApp('/docs');
