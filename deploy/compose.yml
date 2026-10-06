@@ -5,7 +5,7 @@
 # Always-on services only. Browser containers are spawned by the router (label jobwatch.managed=true).
 # Your reverse proxy sends https://mcp.example.com to the single published MCP port below (docs/reverse-proxy.md).
 # Runs on Linux and on macOS (Docker Desktop, arm64) for development: see compose.dev.yml and docs/plans/10-deployment.md.
-# Rootless Docker (recommended on a server) is an add-on: compose.rootless.yml and docs/rootless-docker.md.
+# Add-ons: rootless Docker (compose.rootless.yml, docs/rootless-docker.md) and automatic updates (compose.watchtower.yml, docs/watchtower.md).
 name: jobwatch
 volumes:
   redis-data:
@@ -49,8 +49,6 @@ services:
     restart: unless-stopped
   router:
     image: notcheu/jobwatch-mcp:latest       # published on every release (docs/releasing.md); pin a version (notcheu/jobwatch-mcp:0.1.0) for a reproducible install, or build your own with `docker build -t notcheu/jobwatch-mcp:latest .`
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"   # only read by Watchtower, if you run it (docs/watchtower.md)
     env_file: .env   # every router setting: see .env.example and docs/environment-variables.md
     user: "0:0"                              # uid 0 in the container: it owns ./data and can open the Docker socket (under rootless Docker it is the Docker user on the host). Still unprivileged: cap_drop ALL, no-new-privileges, read-only root
     read_only: true

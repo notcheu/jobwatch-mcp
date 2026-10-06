@@ -19,4 +19,4 @@ See the host prerequisites in [`plans/10-deployment.md`](plans/10-deployment.md#
 - No ports below 1024 (the defaults are above), and slower networking than a rootful daemon.
 - Memory limits need cgroup v2 delegation to the user's services: check `cat /sys/fs/cgroup/user.slice/user-$(id -u).slice/user@$(id -u).service/cgroup.controllers` lists `memory` (`plans/06-memory-and-lifecycle-policy.md`).
 - Use a dedicated user, so its `DOCKER_HOST` never interferes with another Docker on the machine. Measurements on the reference host: [`measurements.md`](measurements.md).
-- Watchtower needs the same socket: see [`watchtower.md`](watchtower.md).
+- The Watchtower add-on mounts the socket too: see [`watchtower.md`](watchtower.md).

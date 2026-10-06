@@ -1,0 +1,19 @@
+# Watchtower add-on: keeps the router image up to date (docs/watchtower.md).
+# docker compose -f compose.yml -f compose.watchtower.yml up -d
+# Set WATCHTOWER_IMAGE in `.env` to the Watchtower image you chose (pin it by digest).
+services:
+  router:
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"   # only the labelled router is updated
+  watchtower:
+    image: ${WATCHTOWER_IMAGE:?set WATCHTOWER_IMAGE in .env}
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_SCHEDULE: "0 30 4 * * *"      # 04:30 daily (6-field cron)
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"   # same socket as the router: edit the left side for another one (rootless: ${XDG_RUNTIME_DIR}/docker.sock)
+      - "${HOME}/.docker/config.json:/config.json:ro"   # registry credentials from `docker login`; remove this line if you pull anonymously
+    networks: [ jobwatch-core ]
+    restart: unless-stopped
