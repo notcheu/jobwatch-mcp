@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.1.1...jobwatch-router-v0.2.0) (2026-10-06)
+
+
+### Features
+
+* clear the stored data of an adapter from the CLI and the dashboard ([#90](https://github.com/notcheu/jobwatch-mcp/issues/90)) ([1328b2a](https://github.com/notcheu/jobwatch-mcp/commit/1328b2a1d436230e6c8fb56e497d568044bb3bf9))
+* **dashboard:** add a Docs page with the parameters and examples of every tool ([#92](https://github.com/notcheu/jobwatch-mcp/issues/92)) ([b736dc4](https://github.com/notcheu/jobwatch-mcp/commit/b736dc4a630160f3568bb0f3bb05d43f0c0ab85b))
+* **dashboard:** add a settings menu per module and editable request budgets ([#93](https://github.com/notcheu/jobwatch-mcp/issues/93)) ([762bfc0](https://github.com/notcheu/jobwatch-mcp/commit/762bfc0592cf980c5866e051865fc6f6789d40d9))
+* run and develop the dashboard locally ([#91](https://github.com/notcheu/jobwatch-mcp/issues/91)) ([9ed731c](https://github.com/notcheu/jobwatch-mcp/commit/9ed731c9c3f66c1cfb28ca31a80e51b1b4af88e9))
+
+
+### Documentation
+
+* document pulling the browser image and move the tool examples to docs/ ([#89](https://github.com/notcheu/jobwatch-mcp/issues/89)) ([09d9fbb](https://github.com/notcheu/jobwatch-mcp/commit/09d9fbb5c17d934505f3c0dd288dbbc7b58df35c))
+
 ## [0.1.1](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.1.0...jobwatch-router-v0.1.1) (2026-10-06)
 
 
