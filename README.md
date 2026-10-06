@@ -56,7 +56,7 @@ npm run jobwatch -- adapters list
 
 #### Pre-requisites
 
-Docker with Docker Compose, ideally **rootless Docker for a dedicated user** (the router gets that user's socket and nothing more; never mount a root Docker socket). About 2 GB of free RAM while a browser runs.
+Docker with Docker Compose, ideally **rootless Docker for a dedicated user** on a server (the router controls the Docker daemon it is given: see [Rootless Docker](docs/rootless-docker.md)). About 2 GB of free RAM while a browser runs.
 
 To use it from Claude on the web or desktop you also need a domain name with TLS in front of the front's published port ([reverse proxy](docs/reverse-proxy.md)).
 

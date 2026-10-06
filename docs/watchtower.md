@@ -21,7 +21,7 @@ Add this service to your `compose.yml`, with `WATCHTOWER_IMAGE` set in `.env` to
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_SCHEDULE: "0 30 4 * * *"      # 04:30 daily (6-field cron)
     volumes:
-      - "${XDG_RUNTIME_DIR}/docker.sock:/var/run/docker.sock"
+      - "/var/run/docker.sock:/var/run/docker.sock"      # same socket as the router (rootless: ${XDG_RUNTIME_DIR}/docker.sock, see rootless-docker.md)
       - "${HOME}/.docker/config.json:/config.json:ro"    # registry credentials from `docker login`
     networks: [ jobwatch-core ]
     restart: unless-stopped
