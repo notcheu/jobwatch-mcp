@@ -119,7 +119,9 @@ The browser image is spawned by the router, so neither Compose nor Watchtower up
 ```bash
 docker pull notcheu/jobwatch-browser:<new version>
 docker compose up -d router
-``` After updating the router image, reconnect the Claude connector so it reloads the tool list.
+```
+
+After updating the router image, reconnect the Claude connector so it reloads the tool list.
 
 ### Compose locally without OAuth
 
