@@ -39,6 +39,13 @@ const rowsLoaded = async (count: number) => {
   await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(count));
   return screen.getAllByRole('row');
 };
+/** Found by is off by default: turn it on from the Columns menu. */
+const showFoundBy = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByText('Columns'));
+  await user.click(screen.getByLabelText('Found by'));
+  await user.keyboard('{Escape}');
+};
+
 const at = <T,>(list: readonly T[], index: number): T => {
   const item = list[index];
   if (item === undefined) throw new Error(`nothing at position ${index}`);
@@ -55,6 +62,10 @@ describe('jobs table', () => {
       ]),
     });
     renderApp('/jobs');
+    const user = userEvent.setup();
+    expect(await screen.findByText('Senior Frontend Engineer')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Found by' })).not.toBeInTheDocument(); // off by default
+    await showFoundBy(user);
     const rows = await rowsLoaded(3);
     const first = within(at(rows, 1));
     expect(first.getByText('Senior Frontend Engineer')).toBeInTheDocument();
@@ -387,6 +398,9 @@ describe('searches', () => {
       '/jobs': page([job({ foundBy: [searchRef([long]), searchRef(['react'], ['senior']), searchRef(['react'], ['intern'])] })]),
     });
     renderApp('/jobs');
+    const user = userEvent.setup();
+    await rowsLoaded(2);
+    await showFoundBy(user);
     const rows = await rowsLoaded(2);
     const badge = within(at(rows, 1)).getByTitle(long);
     expect(badge).toHaveClass('max-w-full', 'overflow-hidden', 'text-ellipsis'); // it cannot grow out of the column

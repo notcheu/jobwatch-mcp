@@ -158,7 +158,8 @@ export function Jobs() {
   const sortName = get('sort');
   const sorting: SortingState =
     SORT_COLUMNS[sortName] === undefined ? [] : [{ id: SORT_COLUMNS[sortName] ?? '', desc: get('dir') !== 'asc' }];
-  const [hidden, setHidden] = useState<VisibilityState>({ lastSeen: false });
+  // Last seen and Found by are off until asked for in the Columns menu: the second is a column of badges, and the job detail has the same data
+  const [hidden, setHidden] = useState<VisibilityState>({ lastSeen: false, foundBy: false });
   const selected =
     params['source'] !== undefined && params['id'] !== undefined ? { source: params['source'], id: params['id'] } : undefined;
 
