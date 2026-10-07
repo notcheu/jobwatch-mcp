@@ -65,6 +65,12 @@ export interface Config {
   jobRetentionDays: number;
   /** Days a call is kept in the call log, parameters included, before it is deleted (the log rotation). */
   callLogRetentionDays: number;
+  /** `CUSTOM_ADAPTERS=on`: the adapters written on the dashboard (JavaScript run in a sandbox) are loaded. Off by default. */
+  customAdapters: boolean;
+  /** `docker`: a container with no network, no capability and a read-only root (the default). `process`: a bare Node process with the permission model on (no files, no network, no child process) but no container, memory or CPU cap: for local development only. */
+  customAdaptersSandbox: 'docker' | 'process';
+  /** The image with Node that the sandbox container runs. */
+  customAdaptersImage: string;
   /** From ADAPTERS. When defined it overrides adapters.json and the CLI refuses to edit the file. */
   adaptersFromEnv: readonly string[] | undefined;
   /** From UTILITIES. Same rule, for the utilities (tools that fetch no jobs). */
@@ -127,6 +133,10 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
   const baseUrl = new URL(parsed.BASE_URL);
   if (baseUrl.protocol === 'http:' && !isLoopbackUrl(baseUrl))
     problems.push('BASE_URL: http is only allowed for localhost, 127.0.0.1 or [::1]; use https');
+  if (parsed.CUSTOM_ADAPTERS === 'on' && parsed.CUSTOM_ADAPTERS_SANDBOX === 'process' && parsed.AUTH !== 'none')
+    problems.push(
+      'CUSTOM_ADAPTERS_SANDBOX=process runs the scripts of custom adapters in a bare Node process, with no container and no memory or CPU cap: it is only for local development (AUTH=none); use docker',
+    );
   if (parsed.AUTH === 'none' && !isLoopbackUrl(baseUrl)) {
     problems.push(
       'AUTH=none is only allowed when BASE_URL is a loopback address (local development); the public deployment must use the OAuth front',
@@ -214,6 +224,9 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       dataDir: parsed.DATA_DIR,
       jobRetentionDays: parsed.JOB_RETENTION_DAYS,
       callLogRetentionDays: parsed.CALL_LOG_RETENTION_DAYS,
+      customAdapters: parsed.CUSTOM_ADAPTERS === 'on',
+      customAdaptersSandbox: parsed.CUSTOM_ADAPTERS_SANDBOX,
+      customAdaptersImage: parsed.CUSTOM_ADAPTERS_IMAGE,
       dbPath: parsed.DB_PATH ?? `${parsed.DATA_DIR.replace(/\/+$/, '')}/jobwatch.sqlite`,
       adaptersFromEnv,
       utilitiesFromEnv,

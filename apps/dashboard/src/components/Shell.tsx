@@ -9,6 +9,7 @@ import {
   Moon,
   Search,
   Settings,
+  SquareCode,
   Sun,
   Telescope,
   Zap,
@@ -37,6 +38,7 @@ const SECTIONS: readonly { to: string; label: string; icon: LucideIcon; end: boo
   { to: '/searches', label: 'Searches', icon: Search, end: false, tabs: true },
   { to: '/ats-discovery', label: 'ATS discovery', icon: Telescope, end: false, tabs: false, group: 'Tools' },
   { to: '/linkedin-places', label: 'LinkedIn places', icon: MapPin, end: false, tabs: false, group: 'Tools' },
+  { to: '/custom-adapters', label: 'Custom adapters', icon: SquareCode, end: false, tabs: false, group: 'Tools' },
   { to: '/docs', label: 'Docs', icon: BookOpen, end: false, tabs: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false, tabs: false },
 ];

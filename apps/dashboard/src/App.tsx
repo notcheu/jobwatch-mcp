@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { Shell } from '@/components/Shell';
 import { Analytics } from '@/pages/Analytics';
 import { AtsDiscovery } from '@/pages/AtsDiscovery';
+import { CustomAdapters } from '@/pages/CustomAdapters';
 import { Docs } from '@/pages/Docs';
 import { Jobs } from '@/pages/Jobs';
 import { LinkedinPlaces } from '@/pages/LinkedinPlaces';
@@ -26,6 +27,7 @@ export function AppRoutes() {
         <Route path="searches/:source" element={<Searches />} />
         <Route path="ats-discovery" element={<AtsDiscovery />} />
         <Route path="linkedin-places" element={<LinkedinPlaces />} />
+        <Route path="custom-adapters" element={<CustomAdapters />} />
         <Route path="tools" element={<Navigate to="/settings?view=tools" replace />} />
         <Route path="docs" element={<Docs />} />
         <Route path="settings" element={<Settings />} />

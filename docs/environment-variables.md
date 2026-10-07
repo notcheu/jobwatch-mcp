@@ -28,6 +28,9 @@ All variables are optional unless noted. An empty value counts as "not set". The
 | `DB_PATH` | `<DATA_DIR>/jobwatch.sqlite` | The SQLite file. The schema is migrated at every boot. |
 | `JOB_RETENTION_DAYS` | `30` | Days a stored job is kept after it was last seen (1-3650). |
 | `CALL_LOG_RETENTION_DAYS` | `30` | The log rotation: days a call is kept in the call log before it is deleted, **with its parameters** (the arguments Claude sent, capped at 16 KB a call; never credentials). The call log is what the Runs page, the Overview and the Analytics show: the most recent `DASHBOARD_CALL_BUFFER` calls of it are loaded when the router starts. Lowering it deletes the older calls at the next start or hourly prune (1-3650). |
+| `CUSTOM_ADAPTERS` | `off` | `on` loads the adapters written on the dashboard (Tools, Custom adapters): JavaScript an operator types, run in a sandbox. Off, none is loaded and every change is refused. Read `docs/plans/09-security.md`, "Custom adapters", before turning it on. |
+| `CUSTOM_ADAPTERS_SANDBOX` | `docker` | `docker`: each run is a container with no network, no capability, a read-only root, 192 MB and 64 processes; the router needs its Docker socket for it, as for the browser. `process`: a bare Node process with the permission model (no files, no network, no child process) but no container, no memory or CPU cap, for local development only; the router refuses to start with it when `AUTH=front`. |
+| `CUSTOM_ADAPTERS_IMAGE` | `node:26-bookworm-slim` | The image with Node that the sandbox container runs. Pulled the first time a script runs. |
 | `LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` or `fatal`. |
 | `BROWSER_RUNTIME` | `docker` | Container runtime for the browser. Only `docker` is implemented. |
 | `TOKEN_CHARS_PER_TOKEN` | `3.5` | Characters per token, for the estimate of what a result costs Claude (1-10). |

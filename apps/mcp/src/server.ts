@@ -22,7 +22,14 @@ import {
   RegistryError,
   RuntimeManager,
   Store,
+  buildCustomModule,
+  checkTargetUrl,
   createPlatformMemory,
+  customId,
+  dockerSpawner,
+  processSpawner,
+  reapSandboxes,
+  type SandboxSpawner,
   StoreError,
   createGuard,
   createLogger,
@@ -49,9 +56,10 @@ import {
   type RuntimeHooks,
 } from '@jobwatch/core';
 import { budgetDefaults, installedModules } from '@jobwatch/mcp-modules';
-import { forgetLocation, roleOf, saveLocation, savedLocation, type McpModule } from '@jobwatch/sdk';
+import { forgetLocation, formatViolations, roleOf, saveLocation, savedLocation, validateAdapter, type McpModule } from '@jobwatch/sdk';
 import { createApp, type AppDeps } from './app';
 import { toCompanyBoard, toSavedPlace } from './dashboard/api';
+import { getCustomAdapter, toCustomAdapter, type DashboardData } from './dashboard/api';
 import { DashboardManager } from './dashboard/manager';
 import { ChangeRefused, registerWrites } from './dashboard/writes';
 import { createMetricsServer } from './metrics-server';
@@ -105,6 +113,8 @@ export interface StartOptions {
   metricsPort?: number;
   /** Path of the control socket; `false` disables it (tests). Default: `control.sock` in the data directory. */
   controlSocket?: string | false;
+  /** Runs the scripts of custom adapters; tests pass a fake or a process. Defaults to a container (or a bare process with CUSTOM_ADAPTERS_SANDBOX=process). */
+  sandboxSpawner?: SandboxSpawner;
   /** Default budgets per module id (`budgets.json` of mcp-modules). Tests that inject `installed` get none unless they pass some. */
   budgetDefaults?: BudgetDefaults;
 }
@@ -138,9 +148,52 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   for (const warning of warnings) logger.warn(warning);
   logger.info({ config: describeConfig(config) }, 'config_loaded');
 
-  const enabled = await resolveEnabledModules(config);
+  const clock = options.clock ?? Date.now;
+  const store = Store.open(config.dbPath, {
+    jobRetentionDays: config.jobRetentionDays,
+    callLogRetentionDays: config.callLogRetentionDays,
+  }); // applies the pending schema migrations
+  logger.info({ schemaVersion: store.schemaVersion, dbPath: config.dbPath }, 'database_ready');
+
+  // The installed modules, plus the adapters written on the dashboard (CUSTOM_ADAPTERS=on), which are rebuilt from the database at every
+  // load and reload: `table` is the one object everything reads, so a created or changed adapter is seen without a restart.
+  const table: Record<string, () => Promise<McpModule>> = { ...(options.installed ?? installedModules) };
+  const sandbox =
+    options.sandboxSpawner ?? (config.customAdaptersSandbox === 'docker' ? dockerSpawner(config.customAdaptersImage) : processSpawner());
+  /** Why an enabled custom adapter is not loaded, by handle: shown on the dashboard instead of stopping the router. */
+  const customProblems = new Map<string, string>();
+  const syncCustomAdapters = (): string[] => {
+    for (const key of Object.keys(table)) if (key.startsWith('custom-')) Reflect.deleteProperty(table, key);
+    customProblems.clear();
+    if (!config.customAdapters) return [];
+    const ids: string[] = [];
+    for (const row of store.listCustomAdapters()) {
+      const id = customId(row.handle);
+      try {
+        const module = buildCustomModule(row, { spawner: sandbox });
+        const violations = validateAdapter(module);
+        if (violations.length > 0) throw new Error(formatViolations(id, violations));
+        table[id] = async () => buildCustomModule(row, { spawner: sandbox });
+        if (row.enabled) ids.push(id);
+      } catch (error) {
+        customProblems.set(row.handle, (error instanceof Error ? error.message : 'It could not be built.').slice(0, 400));
+        logger.error({ handle: row.handle, err: error }, 'custom_adapter_not_loaded');
+      }
+    }
+    return ids;
+  };
+  if (config.customAdapters) {
+    if (config.customAdaptersSandbox === 'process')
+      logger.warn(
+        'CUSTOM_ADAPTERS_SANDBOX=process: the scripts of custom adapters run in a bare Node process (no container, no memory or CPU cap beyond the heap). Local development only.',
+      );
+    else void reapSandboxes().then((removed) => removed > 0 && logger.warn({ removed }, 'sandbox_containers_reaped'));
+  }
+  const customIds = syncCustomAdapters();
+
+  const enabledFromConfig = await resolveEnabledModules(config);
+  const enabled = { ...enabledFromConfig, ids: [...enabledFromConfig.ids, ...customIds] };
   // Two passes: the ops tools need the limiter, breaker and runtime, which are built from the enabled adapters.
-  const table = options.installed ?? installedModules;
   const enabledOnly = await loadModules(enabled.ids, table);
   if (enabled.ids.length === 0)
     logger.warn('No adapters are enabled: only the built-in ops tools are listed. Enable one with `jobwatch adapters enable <id>`.');
@@ -154,12 +207,6 @@ export async function start(options: StartOptions): Promise<RunningServer> {
 
   // Persistent state. Fails fast (the process exits) when the database cannot be opened: running without a rate limiter or
   // breaker would mean nothing stops us from hammering a platform after a checkpoint.
-  const clock = options.clock ?? Date.now;
-  const store = Store.open(config.dbPath, {
-    jobRetentionDays: config.jobRetentionDays,
-    callLogRetentionDays: config.callLogRetentionDays,
-  }); // applies the pending schema migrations
-  logger.info({ schemaVersion: store.schemaVersion, dbPath: config.dbPath }, 'database_ready');
   const breaker = new CircuitBreaker(store, clock, (platform, row) => {
     metrics?.setBreaker(platform, row?.reason);
     if (row !== undefined)
@@ -360,6 +407,22 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     }
     return { ...result.structuredContent, warnings: result._meta?.jobwatch.warnings ?? [] };
   };
+  const requireCustomAdapters = (): void => {
+    if (!config.customAdapters)
+      throw new ChangeRefused(409, 'disabled', 'Custom adapters are off: set CUSTOM_ADAPTERS=on in the router environment and restart it.');
+  };
+  /** Load what changed in the database; a registry that cannot be built leaves the running one in place and is reported. */
+  const reloadAfterCustomChange = async (): Promise<void> => {
+    try {
+      await reloadAdapters();
+    } catch (error) {
+      throw new ChangeRefused(
+        422,
+        'not_loadable',
+        error instanceof Error ? (error.message.split('\n')[0] ?? 'The adapters did not load.') : 'The adapters did not load.',
+      );
+    }
+  };
   const mcpServer = createHttpServer(app);
   await listen(mcpServer, options.port ?? config.port, config.listenHost);
 
@@ -379,7 +442,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const reloadAdapters = async (): Promise<ReloadResult> => {
     // A list set by ADAPTERS or UTILITIES stays as the variable says; the other one is re-read from the file.
     const wanted = await resolveEnabledModules(config);
-    const result = await holder.reload(wanted.ids);
+    const result = await holder.reload([...wanted.ids, ...syncCustomAdapters()]);
     logger.info({ enabled: result.enabled, added: result.addedAdapters, removed: result.removedAdapters }, 'adapters_reloaded');
     return result;
   };
@@ -402,6 +465,34 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   // The host-side commands (`jobwatch adapters enable ...` reloads a running router) reach the router through a Unix socket in the
   // data directory. A router without a writable data directory (tests, read-only setups) simply has no control channel.
   // The dashboard listener starts only when the host asks for it through the control socket (docs/plans/17-dashboard.md).
+  const dashboardData: DashboardData = {
+    version: options.version,
+    clock,
+    store,
+    callLog,
+    limiter,
+    breaker,
+    registry: () => holder.current(),
+    installed: table,
+    custom: { available: config.customAdapters, sandbox: config.customAdaptersSandbox, problems: () => customProblems },
+    budgets,
+    pinned: { adapters: isPinned(config, 'adapters'), utilities: isPinned(config, 'utilities') },
+    runtime: () => runtime,
+    sessionStates: () => sessionCache,
+    settings: {
+      signIn: config.auth === 'front' ? 'google' : 'none',
+      idleStopMinutes: Math.round(config.dashboard.idleS / 60),
+      sessionMaxHours: Math.round(config.dashboard.sessionMaxS / 3600),
+      writeWindowMinutes: Math.round(config.dashboard.writeWindowS / 60),
+      callBuffer: config.callBuffer,
+      charsPerToken: config.charsPerToken,
+      jobRetentionDays: config.jobRetentionDays,
+      callLogRetentionDays: config.callLogRetentionDays,
+      maxTabs: config.maxTabs,
+      browser: { idleStopSeconds: config.idleTtlS, memoryHighMb: config.memHighMb, memoryMaxMb: config.memMaxMb },
+      adaptersPinned: pinnedByEnv,
+    },
+  };
   const dashboard = new DashboardManager(
     {
       port: config.dashboard.port,
@@ -415,33 +506,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
       writeWindowS: config.dashboard.writeWindowS,
       staticDir: config.dashboard.staticDir,
     },
-    {
-      version: options.version,
-      clock,
-      store,
-      callLog,
-      limiter,
-      breaker,
-      registry: () => holder.current(),
-      installed: table,
-      budgets,
-      pinned: { adapters: isPinned(config, 'adapters'), utilities: isPinned(config, 'utilities') },
-      runtime: () => runtime,
-      sessionStates: () => sessionCache,
-      settings: {
-        signIn: config.auth === 'front' ? 'google' : 'none',
-        idleStopMinutes: Math.round(config.dashboard.idleS / 60),
-        sessionMaxHours: Math.round(config.dashboard.sessionMaxS / 3600),
-        writeWindowMinutes: Math.round(config.dashboard.writeWindowS / 60),
-        callBuffer: config.callBuffer,
-        charsPerToken: config.charsPerToken,
-        jobRetentionDays: config.jobRetentionDays,
-        callLogRetentionDays: config.callLogRetentionDays,
-        maxTabs: config.maxTabs,
-        browser: { idleStopSeconds: config.idleTtlS, memoryHighMb: config.memHighMb, memoryMaxMb: config.memMaxMb },
-        adaptersPinned: pinnedByEnv,
-      },
-    },
+    dashboardData,
     logger,
     clock,
     {
@@ -496,6 +561,46 @@ export async function start(options: StartOptions): Promise<RunningServer> {
               return toCompanyBoard(board);
             },
             removeCompanyBoard: (id) => store.deleteCompanyBoard(id),
+            saveCustomAdapter: async (entry, mode, actor) => {
+              requireCustomAdapters();
+              const target = checkTargetUrl(entry.url);
+              if ('error' in target) throw new ChangeRefused(400, 'invalid', target.error);
+              const candidate = { ...entry, url: target.url, enabled: false, createdAt: 0, updatedAt: 0 };
+              try {
+                const violations = validateAdapter(buildCustomModule(candidate, { spawner: sandbox }));
+                if (violations.length > 0) throw new Error(formatViolations(customId(entry.handle), violations));
+              } catch (error) {
+                throw new ChangeRefused(
+                  400,
+                  'invalid',
+                  error instanceof Error ? (error.message.split('\n')[0] ?? 'Not valid.') : 'Not valid.',
+                );
+              }
+              const saved = store.saveCustomAdapter({ ...entry, url: target.url }, { create: mode === 'create', actor }, clock());
+              if (!saved)
+                throw mode === 'create'
+                  ? new ChangeRefused(409, 'exists', `The handle "${entry.handle}" is already used.`)
+                  : new ChangeRefused(404, 'not_found', 'No such custom adapter.');
+              await reloadAfterCustomChange();
+              const detail = getCustomAdapter(dashboardData, entry.handle);
+              if (detail === undefined) throw new ChangeRefused(404, 'not_found', 'No such custom adapter.');
+              return detail;
+            },
+            setCustomAdapterEnabled: async (handle, enabled, actor) => {
+              requireCustomAdapters();
+              if (!store.setCustomAdapterEnabled(handle, enabled, actor, clock()))
+                throw new ChangeRefused(404, 'not_found', 'No such custom adapter.');
+              await reloadAfterCustomChange();
+              const row = store.getCustomAdapter(handle);
+              if (row === null) throw new ChangeRefused(404, 'not_found', 'No such custom adapter.');
+              return toCustomAdapter(dashboardData, row);
+            },
+            deleteCustomAdapter: async (handle, actor) => {
+              requireCustomAdapters();
+              if (!store.deleteCustomAdapter(handle, actor, clock())) return false;
+              await reloadAfterCustomChange();
+              return true;
+            },
             savePlace: async (entry) => {
               const memory = createPlatformMemory(store, clock);
               await saveLocation(memory, entry.alias, entry, 'operator');

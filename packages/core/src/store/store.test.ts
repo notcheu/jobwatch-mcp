@@ -765,7 +765,7 @@ describe('salary columns', () => {
       const raw = new DatabaseSync(path);
       // put the file back as a version 6 database: no salary columns, no adapter memory
       raw.exec(
-        'DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
+        'DROP TABLE custom_adapter_events; DROP TABLE custom_adapters; DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -851,6 +851,65 @@ describe('LinkedIn place lookups', () => {
     expect(store.listPlaceLookups(1, 1).rows[0]?.hits[0]).toEqual({ id: '103035651', label: 'Berlin, Germany' });
     store.prune(2000 + 31 * 24 * 3600 * 1000);
     expect(store.listPlaceLookups(10, 0).total).toBe(0);
+    store.close();
+  });
+});
+
+describe('custom adapters', () => {
+  const entry = {
+    handle: 'acmejobs',
+    name: ' Acme jobs ',
+    kind: 'http' as const,
+    url: 'https://careers.acme.com',
+    script: 'async function read() {}',
+  };
+
+  it('creates, replaces and removes an adapter, never creating over a handle that is taken, and logs who did each', () => {
+    const store = Store.open(':memory:');
+    expect(store.saveCustomAdapter(entry, { create: true, actor: 'me@example.com' }, 1000)).toBe(true);
+    expect(store.saveCustomAdapter(entry, { create: true, actor: 'me@example.com' }, 1001)).toBe(false); // taken
+    expect(store.saveCustomAdapter({ ...entry, handle: 'other' }, { create: false, actor: 'me@example.com' }, 1002)).toBe(false); // nothing to replace
+    expect(store.getCustomAdapter('acmejobs')).toMatchObject({
+      name: 'Acme jobs',
+      kind: 'http',
+      enabled: false,
+      createdAt: 1000,
+      updatedAt: 1000,
+    });
+    expect(store.saveCustomAdapter({ ...entry, kind: 'browser', script: 'v2' }, { create: false, actor: 'you@example.com' }, 2000)).toBe(
+      true,
+    );
+    expect(store.getCustomAdapter('acmejobs')).toMatchObject({
+      kind: 'browser',
+      script: 'v2',
+      enabled: false,
+      createdAt: 1000,
+      updatedAt: 2000,
+    });
+    expect(store.setCustomAdapterEnabled('acmejobs', true, 'you@example.com', 3000)).toBe(true);
+    expect(store.setCustomAdapterEnabled('ghost', true, 'you@example.com', 3000)).toBe(false);
+    expect(store.listCustomAdapters().map((row) => [row.handle, row.enabled])).toEqual([['acmejobs', true]]);
+    expect(store.deleteCustomAdapter('acmejobs', 'me@example.com', 4000)).toBe(true);
+    expect(store.deleteCustomAdapter('acmejobs', 'me@example.com', 4001)).toBe(false);
+    const events = store.customAdapterEvents('acmejobs', 10);
+    expect(events.map((event) => [event.actor, event.action])).toEqual([
+      ['me@example.com', 'deleted'],
+      ['you@example.com', 'enabled'],
+      ['you@example.com', 'updated'],
+      ['me@example.com', 'created'],
+    ]);
+    expect(events[2]?.sha256).toMatch(/^[0-9a-f]{64}$/); // the script is identified, not copied into the log
+    expect(JSON.stringify(events)).not.toContain('v2');
+    store.close();
+  });
+
+  it('refuses a handle, a name or a script that is not valid', () => {
+    const store = Store.open(':memory:');
+    const save = (over: object) => store.saveCustomAdapter({ ...entry, ...over }, { create: true, actor: 'x' }, 1);
+    expect(() => save({ handle: 'Bad-Handle' })).toThrow(/handle/);
+    expect(() => save({ handle: 'a' })).toThrow(/handle/);
+    expect(() => save({ name: '  ' })).toThrow(/name/);
+    expect(() => save({ script: 'x'.repeat(60_001) })).toThrow(/script/);
     store.close();
   });
 });
@@ -1039,7 +1098,7 @@ describe('searches as keyword lists', () => {
       raw.exec(`DELETE FROM search_runs; DELETE FROM search_hits;
         INSERT INTO search_runs (id, ts, platform, query, found, returned) VALUES (1, ${T0}, 'linkedin', 'React OR Vue', 1, 0), (2, ${T0}, 'teamtailor', 'go | rust', 1, 0), (3, ${T0}, 'linkedin', 'director or manager', 1, 0), (4, ${T0}, 'wttj', '', 1, 0);`);
       raw.exec(
-        'DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
+        'DROP TABLE custom_adapter_events; DROP TABLE custom_adapters; DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -1210,7 +1269,7 @@ describe('searches as keyword lists', () => {
         first.close();
         const raw = new DatabaseSync(path);
         raw.exec(
-          'DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); PRAGMA user_version = 9;',
+          'DROP TABLE custom_adapter_events; DROP TABLE custom_adapters; DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); PRAGMA user_version = 9;',
         );
         raw.close();
         const upgraded = Store.open(path);

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { chmodSync, closeSync, mkdirSync, openSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -69,7 +70,7 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
  * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
  * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`),
  * 9 the keyword list of a search and the jobs it excluded, 10 its disallowed terms and the term that dropped each job,
- * 11 the title of a dropped job, 12 the detail of a call (its parameters among it), 13 the company lookups and the company-to-board map, 14 the log of LinkedIn place lookups.
+ * 11 the title of a dropped job, 12 the detail of a call (its parameters among it), 13 the company lookups and the company-to-board map, 14 the log of LinkedIn place lookups, 15 the adapters written on the dashboard (`custom_adapters`) and the log of their changes.
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -245,6 +246,30 @@ const MIGRATIONS: readonly string[] = [
     hits   TEXT    NOT NULL
   );
   CREATE INDEX place_lookups_ts ON place_lookups (ts);
+  `,
+  // 15: the adapters an operator writes on the dashboard: a handle (the id is custom-<handle>), the kind of context the script gets, the
+  // one host it may reach, and the script. custom_adapter_events is who changed what and when (the script itself is not kept in it,
+  // only its hash), so a change can be traced; it outlives the adapter it is about.
+  `
+  CREATE TABLE custom_adapters (
+    handle     TEXT PRIMARY KEY,
+    name       TEXT    NOT NULL,
+    kind       TEXT    NOT NULL CHECK (kind IN ('http', 'browser')),
+    url        TEXT    NOT NULL,
+    script     TEXT    NOT NULL,
+    enabled    INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE custom_adapter_events (
+    id      INTEGER PRIMARY KEY,
+    ts      INTEGER NOT NULL,
+    handle  TEXT    NOT NULL,
+    actor   TEXT    NOT NULL,
+    action  TEXT    NOT NULL,
+    sha256  TEXT
+  );
+  CREATE INDEX custom_adapter_events_handle ON custom_adapter_events (handle, id);
   `,
 ];
 
@@ -588,6 +613,87 @@ export class Store {
   /** Forget a mapping. False when there was none. */
   deleteCompanyBoard(id: number): boolean {
     return Number(this.db.prepare('DELETE FROM company_boards WHERE id = ?').run(id).changes) > 0;
+  }
+
+  // ----------------------------------------------------------------------------------------------- custom adapters
+
+  listCustomAdapters(): CustomAdapterRow[] {
+    return (this.db.prepare('SELECT * FROM custom_adapters ORDER BY name COLLATE NOCASE, handle').all() as Rows[]).map(toCustomAdapter);
+  }
+
+  getCustomAdapter(handle: string): CustomAdapterRow | null {
+    const row = this.db.prepare('SELECT * FROM custom_adapters WHERE handle = ?').get(handle) as Rows | undefined;
+    return row === undefined ? null : toCustomAdapter(row);
+  }
+
+  /** Create or replace an adapter; every change is logged with who made it. Returns false when `create` finds the handle taken. */
+  saveCustomAdapter(
+    entry: { handle: string; name: string; kind: 'http' | 'browser'; url: string; script: string },
+    options: { create: boolean; actor: string },
+    now: number,
+  ): boolean {
+    if (!CUSTOM_HANDLE.test(entry.handle)) throw new StoreError('invalid custom adapter handle');
+    if (entry.name.trim() === '' || entry.name.length > 60) throw new StoreError('the name is 1 to 60 characters');
+    if (entry.script.length > MAX_CUSTOM_SCRIPT_CHARS) throw new StoreError('the script is too long');
+    return this.transaction(() => {
+      const exists = this.getCustomAdapter(entry.handle) !== null;
+      if (options.create === exists) return false;
+      if (exists)
+        this.db
+          .prepare('UPDATE custom_adapters SET name = ?, kind = ?, url = ?, script = ?, updated_at = ? WHERE handle = ?')
+          .run(entry.name.trim(), entry.kind, entry.url, entry.script, now, entry.handle);
+      else
+        this.db
+          .prepare(
+            'INSERT INTO custom_adapters (handle, name, kind, url, script, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
+          )
+          .run(entry.handle, entry.name.trim(), entry.kind, entry.url, entry.script, now, now);
+      this.logCustomEvent(
+        entry.handle,
+        options.actor,
+        exists ? 'updated' : 'created',
+        createHash('sha256').update(entry.script).digest('hex'),
+        now,
+      );
+      return true;
+    });
+  }
+
+  setCustomAdapterEnabled(handle: string, enabled: boolean, actor: string, now: number): boolean {
+    return this.transaction(() => {
+      const changed = Number(
+        this.db.prepare('UPDATE custom_adapters SET enabled = ?, updated_at = ? WHERE handle = ?').run(enabled ? 1 : 0, now, handle)
+          .changes,
+      );
+      if (changed > 0) this.logCustomEvent(handle, actor, enabled ? 'enabled' : 'disabled', null, now);
+      return changed > 0;
+    });
+  }
+
+  deleteCustomAdapter(handle: string, actor: string, now: number): boolean {
+    return this.transaction(() => {
+      const changed = Number(this.db.prepare('DELETE FROM custom_adapters WHERE handle = ?').run(handle).changes);
+      if (changed > 0) this.logCustomEvent(handle, actor, 'deleted', null, now);
+      return changed > 0;
+    });
+  }
+
+  customAdapterEvents(handle: string, limit: number): CustomAdapterEvent[] {
+    const rows = this.db
+      .prepare('SELECT ts, actor, action, sha256 FROM custom_adapter_events WHERE handle = ? ORDER BY id DESC LIMIT ?')
+      .all(handle, limit) as Rows[];
+    return rows.map((row) => ({
+      ts: Number(row['ts']),
+      actor: String(row['actor']),
+      action: String(row['action']),
+      sha256: row['sha256'] === null ? null : String(row['sha256']),
+    }));
+  }
+
+  private logCustomEvent(handle: string, actor: string, action: string, sha256: string | null, now: number): void {
+    this.db
+      .prepare('INSERT INTO custom_adapter_events (ts, handle, actor, action, sha256) VALUES (?, ?, ?, ?, ?)')
+      .run(now, handle, actor.slice(0, 120), action, sha256);
   }
 
   // ------------------------------------------------------------------------------------------ LinkedIn places
@@ -1135,6 +1241,41 @@ const MAX_MEMORY_VALUE = 400;
 export const MAX_MEMORY_ENTRIES = 1000;
 /** Ids kept per search: a board listing can hold thousands of postings, and the counts stay exact whatever is kept. */
 const MAX_SEARCH_HITS = 1000;
+
+/** The handle of a custom adapter; its module id is `custom-<handle>`. */
+export const CUSTOM_HANDLE = /^[a-z][a-z0-9]{1,23}$/;
+export const MAX_CUSTOM_SCRIPT_CHARS = 60_000;
+
+/** An adapter written on the dashboard. */
+export interface CustomAdapterRow {
+  handle: string;
+  name: string;
+  kind: 'http' | 'browser';
+  /** The one https address the script may reach; its host is the adapter's allowed host. */
+  url: string;
+  script: string;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CustomAdapterEvent {
+  ts: number;
+  actor: string;
+  action: string;
+  sha256: string | null;
+}
+
+const toCustomAdapter = (row: Rows): CustomAdapterRow => ({
+  handle: String(row['handle']),
+  name: String(row['name']),
+  kind: row['kind'] === 'browser' ? 'browser' : 'http',
+  url: String(row['url']),
+  script: String(row['script']),
+  enabled: Number(row['enabled']) === 1,
+  createdAt: Number(row['created_at']),
+  updatedAt: Number(row['updated_at']),
+});
 
 /** Lookups kept in the LinkedIn places log. */
 const MAX_PLACE_LOOKUPS = 2000;

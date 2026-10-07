@@ -1,5 +1,9 @@
 import {
   ATS_IDS,
+  customAdapterDetailSchema,
+  customAdapterRemovedSchema,
+  customAdapterSchema,
+  customHandleSchema,
   adapterToggleSchema,
   companyBoardRemovedSchema,
   companyBoardSchema,
@@ -11,6 +15,8 @@ import {
   type AdapterToggle,
   type Budget,
   type CompanyBoard,
+  type CustomAdapter,
+  type CustomAdapterDetail,
   type SavedPlace,
   type DataCleared,
 } from '@jobwatch/dashboard-api';
@@ -47,6 +53,18 @@ export interface Changes {
   savePlace(entry: { alias: string; id: string; label: string }): Promise<SavedPlace>;
   /** Forget a remembered name. False when there was none. */
   forgetPlace(alias: string): Promise<boolean>;
+  /**
+   * Create or replace an adapter written on the dashboard. Refused when CUSTOM_ADAPTERS is off (409 `disabled`), when the handle is taken
+   * on create (409 `exists`) or missing on update (404), and when the address or the definition is not valid (400 `invalid`).
+   */
+  saveCustomAdapter(
+    entry: { handle: string; name: string; kind: 'http' | 'browser'; url: string; script: string },
+    mode: 'create' | 'update',
+    actor: string,
+  ): Promise<CustomAdapterDetail>;
+  /** Turn a custom adapter on or off (hot reload). */
+  setCustomAdapterEnabled(handle: string, enabled: boolean, actor: string): Promise<CustomAdapter>;
+  deleteCustomAdapter(handle: string, actor: string): Promise<boolean>;
   /** Number of calls still running. */
   running(): number;
   /** Stop the router process so the container's restart policy brings it back. */
@@ -80,6 +98,14 @@ const placeBody = z
     alias: z.string().trim().min(2).max(60),
     id: z.string().regex(/^\d{3,12}$/, 'a numeric LinkedIn geoId'),
     label: z.string().trim().max(200).default(''),
+  })
+  .strict();
+const customBody = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    kind: z.enum(['http', 'browser']),
+    url: z.string().trim().min(8).max(300),
+    script: z.string().min(1).max(60_000),
   })
   .strict();
 const restartBody = z.object({ force: z.boolean().default(false) }).strict();
@@ -177,6 +203,57 @@ export function registerWrites(router: Router, changes: Changes, logger: EngineL
       logger.info({ actor: actor(res), alias }, 'dashboard_place_forgotten');
       res.json(checked(savedPlaceRemovedSchema, { alias }));
     } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/custom-adapters', async (req, res, next) => {
+    try {
+      const body = customBody.extend({ handle: customHandleSchema }).strict().parse(req.body);
+      const saved = await changes.saveCustomAdapter(body, 'create', actor(res));
+      logger.info({ actor: actor(res), handle: saved.handle, kind: saved.kind, host: saved.host }, 'dashboard_custom_adapter_created');
+      res.status(201).json(checked(customAdapterDetailSchema, saved));
+    } catch (error) {
+      if (error instanceof ChangeRefused) return refuse(res, error);
+      next(error);
+    }
+  });
+
+  router.put('/custom-adapters/:handle', async (req, res, next) => {
+    try {
+      const handle = customHandleSchema.parse(req.params['handle']);
+      const body = customBody.parse(req.body);
+      const saved = await changes.saveCustomAdapter({ ...body, handle }, 'update', actor(res));
+      logger.info({ actor: actor(res), handle, kind: saved.kind, host: saved.host }, 'dashboard_custom_adapter_updated');
+      res.json(checked(customAdapterDetailSchema, saved));
+    } catch (error) {
+      if (error instanceof ChangeRefused) return refuse(res, error);
+      next(error);
+    }
+  });
+
+  router.put('/custom-adapters/:handle/enabled', async (req, res, next) => {
+    try {
+      const handle = customHandleSchema.parse(req.params['handle']);
+      const { enabled } = toggleBody.parse(req.body);
+      const saved = await changes.setCustomAdapterEnabled(handle, enabled, actor(res));
+      logger.info({ actor: actor(res), handle, enabled }, 'dashboard_custom_adapter_toggled');
+      res.json(checked(customAdapterSchema, saved));
+    } catch (error) {
+      if (error instanceof ChangeRefused) return refuse(res, error);
+      next(error);
+    }
+  });
+
+  router.delete('/custom-adapters/:handle', async (req, res, next) => {
+    try {
+      const handle = customHandleSchema.parse(req.params['handle']);
+      if (!(await changes.deleteCustomAdapter(handle, actor(res))))
+        return refuse(res, new ChangeRefused(404, 'not_found', 'No such custom adapter.'));
+      logger.info({ actor: actor(res), handle }, 'dashboard_custom_adapter_deleted');
+      res.json(checked(customAdapterRemovedSchema, { handle }));
+    } catch (error) {
+      if (error instanceof ChangeRefused) return refuse(res, error);
       next(error);
     }
   });

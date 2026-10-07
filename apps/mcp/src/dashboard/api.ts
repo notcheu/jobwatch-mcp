@@ -1,4 +1,8 @@
 import {
+  customAdapterDetailSchema,
+  customAdapterSampleSchema,
+  customAdapterSchema,
+  customAdaptersSchema,
   placeLookupsSchema,
   savedPlaceSchema,
   savedPlacesSchema,
@@ -18,6 +22,10 @@ import {
   toolsSchema,
   usageSchemaResponse,
   type AtsLookups,
+  type CustomAdapter,
+  type CustomAdapterDetail,
+  type CustomAdapterSample,
+  type CustomAdapters,
   type PlaceLookups,
   type SavedPlace,
   type SavedPlaces,
@@ -42,6 +50,11 @@ import {
   effectiveRate,
   searchHealth,
   type CallEntry,
+  type CustomAdapterRow,
+  checkTargetUrl,
+  customId,
+  sampleScript,
+  scriptDocs,
   type CompanyBoard as CompanyBoardRow,
   type CallLog,
   type Budgets,
@@ -86,6 +99,8 @@ export interface DashboardData {
   runtime: () => RuntimeManager | undefined;
   /** The limits in force, shown read only (no secret in it). */
   settings: Settings;
+  /** The adapters written on the dashboard: whether CUSTOM_ADAPTERS is on, how their scripts are isolated, and why one is not loaded. */
+  custom: { available: boolean; sandbox: 'docker' | 'process'; problems: () => ReadonlyMap<string, string> };
   /** The last session check of each browser platform (what `session_status` found); the dashboard never runs a check. */
   sessionStates: () => ReadonlyMap<string, PlatformStatus>;
 }
@@ -457,6 +472,53 @@ export async function listSavedPlaces(data: DashboardData, query: unknown): Prom
   const start = (q.page - 1) * q.pageSize;
   return checked(savedPlacesSchema, { total: all.length, items: all.slice(start, start + q.pageSize).map(toSavedPlace) });
 }
+
+// ------------------------------------------------------------------------------------------------------ custom adapters
+
+export const toCustomAdapter = (data: DashboardData, row: CustomAdapterRow): CustomAdapter => {
+  const target = checkTargetUrl(row.url);
+  return checked(customAdapterSchema, {
+    handle: row.handle,
+    id: customId(row.handle),
+    tool: `custom_${row.handle}`,
+    name: row.name,
+    kind: row.kind,
+    url: row.url,
+    host: 'host' in target ? target.host : '',
+    enabled: row.enabled,
+    problem: data.custom.available && row.enabled ? (data.custom.problems().get(row.handle) ?? null) : null,
+    createdAt: iso(row.createdAt),
+    updatedAt: iso(row.updatedAt),
+  });
+};
+
+/** The adapters written on the dashboard, without their scripts. */
+export function listCustomAdapters(data: DashboardData): CustomAdapters {
+  return checked(customAdaptersSchema, {
+    available: data.custom.available,
+    sandbox: data.custom.sandbox,
+    items: data.store.listCustomAdapters().map((row) => toCustomAdapter(data, row)),
+  });
+}
+
+/** One adapter with its script and the log of who changed it; undefined when there is none. */
+export function getCustomAdapter(data: DashboardData, handle: string): CustomAdapterDetail | undefined {
+  const row = data.store.getCustomAdapter(handle);
+  if (row === undefined || row === null) return undefined;
+  return checked(customAdapterDetailSchema, {
+    ...toCustomAdapter(data, row),
+    script: row.script,
+    events: data.store
+      .customAdapterEvents(handle, 50)
+      .map((event) => ({ at: iso(event.ts), actor: event.actor, action: event.action, sha256: event.sha256 })),
+  });
+}
+
+/** What the editor starts from for a kind of context. */
+export const getCustomAdapterSample = (kind: unknown): CustomAdapterSample => {
+  const parsed = z.enum(['http', 'browser']).parse(kind);
+  return checked(customAdapterSampleSchema, { kind: parsed, script: sampleScript(parsed), docs: scriptDocs(parsed) });
+};
 
 // ---------------------------------------------------------------------------------------------------------- tools
 
