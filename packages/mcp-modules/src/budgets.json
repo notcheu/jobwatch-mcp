@@ -3,6 +3,7 @@
   "ashby": { "hourly": 600, "daily": 3000 },
   "ats-discovery": { "hourly": 200, "daily": 600 },
   "greenhouse": { "hourly": 600, "daily": 3000 },
+  "hibob": { "hourly": 600, "daily": 3000 },
   "lever": { "hourly": 600, "daily": 3000 },
   "linkedin": { "hourly": 200, "daily": 400 },
   "linkedin-geo": { "hourly": 60, "daily": 300 },

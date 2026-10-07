@@ -11,6 +11,7 @@
     "@jobwatch/adapter-apec": "*",
     "@jobwatch/adapter-ashby": "*",
     "@jobwatch/adapter-greenhouse": "*",
+    "@jobwatch/adapter-hibob": "*",
     "@jobwatch/adapter-lever": "*",
     "@jobwatch/adapter-linkedin": "*",
     "@jobwatch/adapter-recruitee": "*",
