@@ -127,12 +127,27 @@ export {
   boardToolOutput,
   boardsInput,
   detailFields,
+  BoardHttpError,
+  BoardNotFound,
+  MAX_DETAIL_READS,
+  expectBoardResponse,
   judgeBoardPostings,
+  selectForDetail,
   runBoardTool,
   slugify,
   titleCase,
 } from './boards';
-export type { BoardAddress, BoardExcluded, BoardFilters, BoardJob, BoardPosting, BoardReport, BoardSource, Judged } from './boards';
+export type {
+  BoardAddress,
+  BoardExcluded,
+  BoardFilters,
+  BoardJob,
+  BoardPosting,
+  BoardRead,
+  BoardReport,
+  BoardSource,
+  Judged,
+} from './boards';
 
 export { readByIds, readNew, returnedIds } from './visit';
 export type {
