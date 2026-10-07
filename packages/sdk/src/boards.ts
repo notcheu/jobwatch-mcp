@@ -291,6 +291,8 @@ export interface BoardRead {
   total?: number;
   /** Postings that matched the filters but whose text was not read, because `MAX_DETAIL_READS` was reached. */
   unread?: number;
+  /** Things the caller should know about this board (the list was cut short, for one), added to the call's warnings as they are. */
+  warnings?: string[];
 }
 
 /** The board answered 404: `runBoardTool` reports it as `not_found`. Thrown by a source's `read`. */
@@ -479,6 +481,7 @@ export async function runBoardTool<S extends string>(
         // an ATS that does not name the company on its postings (Ashby, Lever): the feed's name, else the handle the board is read by
         found.push({ posting: { ...posting, company: posting.company ?? parsed.name ?? titleCase(target.label), board: name }, report });
       }
+      for (const note of parsed.warnings ?? []) warnings.push(`${name}: ${note}`);
       if ((parsed.unread ?? 0) > 0)
         warnings.push(
           `${name}: ${parsed.unread} more job(s) matched the filters but their text was not read (${MAX_DETAIL_READS} at most per board and call): narrow the filters.`,

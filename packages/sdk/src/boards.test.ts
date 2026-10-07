@@ -292,7 +292,7 @@ describe('runBoardTool', () => {
             description: detail.text,
           });
         }
-        return { name: 'Acme', postings, total: 7, unread: 3 };
+        return { name: 'Acme', postings, total: 7, unread: 3, warnings: ['the list was cut short'] };
       },
       invalidMessage: 'nope',
     };
@@ -311,6 +311,7 @@ describe('runBoardTool', () => {
       ]);
       expect(result.data.boards[0]).toMatchObject({ status: 'ok', jobs_total: 7 });
       expect(result.warnings.join(' ')).toMatch(/3 more job\(s\) matched the filters but their text was not read/);
+      expect(result.warnings).toContain('acme: the list was cut short');
     });
 
     it('reports a 404 as not_found and another error status as an error, whichever request it was', async () => {
