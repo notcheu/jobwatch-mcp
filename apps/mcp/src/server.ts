@@ -346,9 +346,12 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const app = createApp(appDeps);
 
   /** Run one of the registry's tools from the host (the control socket): the same guard, budget, log and call history as an MCP call. */
-  const runTool = async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    if (!holder.current().tools.has(name))
-      throw new Error(`The tool ${name} is not available: enable its adapter first (jobwatch adapters enable linkedin-geo).`);
+  const runTool = async (
+    name: string,
+    args: Record<string, unknown>,
+    enable = 'jobwatch adapters enable linkedin-geo',
+  ): Promise<Record<string, unknown>> => {
+    if (!holder.current().tools.has(name)) throw new Error(`The tool ${name} is not available: enable its adapter first (${enable}).`);
     const { result } = await callTool(appDeps, name, args);
     if (result.isError) {
       const failure = JSON.parse(result.content[0]?.text ?? '{}') as { message?: string };
@@ -521,6 +524,17 @@ export async function start(options: StartOptions): Promise<RunningServer> {
             'dashboard.stop': async () => ({ ...(await dashboard.stop()) }),
             'dashboard.status': async () => ({ ...dashboard.status() }),
             // places: look up, remember and forget names for LinkedIn locations, through the linkedin_locations tool
+            // ATS discovery: look companies up, logged on the dashboard's ATS discovery page like any ats_find call
+            'ats.find': (request) =>
+              runTool(
+                'ats_find',
+                {
+                  companies: Array.isArray(request['companies']) ? request['companies'].map(String) : [],
+                  ...(Array.isArray(request['ats']) ? { ats: request['ats'].map(String) } : {}),
+                  ...(typeof request['handles'] === 'number' ? { handles_per_company: request['handles'] } : {}),
+                },
+                'jobwatch utilities enable ats-discovery',
+              ),
             'linkedin-geo.lookup': (request) => runTool('linkedin_locations', { query: String(request['query'] ?? '') }),
             'linkedin-geo.save': (request) =>
               runTool('linkedin_locations', {

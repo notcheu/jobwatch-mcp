@@ -600,3 +600,58 @@ describe('utilities are listed and enabled apart from the adapters', () => {
     expect(await enabledFile()).toEqual({ enabled: [], utilities: [] });
   });
 });
+
+describe('ats-find', () => {
+  const lookup = {
+    companies: [
+      {
+        input: 'Doctolib',
+        tried: ['doctolib'],
+        matches: [
+          {
+            ats: 'greenhouse',
+            handle: 'doctolib',
+            reading_tool: 'greenhouse_jobs',
+            board_url: 'https://boards.greenhouse.io/doctolib',
+            jobs: 153,
+            sample_titles: ['Account Executive', 'Designer'],
+          },
+        ],
+      },
+      { input: 'Ghost', tried: ['ghost'], matches: [] },
+    ],
+    warnings: ['Ghost: no board found on the ATS checked.'],
+  };
+  const withRouter = async (run: (seen: Record<string, unknown>[]) => Promise<void>) => {
+    const { startControlServer, controlSocketPath } = await import('@jobwatch/core');
+    const seen: Record<string, unknown>[] = [];
+    const control = await startControlServer(controlSocketPath(dataDir), {
+      'ats.find': async (request) => (seen.push(request), lookup),
+    });
+    try {
+      await run(seen);
+    } finally {
+      await control.close();
+    }
+  };
+
+  it('looks the companies up through the router and lists each board with its jobs', async () => {
+    await withRouter(async (seen) => {
+      expect(await cli(['ats-find', 'Doctolib', 'Ghost', '--ats', 'greenhouse,lever', '--handles', '3'])).toBe(0);
+      expect(seen).toEqual([{ command: 'ats.find', companies: ['Doctolib', 'Ghost'], ats: ['greenhouse', 'lever'], handles: 3 }]);
+    });
+    expect(out).toContain('Doctolib   (tried: doctolib)');
+    expect(out).toContain('greenhouse  doctolib');
+    expect(out).toContain('153 jobs  https://boards.greenhouse.io/doctolib');
+    expect(out).toContain('no board found on the ATS checked');
+    expect(out).toContain('note: Ghost: no board found');
+  });
+
+  it('refuses no company, an unknown ATS and a bad handle count, and says when no router runs', async () => {
+    expect(await cli(['ats-find'])).toBe(1);
+    expect(await cli(['ats-find', 'Acme', '--ats', 'workday'])).toBe(1);
+    expect(await cli(['ats-find', 'Acme', '--handles', '9'])).toBe(1);
+    expect(await cli(['ats-find', 'Acme'])).toBe(2);
+    expect(err).toContain('No router is running');
+  });
+});

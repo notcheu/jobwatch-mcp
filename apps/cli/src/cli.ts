@@ -17,6 +17,7 @@ import type { DockerRunner, InstalledAdapters, InstalledModules, InstalledUtilit
 import { clearData } from './clearData';
 import { dashboard } from './dashboard';
 import { doctor } from './doctor';
+import { atsFind } from './atsFind';
 import { linkedinGeo } from './linkedinGeo';
 import { login } from './login';
 
@@ -54,6 +55,8 @@ Usage:
   jobwatch login stop <platform>       stop it again
   jobwatch linkedin-geo <text> [--save <name> [--pick <n>]] | --list | --forget <name>
                                        find the LinkedIn geoId of a place and remember names for places
+  jobwatch ats-find <company...> [--ats <id,id>] [--handles <n>]
+                                       find which ATS (Greenhouse, Lever, Ashby, Teamtailor) hosts each company's careers board
   jobwatch dashboard start [--ttl <minutes>] | stop | status
                                        open or close the operator dashboard on the running router (closed by default)
   jobwatch doctor                      check configuration, data directory, Docker, image, network, profiles
@@ -310,6 +313,11 @@ export async function run(argv: readonly string[], deps: Deps): Promise<number> 
       );
     if (command === 'linkedin-geo' || command === 'linked-geo')
       return await linkedinGeo(
+        deps,
+        [subcommand, ...rest].filter((part): part is string => part !== undefined),
+      );
+    if (command === 'ats-find')
+      return await atsFind(
         deps,
         [subcommand, ...rest].filter((part): part is string => part !== undefined),
       );
