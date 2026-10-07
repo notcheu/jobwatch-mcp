@@ -223,6 +223,8 @@ export interface FakeHttpRoute {
   /** JSON-serialisable value (stringified) or a raw string. */
   body: unknown;
   headers?: Record<string, string>;
+  /** For a POST: only a request whose body satisfies this uses the route (several POSTs to one URL, answered by what they ask). */
+  when?: (body: unknown) => boolean;
 }
 
 export interface RecordedRequest {
@@ -260,7 +262,12 @@ export class FakeHttpClient implements HttpClient {
       ...(body === undefined ? {} : { body }),
       ...(options?.headers === undefined ? {} : { headers: options.headers }),
     });
-    const route = this.routes.find((r) => (r.method ?? method) === method && (typeof r.url === 'string' ? r.url === url : r.url.test(url)));
+    const route = this.routes.find(
+      (r) =>
+        (r.method ?? method) === method &&
+        (typeof r.url === 'string' ? r.url === url : r.url.test(url)) &&
+        (r.when === undefined || r.when(body)),
+    );
     if (!route) throw new Error(`FakeHttpClient: no route for ${method} ${redactUrl(url)}`);
     const text = typeof route.body === 'string' ? route.body : JSON.stringify(route.body);
     const status = route.status ?? 200;

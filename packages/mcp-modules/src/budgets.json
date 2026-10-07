@@ -59,6 +59,10 @@
     "hourly": 600,
     "daily": 3000
   },
+  "workday": {
+    "hourly": 600,
+    "daily": 3000
+  },
   "wttj": {
     "hourly": 60,
     "daily": 200
