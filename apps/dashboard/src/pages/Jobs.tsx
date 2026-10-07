@@ -62,12 +62,6 @@ const columns = [
     cell: (c) => <span className="block max-w-40 truncate text-muted-foreground">{c.getValue() ?? '–'}</span>,
   }),
   column.accessor('source', { header: 'Source', enableSorting: false, cell: (c) => <Badge variant="secondary">{c.getValue()}</Badge> }),
-  column.accessor('board', {
-    header: 'Board',
-    enableSorting: false,
-    cell: (c) =>
-      c.getValue() === null ? <span className="text-muted-foreground">–</span> : <Badge variant="outline">{c.getValue()}</Badge>,
-  }),
   column.accessor('firstSeen', {
     header: 'First seen',
     cell: (c) => <span title={new Date(c.getValue()).toLocaleString()}>{ago(c.getValue())}</span>,
@@ -180,7 +174,6 @@ export function Jobs() {
   const filters = {
     q: get('q'),
     source,
-    board: get('board'),
     found_by: search.getAll('found_by'),
     no_keywords: search.get('no_keywords') ?? undefined,
     disallowed: search.getAll('disallowed'),
@@ -235,14 +228,6 @@ export function Jobs() {
             className="w-64"
             value={text}
             onChange={(event) => setText(event.target.value)}
-          />
-          <Input
-            aria-label="Board"
-            placeholder="Board"
-            className="w-32"
-            defaultValue={get('board')}
-            onBlur={(event) => update({ board: event.target.value.trim() })}
-            onKeyDown={(event) => event.key === 'Enter' && update({ board: event.currentTarget.value.trim() })}
           />
           <Input
             aria-label="Found by keywords"
@@ -432,7 +417,6 @@ function JobBody({ job }: { job: JobDetail }) {
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary">{job.source}</Badge>
-        {job.board !== null && <Badge variant="outline">{job.board}</Badge>}
         {href !== undefined && (
           <a
             href={href}

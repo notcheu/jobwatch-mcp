@@ -122,7 +122,7 @@ describe('ashby_jobs', () => {
     expect(c.spent()).toBe(1); // one request for one board
     expect(c.spent()).toBe(1); // one request for one board
     expect(ids(result)).toEqual([J1, J4, J2, J3]);
-    expect(data(result).jobs[0]).toMatchObject({ source: 'ashby', board: 'acme', company: null, locations: ['Paris'] });
+    expect(data(result).jobs[0]).toMatchObject({ source: 'ashby', board: 'acme', company: 'acme', locations: ['Paris'] });
     expect(data(result).jobs[0]?.description).toBe('');
     expect(data(result).jobs[0]?.summary).toContain('We use React and TypeScript.');
     expect(data(await run(c.ctx, { detail: 'full' })).jobs[0]?.description).toContain('We use React and TypeScript.');

@@ -374,7 +374,8 @@ export async function runBoardTool<S extends string>(
         if (seen.has(posting.id)) continue;
         seen.add(posting.id);
         fresh += 1;
-        found.push({ posting: { ...posting, board: name }, report });
+        // an ATS that does not name the company on its postings (Ashby, Lever): the feed's name, else the handle the board is read by
+        found.push({ posting: { ...posting, company: posting.company ?? parsed.name ?? target.label, board: name }, report });
       }
       if (fresh < parsed.postings.length)
         warnings.push(`${name}: ${parsed.postings.length - fresh} job(s) already listed by another board of this call.`);
