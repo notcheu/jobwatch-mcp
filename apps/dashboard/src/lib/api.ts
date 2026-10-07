@@ -108,8 +108,14 @@ const query = (params: Record<string, string | number | readonly string[] | unde
 export const api = {
   me: (): Promise<Me> => request(meSchema, '/me'),
   overview: (): Promise<Overview> => request(overviewSchema, '/overview'),
-  calls: (params: { tool?: string; platform?: string; code?: string; before?: number; limit?: number }): Promise<CallsPage> =>
-    request(callsPageSchema, `/calls${query(params)}`),
+  calls: (params: {
+    tool?: string;
+    platform?: string;
+    role?: 'utility';
+    code?: string;
+    before?: number;
+    limit?: number;
+  }): Promise<CallsPage> => request(callsPageSchema, `/calls${query(params)}`),
   call: (id: number): Promise<CallDetail> => request(callDetailSchema, `/calls/${id}`),
   jobs: (params: Record<string, string | number | readonly string[] | undefined>): Promise<JobsPage> =>
     request(jobsPageSchema, `/jobs${query(params)}`),
@@ -146,6 +152,7 @@ export const api = {
     to?: string;
     tool?: string;
     platform?: string;
+    role?: 'utility';
   }): Promise<Usage> => request(usageSchemaResponse, `/usage${query(params)}`),
   setAdapter: (id: string, enabled: boolean): Promise<AdapterToggle> =>
     request(adapterToggleSchema, `/adapters/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ enabled }) }),

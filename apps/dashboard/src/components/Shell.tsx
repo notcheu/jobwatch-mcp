@@ -28,6 +28,16 @@ export function usePlatform(): string | undefined {
   return params.get('tool') ?? undefined;
 }
 
+/** The tab that groups every utility together (they fetch no jobs, so each has no tab of its own); no platform is named so. */
+export const UTILITY_TAB = 'utility';
+
+/** What the `?tool=` tab asks the API for: one platform, or every utility together. */
+export function useToolFilter(): { platform?: string; role?: 'utility' } {
+  const tool = usePlatform();
+  if (tool === undefined) return {};
+  return tool === UTILITY_TAB ? { role: 'utility' } : { platform: tool };
+}
+
 export function Shell() {
   const location = useLocation();
   const [params, setParams] = useSearchParams();
@@ -40,6 +50,9 @@ export function Shell() {
     .filter((adapter) => adapter.enabled && adapter.role === 'adapter')
     .map((adapter) => adapter.platform);
   const unique = [...new Set(platforms)];
+  // the utility tab is offered where the numbers of the utilities are shown, and only when one is enabled
+  const hasUtility = (tools.data?.adapters ?? []).some((adapter) => adapter.enabled && adapter.role === 'utility');
+  const utilityTab = hasUtility && (section?.to === '/runs' || section?.to === '/analytics');
 
   return (
     <div className="flex h-screen">
@@ -132,6 +145,7 @@ export function Shell() {
                     {platform}
                   </TabsTrigger>
                 ))}
+                {utilityTab && <TabsTrigger value={UTILITY_TAB}>Utility</TabsTrigger>}
               </TabsList>
             </Tabs>
           </div>

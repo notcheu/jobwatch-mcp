@@ -6,7 +6,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { DetailPanel, Field } from '@/components/DetailPanel';
 import { JsonView } from '@/components/JsonView';
 import { KeywordBadges } from '@/components/KeywordBadges';
-import { usePlatform } from '@/components/Shell';
+import { useToolFilter } from '@/components/Shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -51,7 +51,7 @@ const columns = [
 ];
 
 export function Runs() {
-  const platform = usePlatform();
+  const filter = useToolFilter();
   const [outcome, setOutcome] = useState<Outcome>('all');
   const params = useParams();
   const navigate = useNavigate();
@@ -59,10 +59,10 @@ export function Runs() {
   const selected = params['id'] === undefined ? undefined : Number(params['id']);
 
   const calls = useQuery({
-    queryKey: ['calls', platform, outcome],
+    queryKey: ['calls', filter, outcome],
     queryFn: () =>
       api.calls({
-        ...(platform === undefined ? {} : { platform }),
+        ...filter,
         ...(outcome === 'running' ? { code: 'running' } : outcome === 'ok' ? { code: 'ok' } : {}),
         limit: 100,
       }),

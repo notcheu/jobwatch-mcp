@@ -55,6 +55,8 @@ export interface RestoredCall {
 export interface CallQuery {
   tool?: string;
   platform?: string;
+  /** Only calls of one of these platforms (the utilities, for the dashboard's Utility tab). */
+  platforms?: readonly string[];
   code?: string;
   /** Only calls with a sequence number below this (the previous page's last id). */
   before?: number;
@@ -210,6 +212,7 @@ export class CallLog {
     const matches = (entry: CallEntry): boolean =>
       (query.tool === undefined || entry.tool === query.tool) &&
       (query.platform === undefined || entry.platform === query.platform) &&
+      (query.platforms === undefined || query.platforms.includes(entry.platform)) &&
       (query.code === undefined || (query.code === 'running' ? entry.state === 'running' : entry.code === query.code)) &&
       (query.before === undefined || entry.id < query.before);
     const all = this.entries.filter(matches).reverse();

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useNavigate } from 'react-router';
 import { StatCard } from '@/components/StatCard';
-import { usePlatform } from '@/components/Shell';
+import { useToolFilter } from '@/components/Shell';
 import { DisallowedBadges, KeywordBadges } from '@/components/KeywordBadges';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -44,13 +44,15 @@ function Bar({ share, tone = 'primary' }: { share: number; tone?: 'primary' | 'w
 }
 
 export function Analytics() {
-  const platform = usePlatform();
+  const filter = useToolFilter();
+  const { platform } = filter;
+  const utilities = filter.role === 'utility';
   const [scope, setScope] = useState<Scope>('session');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const usage = useQuery({
-    queryKey: ['usage', scope, from, to, platform],
-    queryFn: () => api.usage({ scope, ...(scope === 'historical' ? { from, to } : {}), ...(platform === undefined ? {} : { platform }) }),
+    queryKey: ['usage', scope, from, to, filter],
+    queryFn: () => api.usage({ scope, ...(scope === 'historical' ? { from, to } : {}), ...filter }),
     refetchInterval: scope === 'session' ? 5000 : 30_000,
   });
   const overview = useQuery({ queryKey: ['overview'], queryFn: api.overview, refetchInterval: 5000 });
@@ -100,10 +102,13 @@ export function Analytics() {
       {usage.data !== undefined && usage.data.totals.calls > 0 && <UsagePanels usage={usage.data} />}
       {tools.data !== undefined && (
         <Budgets
-          adapters={tools.data.adapters.filter((adapter) => adapter.enabled && (platform === undefined || adapter.platform === platform))}
+          adapters={tools.data.adapters.filter(
+            (adapter) =>
+              adapter.enabled && (utilities ? adapter.role === 'utility' : platform === undefined || adapter.platform === platform),
+          )}
         />
       )}
-      <SearchEffectiveness platform={platform} />
+      {!utilities && <SearchEffectiveness platform={platform} />}
     </div>
   );
 }

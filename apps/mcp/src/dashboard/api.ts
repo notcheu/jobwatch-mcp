@@ -59,6 +59,7 @@ import {
 } from '@jobwatch/core';
 import {
   buildCatalog,
+  roleOf,
   savedLocation,
   savedLocations,
   type SavedLocation,
@@ -101,6 +102,8 @@ export const checked = <T>(schema: z.ZodType<T>, value: unknown): T => schema.pa
 const callQuery = z.object({
   tool: z.string().max(64).optional(),
   platform: z.string().max(32).optional(),
+  /** `utility`: the calls of every utility together (the Utility tab). */
+  role: z.enum(['utility']).optional(),
   code: z.string().max(32).optional(),
   before: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -124,10 +127,22 @@ const callRow = (entry: CallEntry) =>
     keywords: entry.keywords,
   });
 
-export function listCalls(data: DashboardData, query: unknown): CallsPage {
+/** The platforms of the installed utilities (they fetch no jobs): what the dashboard's Utility tab groups. */
+async function utilityPlatforms(data: DashboardData): Promise<string[]> {
+  const found: string[] = [];
+  for (const load of Object.values(data.installed)) {
+    const module = await load();
+    if (roleOf(module) === 'utility') found.push(module.platform);
+  }
+  return found;
+}
+
+export async function listCalls(data: DashboardData, query: unknown): Promise<CallsPage> {
   const q = callQuery.parse(query);
+  const platforms = q.role === 'utility' ? await utilityPlatforms(data) : undefined;
   const page = data.callLog.list({
     limit: q.limit,
+    ...(platforms === undefined ? {} : { platforms }),
     ...(q.tool === undefined ? {} : { tool: q.tool }),
     ...(q.platform === undefined ? {} : { platform: q.platform }),
     ...(q.code === undefined ? {} : { code: q.code }),
@@ -609,6 +624,8 @@ const usageQuery = z.object({
   to: z.string().max(32).optional(),
   tool: z.string().max(64).optional(),
   platform: z.string().max(32).optional(),
+  /** `utility`: every utility together (the Utility tab). */
+  role: z.enum(['utility']).optional(),
 });
 
 const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
@@ -617,19 +634,25 @@ const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
  * The analytics. `session` reads the calls in memory (hourly buckets, with percentiles); `lifetime` and `historical` read the persisted
  * daily totals, which survive a restart (daily buckets; durations are averages and a maximum, since percentiles need every call).
  */
-export function getUsage(data: DashboardData, query: unknown): Usage {
+export async function getUsage(data: DashboardData, query: unknown): Promise<Usage> {
   const q = usageQuery.parse(query);
-  if (q.scope !== 'session') return getPersistedUsage(data, q);
-  return getSessionUsage(data, q);
+  const platforms = q.role === 'utility' ? await utilityPlatforms(data) : undefined;
+  if (q.scope !== 'session') return getPersistedUsage(data, q, platforms);
+  return getSessionUsage(data, q, platforms);
 }
 
-function getPersistedUsage(data: DashboardData, q: z.infer<typeof usageQuery>): Usage {
+function getPersistedUsage(data: DashboardData, q: z.infer<typeof usageQuery>, platforms: readonly string[] | undefined): Usage {
   const now = data.clock();
   const to = q.scope === 'historical' && q.to !== undefined && q.to !== '' ? day(parseDate('to', q.to, now)) : day(now);
   const from = q.scope === 'historical' && q.from !== undefined && q.from !== '' ? day(parseDate('from', q.from, now)) : '0000-01-01';
   const rows = data.store
     .dailyUsage(from, to)
-    .filter((row) => (q.tool === undefined || row.tool === q.tool) && (q.platform === undefined || row.platform === q.platform));
+    .filter(
+      (row) =>
+        (q.tool === undefined || row.tool === q.tool) &&
+        (q.platform === undefined || row.platform === q.platform) &&
+        (platforms === undefined || platforms.includes(row.platform)),
+    );
   const sum = (pick: (row: (typeof rows)[number]) => number, list = rows): number => list.reduce((total, row) => total + pick(row), 0);
   const calls = sum((row) => row.calls);
   const byTool = new Map<string, typeof rows>();
@@ -680,14 +703,15 @@ function getPersistedUsage(data: DashboardData, q: z.infer<typeof usageQuery>): 
 }
 
 /** The analytics of the calls in memory (this router's session). */
-function getSessionUsage(data: DashboardData, q: z.infer<typeof usageQuery>): Usage {
+function getSessionUsage(data: DashboardData, q: z.infer<typeof usageQuery>, platforms: readonly string[] | undefined): Usage {
   const calls = data.callLog
     .all()
     .filter(
       (call) =>
         call.state === 'done' &&
         (q.tool === undefined || call.tool === q.tool) &&
-        (q.platform === undefined || call.platform === q.platform),
+        (q.platform === undefined || call.platform === q.platform) &&
+        (platforms === undefined || platforms.includes(call.platform)),
     );
   const durations = calls.flatMap((call) => (call.durationMs === null ? [] : [call.durationMs])).sort((a, b) => a - b);
   const byTool = new Map<string, CallEntry[]>();

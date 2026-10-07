@@ -54,6 +54,39 @@ describe('the shell', () => {
     expect(items.indexOf('ATS discovery')).toBeGreaterThan(items.indexOf('Searches'));
   });
 
+  it('offers one Utility tab on Runs and Analytics, only when a utility is enabled, and sends role=utility', async () => {
+    const first = tools.adapters[0] as Record<string, unknown>;
+    const utility = (id: string, enabled = true) => ({ ...first, id, platform: id, role: 'utility', kind: 'http', enabled });
+    const withUtilities = { ...tools, adapters: [...tools.adapters, utility('ats-discovery'), utility('linkedin-geo')] };
+    const seen = mockApi({ '/me': me, '/tools': withUtilities, '/calls': { calls: [], total: 0, next: null } });
+    renderApp('/runs?tool=utility');
+    const list = await screen.findByRole('tablist', { name: 'Tool' });
+    await waitFor(() => expect(within(list).getByRole('tab', { name: 'Utility' })).toHaveAttribute('data-state', 'active'));
+    expect(
+      within(list)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['All', 'linkedin', 'apec', 'Utility']);
+    await waitFor(() => expect(seen.some((url) => url.startsWith('/dashboard/api/v1/calls?') && url.includes('role=utility'))).toBe(true));
+    expect(seen.some((url) => url.includes('platform=utility'))).toBe(false);
+  });
+
+  it('has no Utility tab when no utility is enabled, nor on Jobs', async () => {
+    const first = tools.adapters[0] as Record<string, unknown>;
+    const off = {
+      ...tools,
+      adapters: [
+        ...tools.adapters,
+        { ...first, id: 'ats-discovery', platform: 'ats-discovery', role: 'utility', kind: 'http', enabled: false },
+      ],
+    };
+    mockApi({ '/me': me, '/tools': off, '/calls': { calls: [], total: 0, next: null } });
+    renderApp('/runs');
+    const list = await screen.findByRole('tablist', { name: 'Tool' });
+    await waitFor(() => expect(within(list).getByRole('tab', { name: 'linkedin' })).toBeInTheDocument());
+    expect(within(list).queryByRole('tab', { name: 'Utility' })).not.toBeInTheDocument();
+  });
+
   it('gives no tab to a utility: it fetches no jobs', async () => {
     const first = tools.adapters[0] as Record<string, unknown>;
     const withUtility = {

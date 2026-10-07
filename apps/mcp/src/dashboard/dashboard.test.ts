@@ -16,6 +16,7 @@ import {
 } from '@jobwatch/core';
 import { exportJWK, generateKeyPair, SignJWT, createLocalJWKSet, type JWK } from 'jose';
 import { afterEach, describe, expect, it } from 'vitest';
+import { SDK_API_VERSION, defineHttpTool, defineUtility, z } from '@jobwatch/sdk';
 import { installedFixtures } from '../harness';
 import { createDashboardApp, type DashboardDeps } from './app';
 import { Oidc } from './oidc';
@@ -137,7 +138,28 @@ function seededStore(): Store {
   return store;
 }
 
-function seededLog(): CallLog {
+const utilityFixture = defineUtility({
+  id: 'ats-discovery',
+  displayName: 'ATS discovery',
+  description: 'Utility used by the dashboard tests.',
+  sdkApi: SDK_API_VERSION,
+  platform: 'ats-discovery',
+  allowedHosts: ['api.probe.example.com'],
+  tools: [
+    defineHttpTool({
+      name: 'ats_find',
+      title: 'Find (read-only)',
+      description: 'Finds. Read-only, no side effects.',
+      input: z.object({}).strict(),
+      output: z.object({}),
+      annotations: { readOnlyHint: true, openWorldHint: false, idempotentHint: true },
+      limits: { timeoutS: 5, cost: 1, outputMaxBytes: 4096 },
+      handler: async () => ({ data: {}, warnings: [] }),
+    }),
+  ],
+});
+
+function seededLog(utility = false): CallLog {
   const log = new CallLog(50);
   const call = (requestId: string, tool: string, platform: string, code: 'ok' | 'rate_limited', params: Record<string, unknown>) => {
     log.start({ requestId, tool, adapter: platform, platform, startedAt: NOW - 1000 });
@@ -165,6 +187,10 @@ function seededLog(): CallLog {
   call('r1', 'linkedin_search', 'linkedin', 'ok', { keywords: 'react engineer', geo: 'france', skip_ids: ['1', '2'] });
   call('r2', 'teamtailor_jobs', 'teamtailor', 'ok', { boards: ['bsport'], title_any: ['vp'] });
   call('r3', 'linkedin_search', 'linkedin', 'rate_limited', { keywords: 'vue' });
+  if (utility) {
+    call('u1', 'ats_find', 'ats-discovery', 'ok', { companies: ['Acme'] });
+    call('u2', 'linkedin_locations', 'linkedin-geo', 'ok', { query: 'Berlin' });
+  }
   log.start({ requestId: 'live', tool: 'apec_search', adapter: 'apec', platform: 'apec', startedAt: NOW });
   return log;
 }
@@ -288,6 +314,25 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(filtered.calls[0].keywords).toEqual(['vp']);
     const running = await json(await t.call('/dashboard/api/v1/calls?code=running'));
     expect(running.calls.map((c: any) => c.requestId)).toEqual(['live']);
+  });
+
+  it('groups the calls and the usage of every utility under role=utility, whichever utility they come from', async () => {
+    const t = await build({
+      callLog: seededLog(true),
+      installed: {
+        ...installedFixtures,
+        'ats-discovery': async () => utilityFixture,
+        'linkedin-geo': async () => ({ ...utilityFixture, id: 'linkedin-geo', platform: 'linkedin-geo' }),
+      },
+    });
+    const calls = await json(await t.call('/dashboard/api/v1/calls?role=utility'));
+    expect(calls.calls.map((c: any) => c.platform).sort()).toEqual(['ats-discovery', 'linkedin-geo']);
+    expect((await json(await t.call('/dashboard/api/v1/calls'))).calls).toHaveLength(6);
+    const usage = await json(await t.call('/dashboard/api/v1/usage?role=utility'));
+    expect(usage.totals.calls).toBe(2);
+    expect(usage.byTool.map((row: any) => row.tool).sort()).toEqual(['ats_find', 'linkedin_locations']);
+    expect((await json(await t.call('/dashboard/api/v1/usage?role=utility&scope=lifetime'))).totals.calls).toBe(0);
+    expect((await t.call('/dashboard/api/v1/calls?role=adapter')).status).toBe(400);
   });
 
   it('gives the full parameters of one call, and a 404 for a call that left memory', async () => {
