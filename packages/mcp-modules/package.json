@@ -16,6 +16,7 @@
     "@jobwatch/adapter-linkedin": "*",
     "@jobwatch/adapter-recruitee": "*",
     "@jobwatch/adapter-teamtailor": "*",
+    "@jobwatch/adapter-workable": "*",
     "@jobwatch/adapter-wttj": "*",
     "@jobwatch/sdk": "*",
     "@jobwatch/utility-ats-discovery": "*",
