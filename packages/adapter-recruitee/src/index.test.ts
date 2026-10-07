@@ -108,7 +108,7 @@ describe('recruitee_jobs', () => {
     const result = await run(c.ctx);
     expect(c.spent()).toBe(1); // one request for one board
     expect(data(result).jobs.map((j) => j.id)).toEqual(['1003', '1001', '1002']);
-    expect(data(result).jobs[0]).toMatchObject({
+    expect(data(result).jobs.find((j) => j.id === '1001')).toMatchObject({
       source: 'recruitee',
       board: 'acme',
       company: 'Acme',
