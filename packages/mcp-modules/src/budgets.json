@@ -11,6 +11,10 @@
     "hourly": 200,
     "daily": 600
   },
+  "bamboohr": {
+    "hourly": 600,
+    "daily": 3000
+  },
   "breezy": {
     "hourly": 600,
     "daily": 3000

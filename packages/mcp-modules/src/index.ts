@@ -16,6 +16,7 @@ export const installedAdapters = {
   // <adapters:begin>
   apec: () => import('@jobwatch/adapter-apec').then((m) => m.default),
   ashby: () => import('@jobwatch/adapter-ashby').then((m) => m.default),
+  bamboohr: () => import('@jobwatch/adapter-bamboohr').then((m) => m.default),
   breezy: () => import('@jobwatch/adapter-breezy').then((m) => m.default),
   greenhouse: () => import('@jobwatch/adapter-greenhouse').then((m) => m.default),
   hibob: () => import('@jobwatch/adapter-hibob').then((m) => m.default),
