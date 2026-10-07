@@ -1,6 +1,7 @@
 import { chmodSync, closeSync, mkdirSync, openSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { SearchRecord } from '@jobwatch/sdk';
 import { findSalaryRange } from '@jobwatch/sdk';
 
 /** Milliseconds since the epoch. Injected everywhere time matters, so tests control it. */
@@ -50,7 +51,9 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
 /**
  * Each entry upgrades the schema by one version (`PRAGMA user_version`). Never edit a released migration: add a new one.
  * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
- * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`).
+ * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`),
+ * 9 the keyword list of a search and the jobs it excluded, 10 its disallowed terms and the term that dropped each job,
+ * 11 the title of a dropped job.
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -166,6 +169,29 @@ const MIGRATIONS: readonly string[] = [
   ) WITHOUT ROWID;
   CREATE INDEX platform_memory_updated ON platform_memory (updated_at);
   `,
+  // 9: a search's keywords are a LIST (any of them matches). `keywords` is that list as JSON, in the order it was given; `keywords_key` is
+  // the same list lower-cased and sorted, so two orderings of the same keywords are one search. `search_hits.excluded` marks the jobs the
+  // search dropped because of a disallowed term or a salary floor. The old `query` text is split into the list by the backfill.
+  `
+  ALTER TABLE search_runs ADD COLUMN keywords     TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE search_runs ADD COLUMN keywords_key TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE search_hits ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key);
+  `,
+  // 10: a search is its keywords AND its disallowed terms (the same keywords with other terms keeps other jobs). `disallowed` is the list as
+  // JSON and `disallowed_key` the same list lower-cased and sorted. A job a search dropped keeps the reason and the term that did it.
+  `
+  ALTER TABLE search_runs ADD COLUMN disallowed     TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE search_runs ADD COLUMN disallowed_key TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE search_hits ADD COLUMN excluded_reason TEXT;
+  ALTER TABLE search_hits ADD COLUMN excluded_term   TEXT;
+  DROP INDEX search_runs_platform_keywords;
+  CREATE INDEX search_runs_search ON search_runs (platform, keywords_key, disallowed_key);
+  `,
+  // 11: the title of a job a search dropped. A job dropped by its title is never stored, so without this its hit would have no title.
+  `
+  ALTER TABLE search_hits ADD COLUMN excluded_title TEXT;
+  `,
 ];
 
 /** Days of per-tool daily totals kept (docs/plans/17-dashboard.md, D8). */
@@ -216,6 +242,7 @@ export class Store {
       db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;');
       const before = Store.migrate(db);
       if (before < 7) Store.backfillSalaries(db);
+      if (before > 0 && before < 9) Store.backfillSearchKeywords(db);
       if (path !== ':memory:') chmodSync(path, 0o600);
     } catch (cause) {
       db.close();
@@ -239,6 +266,26 @@ export class Store {
     db.exec('BEGIN');
     try {
       for (const values of found) update.run(...values);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  /**
+   * Split the `query` text of the searches recorded before migration 9 into the keyword list: on a LinkedIn `OR` and on a pipe, the two
+   * ways the old text joined several keywords. One pass, once.
+   */
+  private static backfillSearchKeywords(db: DatabaseSync): void {
+    const update = db.prepare('UPDATE search_runs SET keywords = ?, keywords_key = ? WHERE id = ?');
+    const rows = db.prepare("SELECT id, query FROM search_runs WHERE query <> ''").all() as Rows[];
+    db.exec('BEGIN');
+    try {
+      for (const row of rows) {
+        const list = normalizeKeywords(String(row['query']).split(/\s+OR\s+|\s*\|\s*/));
+        update.run(JSON.stringify(list), keywordsKey(list), Number(row['id']));
+      }
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -533,10 +580,14 @@ export class Store {
       params.push(like, like, like);
     }
     if (filter.search !== undefined) {
+      const exactTerms = filter.search.disallowed !== undefined;
       where.push(
-        'EXISTS (SELECT 1 FROM search_hits h JOIN search_runs r ON r.id = h.run_id WHERE h.job_id = jobs.id AND r.platform = jobs.platform AND r.query = ?)',
+        `EXISTS (SELECT 1 FROM search_hits h JOIN search_runs r ON r.id = h.run_id WHERE h.job_id = jobs.id AND r.platform = jobs.platform AND r.keywords_key = ?${
+          exactTerms ? ' AND r.disallowed_key = ?' : ''
+        })`,
       );
-      params.push(filter.search);
+      params.push(keywordsKey(normalizeKeywords(filter.search.keywords)));
+      if (filter.search.disallowed !== undefined) params.push(keywordsKey(normalizeTerms(filter.search.disallowed)));
     }
     if (filter.boards.length > 0) {
       where.push(`board IN (${filter.boards.map(() => '?').join(', ')})`);
@@ -577,37 +628,71 @@ export class Store {
   // ------------------------------------------------------------------------------------------------------ searches
 
   /**
-   * Remember one search: its keywords (`query`, trimmed and capped; reported in lower case; empty = no keyword, as for a whole-board listing) and the ids it
-   * listed. `found` and `returned` are the real counts; at most MAX_SEARCH_HITS ids are kept, the returned ones first.
+   * Remember one search: its keyword list (trimmed, lower-cased, capped; empty = no keyword, as for a whole-board listing) and the ids it
+   * listed. `found` and `returned` are the real counts; at most MAX_SEARCH_HITS ids are kept, the returned ones first, then the excluded.
    */
   recordSearch(platform: string, search: SearchRecord, now: number): void {
-    const query = search.query.replace(/\s+/g, ' ').trim().slice(0, MAX_QUERY_CHARS);
+    const keywords = normalizeKeywords(search.keywords);
+    const disallowed = normalizeTerms(search.disallowed);
     const returned = new Set(search.returned);
+    const dropped = new Map(search.excluded.map((entry) => [entry.id, entry] as const));
     const found = [...new Set(search.found)];
-    const kept = [...found.filter((id) => returned.has(id)), ...found.filter((id) => !returned.has(id))].slice(0, MAX_SEARCH_HITS);
+    const kept = [
+      ...found.filter((id) => returned.has(id)),
+      ...found.filter((id) => !returned.has(id) && dropped.has(id)),
+      ...found.filter((id) => !returned.has(id) && !dropped.has(id)),
+    ].slice(0, MAX_SEARCH_HITS);
     this.transaction(() => {
       const run = this.db
-        .prepare('INSERT INTO search_runs (ts, platform, query, found, returned) VALUES (?, ?, ?, ?, ?)')
-        .run(now, platform, query, found.length, returned.size);
-      const insert = this.db.prepare('INSERT OR IGNORE INTO search_hits (run_id, job_id, returned) VALUES (?, ?, ?)');
-      for (const id of kept) if (JOB_ID.test(id)) insert.run(Number(run.lastInsertRowid), id, returned.has(id) ? 1 : 0);
+        .prepare(
+          'INSERT INTO search_runs (ts, platform, query, keywords, keywords_key, disallowed, disallowed_key, found, returned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          now,
+          platform,
+          keywords.join(' | '),
+          JSON.stringify(keywords),
+          keywordsKey(keywords),
+          JSON.stringify(disallowed),
+          keywordsKey(disallowed),
+          found.length,
+          returned.size,
+        );
+      const insert = this.db.prepare(
+        'INSERT OR IGNORE INTO search_hits (run_id, job_id, returned, excluded, excluded_reason, excluded_term, excluded_title) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      );
+      for (const id of kept) {
+        if (!JOB_ID.test(id)) continue;
+        const why = returned.has(id) ? undefined : dropped.get(id);
+        insert.run(
+          Number(run.lastInsertRowid),
+          id,
+          returned.has(id) ? 1 : 0,
+          why === undefined ? 0 : 1,
+          why?.reason ?? null,
+          why === undefined ? null : why.term.slice(0, MAX_TERM_CHARS),
+          why?.title === undefined || why.title === null ? null : why.title.slice(0, 300),
+        );
+      }
     });
   }
 
-  /** Per platform and keyword, over [since, until): how often it ran and how many distinct jobs it listed, returned and found first. */
+  /** Per search (a platform, its keyword list and its disallowed terms), over [since, until): runs, and the distinct jobs it matched, returned, dropped and found first. */
   searchStats(filter: { since: number; until: number; platform?: string; limit: number }): SearchStat[] {
     const rows = this.db
       .prepare(
-        `SELECT r.platform AS platform, lower(r.query) AS query, count(DISTINCT r.id) AS runs, max(r.ts) AS last_run,
+        `SELECT r.platform AS platform, r.keywords_key AS keywords_key, r.disallowed_key AS disallowed_key,
+                count(DISTINCT r.id) AS runs, min(r.ts) AS first_run, max(r.ts) AS last_run,
                 count(DISTINCT h.job_id) AS jobs_found,
                 count(DISTINCT CASE WHEN h.returned = 1 THEN h.job_id END) AS jobs_returned,
+                count(DISTINCT CASE WHEN h.excluded = 1 THEN h.job_id END) AS jobs_excluded,
                 count(DISTINCT CASE WHEN j.first_seen >= ? THEN h.job_id END) AS jobs_new
          FROM search_runs r
          LEFT JOIN search_hits h ON h.run_id = r.id
          LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
          WHERE r.ts >= ? AND r.ts < ? ${filter.platform === undefined ? '' : 'AND r.platform = ?'}
-         GROUP BY r.platform, lower(r.query)
-         ORDER BY jobs_found DESC, runs DESC, r.platform, lower(r.query)
+         GROUP BY r.platform, r.keywords_key, r.disallowed_key
+         ORDER BY jobs_found DESC, runs DESC, r.platform, r.keywords_key, r.disallowed_key
          LIMIT ?`,
       )
       .all(
@@ -615,25 +700,144 @@ export class Store {
       ) as Rows[];
     return rows.map((row) => ({
       platform: String(row['platform']),
-      query: String(row['query']),
+      keywords: parseKeywords(row['keywords_key']),
+      disallowed: parseKeywords(row['disallowed_key']),
       runs: Number(row['runs']),
+      firstRun: Number(row['first_run']),
       lastRun: Number(row['last_run']),
       jobsFound: Number(row['jobs_found']),
       jobsReturned: Number(row['jobs_returned']),
+      jobsExcluded: Number(row['jobs_excluded']),
       jobsNew: Number(row['jobs_new']),
     }));
   }
 
-  /** For each of these jobs, the distinct keywords of the searches that listed it (empty keywords left out). */
-  foundBy(platform: string, ids: readonly string[]): Map<string, string[]> {
-    const out = new Map<string, string[]>();
+  /** The searches (keywords and disallowed terms, lower case, sorted) that listed each of these jobs, within the history that is kept. */
+  foundBy(platform: string, ids: readonly string[]): Map<string, SearchRef[]> {
+    const out = new Map<string, SearchRef[]>();
     const stmt = this.db.prepare(
-      `SELECT DISTINCT lower(r.query) AS query FROM search_hits h JOIN search_runs r ON r.id = h.run_id
-       WHERE r.platform = ? AND h.job_id = ? AND r.query <> '' ORDER BY lower(r.query)`,
+      `SELECT DISTINCT r.keywords_key AS keywords_key, r.disallowed_key AS disallowed_key FROM search_hits h JOIN search_runs r ON r.id = h.run_id
+       WHERE r.platform = ? AND h.job_id = ? ORDER BY r.keywords_key, r.disallowed_key`,
     );
     for (const id of new Set(ids)) {
-      const queries = (stmt.all(platform, id) as Rows[]).map((row) => String(row['query']));
-      if (queries.length > 0) out.set(id, queries);
+      const searches = (stmt.all(platform, id) as Rows[]).map((row) => ({
+        keywords: parseKeywords(row['keywords_key']),
+        disallowed: parseKeywords(row['disallowed_key']),
+      }));
+      if (searches.length > 0) out.set(id, searches);
+    }
+    return out;
+  }
+
+  /** The counts of one search over a window, or null when it did not run in it. */
+  private searchSummary(platform: string, keywordsK: string, disallowedK: string, since: number, until: number): SearchStat | null {
+    const row = this.db
+      .prepare(
+        `SELECT count(DISTINCT r.id) AS runs, min(r.ts) AS first_run, max(r.ts) AS last_run,
+                count(DISTINCT h.job_id) AS jobs_found,
+                count(DISTINCT CASE WHEN h.returned = 1 THEN h.job_id END) AS jobs_returned,
+                count(DISTINCT CASE WHEN h.excluded = 1 THEN h.job_id END) AS jobs_excluded,
+                count(DISTINCT CASE WHEN j.first_seen >= ? THEN h.job_id END) AS jobs_new
+         FROM search_runs r
+         LEFT JOIN search_hits h ON h.run_id = r.id
+         LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
+         WHERE r.platform = ? AND r.keywords_key = ? AND r.disallowed_key = ? AND r.ts >= ? AND r.ts < ?`,
+      )
+      .get(since, platform, keywordsK, disallowedK, since, until) as Rows | undefined;
+    if (row === undefined || Number(row['runs']) === 0) return null;
+    return {
+      platform,
+      keywords: parseKeywords(keywordsK),
+      disallowed: parseKeywords(disallowedK),
+      runs: Number(row['runs']),
+      firstRun: Number(row['first_run']),
+      lastRun: Number(row['last_run']),
+      jobsFound: Number(row['jobs_found']),
+      jobsReturned: Number(row['jobs_returned']),
+      jobsExcluded: Number(row['jobs_excluded']),
+      jobsNew: Number(row['jobs_new']),
+    };
+  }
+
+  /**
+   * One search (a platform, its keywords and its disallowed terms, any order or case): when it ran, what it matched, and the jobs, those
+   * it returned first, then those it dropped (each with the term that did it). `since` and `until` narrow the runs counted.
+   */
+  searchDetail(
+    platform: string,
+    keywords: readonly string[],
+    disallowed: readonly string[],
+    options: { limit: number; since?: number; until?: number },
+  ): SearchDetail | null {
+    const keywordsK = keywordsKey(normalizeKeywords(keywords));
+    const disallowedK = keywordsKey(normalizeTerms(disallowed));
+    const since = options.since ?? 0;
+    const until = options.until ?? Number.MAX_SAFE_INTEGER;
+    const summary = this.searchSummary(platform, keywordsK, disallowedK, since, until);
+    if (summary === null) return null;
+    const rows = this.db
+      .prepare(
+        `SELECT h.job_id AS id, max(h.returned) AS returned, max(h.excluded) AS excluded, count(DISTINCT r.id) AS seen,
+                max(h.excluded_reason) AS excluded_reason, max(h.excluded_term) AS excluded_term, max(h.excluded_title) AS excluded_title,
+                j.id AS stored_id, j.title AS stored_title, j.company AS company, j.location AS location, j.url AS url, j.last_seen AS last_seen
+         FROM search_runs r
+         JOIN search_hits h ON h.run_id = r.id
+         LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
+         WHERE r.platform = ? AND r.keywords_key = ? AND r.disallowed_key = ? AND r.ts >= ? AND r.ts < ?
+         GROUP BY h.job_id
+         ORDER BY max(h.returned) DESC, max(h.excluded) DESC, max(j.last_seen) DESC, h.job_id
+         LIMIT ?`,
+      )
+      .all(platform, keywordsK, disallowedK, since, until, options.limit) as Rows[];
+    const text = (value: unknown): string | null => (value === null || value === undefined ? null : String(value));
+    return {
+      ...summary,
+      jobs: rows.map((row) => {
+        const returned = Number(row['returned']) === 1;
+        const dropped = !returned && Number(row['excluded']) === 1;
+        return {
+          id: String(row['id']),
+          // the stored job's title, else the one kept with the hit when the search dropped it
+          title: text(row['stored_title']) ?? text(row['excluded_title']),
+          stored: row['stored_id'] !== null && row['stored_id'] !== undefined,
+          company: text(row['company']),
+          location: text(row['location']),
+          url: text(row['url']),
+          lastSeen: row['last_seen'] === null || row['last_seen'] === undefined ? null : Number(row['last_seen']),
+          outcome: returned ? 'returned' : dropped ? 'excluded' : 'other',
+          excludedBy: dropped ? excludedBy(row) : null,
+          timesListed: Number(row['seen']),
+        };
+      }),
+    };
+  }
+
+  /**
+   * Every search that listed one job, with the counts of that search and what happened to this job in it (returned, or dropped by which
+   * term). Within the history that is kept; the most recently run first.
+   */
+  jobSearches(platform: string, id: string): JobSearch[] {
+    const groups = this.db
+      .prepare(
+        `SELECT r.keywords_key AS keywords_key, r.disallowed_key AS disallowed_key, max(h.returned) AS returned, max(h.excluded) AS excluded,
+                max(h.excluded_reason) AS excluded_reason, max(h.excluded_term) AS excluded_term, max(r.ts) AS last_run
+         FROM search_hits h JOIN search_runs r ON r.id = h.run_id
+         WHERE r.platform = ? AND h.job_id = ?
+         GROUP BY r.keywords_key, r.disallowed_key
+         ORDER BY last_run DESC, r.keywords_key, r.disallowed_key`,
+      )
+      .all(platform, id) as Rows[];
+    const out: JobSearch[] = [];
+    for (const group of groups) {
+      const stat = this.searchSummary(platform, String(group['keywords_key']), String(group['disallowed_key']), 0, Number.MAX_SAFE_INTEGER);
+      if (stat === null) continue;
+      const returned = Number(group['returned']) === 1;
+      const dropped = !returned && Number(group['excluded']) === 1;
+      out.push({
+        ...stat,
+        outcome: returned ? 'returned' : dropped ? 'excluded' : 'other',
+        excludedBy: dropped ? excludedBy(group) : null,
+      });
     }
     return out;
   }
@@ -709,20 +913,111 @@ export const MAX_MEMORY_ENTRIES = 1000;
 /** Ids kept per search: a board listing can hold thousands of postings, and the counts stay exact whatever is kept. */
 const MAX_SEARCH_HITS = 1000;
 
-export interface SearchRecord {
-  query: string;
-  found: readonly string[];
-  returned: readonly string[];
+export type { SearchRecord };
+
+/** A search as a job lists it: its keywords and its disallowed terms, lower case and sorted. */
+export interface SearchRef {
+  keywords: string[];
+  disallowed: string[];
 }
 
-export interface SearchStat {
+/** Why a job was dropped: where the term was found, and the term (for `salary`, the salary the job states). */
+export interface ExcludedBy {
+  reason: 'title' | 'description' | 'salary';
+  term: string;
+}
+
+export interface SearchStat extends SearchRef {
   platform: string;
-  query: string;
   runs: number;
+  firstRun: number;
   lastRun: number;
   jobsFound: number;
   jobsReturned: number;
+  /** Jobs the search dropped because of a disallowed term or a salary floor. */
+  jobsExcluded: number;
   jobsNew: number;
+}
+
+export interface SearchDetailJob {
+  id: string;
+  /** The stored job's title, else the one recorded when the search dropped it; null when neither exists (the job was evicted, or the search is older than titles). */
+  title: string | null;
+  /** False when the job's text is not in the database: it was dropped by its title before its page was read, or it was evicted. */
+  stored: boolean;
+  company: string | null;
+  location: string | null;
+  url: string | null;
+  lastSeen: number | null;
+  /** `returned` handed back to the caller, `excluded` dropped by a disallowed term or salary floor, `other` listed but not returned (a cap, only_new, a filter). */
+  outcome: 'returned' | 'excluded' | 'other';
+  /** For an `excluded` job: the term that dropped it, when the search recorded it (null for a search recorded before terms were kept). */
+  excludedBy: ExcludedBy | null;
+  timesListed: number;
+}
+
+/** A search that listed one job, with the counts of that search and what happened to the job in it. */
+export interface JobSearch extends SearchStat {
+  outcome: 'returned' | 'excluded' | 'other';
+  excludedBy: ExcludedBy | null;
+}
+
+export interface SearchDetail extends SearchStat {
+  jobs: SearchDetailJob[];
+}
+
+/** Most keywords kept for one search. */
+const MAX_SEARCH_KEYWORDS = 20;
+
+/** The keywords of a search as stored: trimmed, single-spaced, lower case, capped, no empty entry and no duplicate. The order is kept. */
+export function normalizeKeywords(keywords: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const keyword of keywords) {
+    const clean = keyword.replace(/\s+/g, ' ').trim().toLowerCase().slice(0, MAX_QUERY_CHARS);
+    if (clean === '' || seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+    if (out.length >= MAX_SEARCH_KEYWORDS) break;
+  }
+  return out;
+}
+
+/** Longest disallowed term kept for a search, and most terms. */
+const MAX_TERM_CHARS = 60;
+const MAX_SEARCH_TERMS = 60;
+
+/** The disallowed terms of a search as stored: trimmed, single-spaced, lower case, capped, no empty entry and no duplicate. */
+export function normalizeTerms(terms: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const term of terms) {
+    const clean = term.replace(/\s+/g, ' ').trim().toLowerCase().slice(0, MAX_TERM_CHARS);
+    if (clean === '' || seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+    if (out.length >= MAX_SEARCH_TERMS) break;
+  }
+  return out;
+}
+
+function excludedBy(row: Rows): ExcludedBy | null {
+  const reason = row['excluded_reason'];
+  const term = row['excluded_term'];
+  if ((reason !== 'title' && reason !== 'description' && reason !== 'salary') || typeof term !== 'string') return null;
+  return { reason, term };
+}
+
+/** What makes two keyword lists one search: the same keywords in any order. */
+export const keywordsKey = (keywords: readonly string[]): string => JSON.stringify([...keywords].sort());
+
+function parseKeywords(value: unknown): string[] {
+  try {
+    const parsed: unknown = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 export interface NewJobRow {
@@ -765,8 +1060,11 @@ export interface JobListFilter {
   dir?: 'asc' | 'desc';
   /** Rows to skip, for paging. */
   offset?: number;
-  /** Only jobs a search with exactly these keywords (case-insensitive) listed. */
-  search?: string;
+  /**
+   * Only jobs a search with exactly these keywords (any order, case-insensitive) listed; an empty list is the searches with no keyword.
+   * With `disallowed`, only the search that also had exactly these disallowed terms (an empty list: none); without it, whatever its terms.
+   */
+  search?: { keywords: readonly string[]; disallowed?: readonly string[] };
   /** Most rows returned; `total` still counts them all. */
   limit: number;
   withDescription: boolean;

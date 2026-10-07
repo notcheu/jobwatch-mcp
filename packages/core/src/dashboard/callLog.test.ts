@@ -41,7 +41,7 @@ describe('CallLog', () => {
       unitsSpent: 3,
       responseBytes: 900,
       estimatedTokens: 260,
-      keywords: 'React Engineer',
+      keywords: ['React Engineer'],
       params: { keywords: 'React Engineer', geo: 'france' },
     });
   });
@@ -115,11 +115,15 @@ describe('CallLog', () => {
 
 describe('keywordsOf', () => {
   it('reads the keywords of a search, or the title words of an ATS search joined', () => {
-    expect(keywordsOf({ keywords: '  react  ' })).toBe('react');
-    expect(keywordsOf({ title_any: ['front', 'react'], boards: ['acme'] })).toBe('front | react');
+    expect(keywordsOf({ keywords: '  react  ' })).toEqual(['react']);
+    expect(keywordsOf({ keywords: ['react', 'vue'] })).toEqual(['react', 'vue']);
+    expect(keywordsOf({ title_any: ['front', 'react'], boards: ['acme'] })).toEqual(['front', 'react']);
+    // one string holding the OR of LinkedIn or a pipe is split, so old and new calls read the same
+    expect(keywordsOf({ keywords: 'react OR vue' })).toEqual(['react', 'vue']);
+    expect(keywordsOf({ title_any: ['front | back'] })).toEqual(['front', 'back']);
     expect(keywordsOf({ title_any: [] })).toBeNull();
     expect(keywordsOf({ ids: ['1'] })).toBeNull();
     expect(keywordsOf(null)).toBeNull();
-    expect(keywordsOf({ keywords: 'x'.repeat(500) })?.length).toBe(200);
+    expect(keywordsOf({ keywords: 'x'.repeat(500) })?.[0]?.length).toBe(100);
   });
 });

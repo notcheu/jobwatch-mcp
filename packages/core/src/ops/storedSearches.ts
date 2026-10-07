@@ -26,11 +26,19 @@ const output = z.object({
   searches: z.array(
     z.object({
       source: z.string(),
-      query: z.string().describe('The search keywords; empty for a search without any (WTTJ matches, a whole company board).'),
+      keywords: z
+        .array(z.string())
+        .describe(
+          'The keywords of the search, lower case and sorted (any of them matched); empty for a search without any (WTTJ matches, a whole company board).',
+        ),
+      disallowed_terms: z
+        .array(z.string())
+        .describe('The disallowed terms of the search, lower case and sorted. The same keywords with other terms is another search.'),
       runs: z.number().describe('How many times this search ran in the window.'),
       last_run: z.string(),
       jobs_found: z.number().describe('Distinct jobs the search listed in the window.'),
       jobs_returned: z.number().describe('Of those, the ones it handed back (not dropped by the title or the limits).'),
+      jobs_excluded: z.number().describe('Of those, the ones dropped because of a disallowed term or a salary floor.'),
       jobs_new: z.number().describe('Of those, the ones first stored in the window: what the search brought in that was new.'),
     }),
   ),
@@ -53,7 +61,7 @@ export function createStoredSearchesTool(store: Store, clock: Clock) {
     name: 'stored_searches',
     title: 'Stored search history (read-only)',
     description:
-      'Read-only. For each search keyword used in a window (default: the last 7 days), how many times it ran and how many distinct jobs it listed, returned and found for the first time, from the router database and without contacting any site. Use it to refine the keywords you search with. List the jobs of one keyword with stored_jobs(found_by=...). Kept for JOB_RETENTION_DAYS (default 30).',
+      'Read-only. For each search (a platform, a list of keywords any of which matches, and the disallowed terms it used) used in a window (default: the last 7 days), how many times it ran and how many distinct jobs it listed, returned, dropped by disallowed terms and found for the first time, from the router database and without contacting any site. Use it to refine the keywords you search with. List the jobs of one search with stored_jobs(found_by=[...]). Kept for JOB_RETENTION_DAYS (default 30).',
     input,
     output,
     annotations: { readOnlyHint: true, openWorldHint: false, idempotentHint: true },
@@ -68,11 +76,13 @@ export function createStoredSearchesTool(store: Store, clock: Clock) {
           window: { since: new Date(since).toISOString(), until: new Date(until).toISOString() },
           searches: rows.map((row) => ({
             source: row.platform,
-            query: row.query,
+            keywords: row.keywords,
+            disallowed_terms: row.disallowed,
             runs: row.runs,
             last_run: new Date(row.lastRun).toISOString(),
             jobs_found: row.jobsFound,
             jobs_returned: row.jobsReturned,
+            jobs_excluded: row.jobsExcluded,
             jobs_new: row.jobsNew,
           })),
         },

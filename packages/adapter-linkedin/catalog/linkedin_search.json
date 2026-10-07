@@ -69,10 +69,24 @@
         "type": "array"
       },
       "keywords": {
-        "description": "Search keywords, e.g. \"full stack engineer\".",
-        "maxLength": 200,
-        "minLength": 1,
-        "type": "string"
+        "anyOf": [
+          {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "items": {
+              "maxLength": 1000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          }
+        ],
+        "description": "What to search for: a list of keywords (any of them matches, never all), e.g. [\"full stack engineer\", \"backend engineer\"]. One string with LinkedIn's upper-case OR between keywords (\"full stack engineer OR backend engineer\") is split into the list."
       },
       "max_jobs": {
         "default": 50,

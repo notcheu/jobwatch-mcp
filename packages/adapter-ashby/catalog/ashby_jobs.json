@@ -120,15 +120,24 @@
         "type": "string"
       },
       "title_any": {
-        "default": [],
-        "description": "Keep jobs whose title contains any of these (case and accents ignored, \"front\" matches \"Frontend\"). Empty keeps all.",
-        "items": {
-          "maxLength": 60,
-          "minLength": 1,
-          "type": "string"
-        },
-        "maxItems": 20,
-        "type": "array"
+        "anyOf": [
+          {
+            "maxLength": 1200,
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "items": {
+              "maxLength": 1200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 0,
+            "type": "array"
+          }
+        ],
+        "description": "Keep jobs whose title contains any of these (OR, never AND; case and accents ignored, \"front\" matches \"Frontend\"). A list, or one string with a pipe between the keywords (\"react | vue\"). Empty keeps all."
       }
     },
     "required": [

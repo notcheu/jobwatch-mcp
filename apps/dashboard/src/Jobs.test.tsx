@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NOW, me, mockApi, renderApp, tools } from './test-utils';
+import { NOW, badSearchRow, jobSearch, me, mockApi, renderApp, searchRef, searchRow, tools } from './test-utils';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -18,7 +18,7 @@ const job = (over: Record<string, unknown> = {}) => ({
   lastSeen: NOW,
   descriptionChars: 4200,
   salary: { min: 72_000, max: 115_000, currency: 'EUR', variable: null },
-  foundBy: ['react', 'frontend'],
+  foundBy: [searchRef(['react']), searchRef(['frontend', 'react'])],
   ...over,
 });
 
@@ -29,6 +29,7 @@ const detail = (over: Record<string, unknown> = {}) => ({
   summaryKind: 'sections',
   outline: [{ part: 'role', chars: 120 }],
   hints: { years: [5], remote: ['hybrid'], salary: '60-70k€' },
+  foundBy: [jobSearch()],
   ...over,
 });
 
@@ -38,6 +39,13 @@ const rowsLoaded = async (count: number) => {
   await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(count));
   return screen.getAllByRole('row');
 };
+/** Found by is off by default: turn it on from the Columns menu. */
+const showFoundBy = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByText('Columns'));
+  await user.click(screen.getByLabelText('Found by'));
+  await user.keyboard('{Escape}');
+};
+
 const at = <T,>(list: readonly T[], index: number): T => {
   const item = list[index];
   if (item === undefined) throw new Error(`nothing at position ${index}`);
@@ -54,11 +62,15 @@ describe('jobs table', () => {
       ]),
     });
     renderApp('/jobs');
+    const user = userEvent.setup();
+    expect(await screen.findByText('Senior Frontend Engineer')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Found by' })).not.toBeInTheDocument(); // off by default
+    await showFoundBy(user);
     const rows = await rowsLoaded(3);
     const first = within(at(rows, 1));
     expect(first.getByText('Senior Frontend Engineer')).toBeInTheDocument();
     expect(first.getByText('linkedin')).toBeInTheDocument();
-    expect(first.getByText('react')).toBeInTheDocument();
+    expect(first.getAllByText('react')).toHaveLength(2); // one badge for each search that found it
     expect(first.getByText('4.2k')).toBeInTheDocument();
     expect(within(at(rows, 2)).getByText('bsport')).toBeInTheDocument();
     expect(screen.getByText('1–2 of 2')).toBeInTheDocument();
@@ -179,7 +191,8 @@ describe('job detail', () => {
     const panel = await screen.findByRole('complementary', { name: 'Senior Frontend Engineer' });
     expect(within(panel).getByLabelText('Description').textContent).toContain('Build things with React');
     expect(within(panel).getByText('Build things with React.')).toBeInTheDocument();
-    expect(within(panel).getByText('react')).toBeInTheDocument(); // the keyword that found it
+    // the searches that found it are in a section that stays closed until it is asked for
+    expect(within(panel).getByRole('button', { name: 'Found by 1 search' })).toHaveAttribute('aria-expanded', 'false');
     expect(within(panel).getByText('5+ years')).toBeInTheDocument();
     expect(within(panel).getByText('60-70k€')).toBeInTheDocument();
     expect(within(panel).getByRole('link', { name: /Open on the site/ })).toHaveAttribute('href', 'https://example.com/jobs/1000001');
@@ -214,32 +227,168 @@ describe('job detail', () => {
 describe('searches', () => {
   const searches = {
     searches: [
-      { source: 'linkedin', query: 'react engineer', runs: 4, lastRun: NOW, jobsFound: 80, jobsReturned: 30, jobsNew: 20 },
-      { source: 'linkedin', query: 'vue', runs: 2, lastRun: NOW, jobsFound: 10, jobsReturned: 0, jobsNew: 0 },
-      { source: 'wttj', query: '', runs: 1, lastRun: NOW, jobsFound: 12, jobsReturned: 12, jobsNew: 12 },
+      searchRow({ disallowed: ['intern', 'senior'] }), // sorted, as the router sends them
+      searchRow({ keywords: ['vue'], runs: 2, jobsFound: 10, jobsReturned: 0, jobsExcluded: 0, jobsNew: 0 }),
+      searchRow({ source: 'wttj', keywords: [], runs: 1, jobsFound: 12, jobsReturned: 12, jobsExcluded: 0, jobsNew: 12 }),
+      badSearchRow(),
+      searchRow({ keywords: ['react', 'vue', 'svelte'], runs: 1 }),
     ],
   };
-
-  it('shows each keyword with its runs, jobs found, returned and new, and the share that was new', async () => {
-    mockApi({ ...common, '/searches': searches });
-    renderApp('/searches');
-    const rows = await rowsLoaded(4);
-    const react = within(at(rows, 1));
-    expect(react.getByText('react engineer')).toBeInTheDocument();
-    expect(react.getByText('25%')).toBeInTheDocument();
-    expect(within(at(rows, 2)).getByText('0%')).toBeInTheDocument(); // a keyword that brings nothing new stands out
-    expect(within(at(rows, 3)).getByText('(no keywords)')).toBeInTheDocument();
+  const searchDetail = (over: Record<string, unknown> = {}) => ({
+    ...searchRow(),
+    jobs: [
+      {
+        id: '1000001',
+        title: 'Senior Frontend Engineer',
+        stored: true,
+        company: 'Acme',
+        location: 'Paris',
+        url: null,
+        lastSeen: NOW,
+        outcome: 'returned',
+        excludedBy: null,
+        timesListed: 3,
+      },
+      {
+        id: '1000002',
+        title: 'Intern',
+        stored: false, // dropped by its title: its page was never read, so the title is the one kept with the hit
+        company: 'Beta',
+        location: null,
+        url: null,
+        lastSeen: NOW,
+        outcome: 'excluded',
+        excludedBy: { reason: 'title', term: 'intern' },
+        timesListed: 1,
+      },
+      {
+        id: '1000003',
+        title: null,
+        stored: false,
+        company: null,
+        location: null,
+        url: null,
+        lastSeen: null,
+        outcome: 'other',
+        excludedBy: null,
+        timesListed: 1,
+      },
+      {
+        id: '1000004',
+        title: null,
+        stored: false,
+        company: null,
+        location: null,
+        url: null,
+        lastSeen: null,
+        outcome: 'excluded',
+        excludedBy: null,
+        timesListed: 1,
+      },
+    ],
+    jobsTruncated: false,
+    ...over,
   });
 
-  it('opens the jobs of a keyword when its row is clicked', async () => {
-    const seen = mockApi({ ...common, '/searches': searches, '/jobs': page([job()]) });
+  it('shows each search with one badge per keyword, its health, and the jobs discarded by the terms', async () => {
+    mockApi({ ...common, '/searches': searches });
+    renderApp('/searches');
+    const rows = await rowsLoaded(6);
+    const react = within(at(rows, 1));
+    expect(react.getByText('react engineer')).toBeInTheDocument();
+    expect(react.getByText('healthy')).toBeInTheDocument();
+    expect(within(at(rows, 3)).getByText('(no keywords)')).toBeInTheDocument();
+    const several = within(at(rows, 5));
+    for (const keyword of ['react', 'vue', 'svelte']) expect(several.getByText(keyword)).toBeInTheDocument(); // one badge each
+    expect(within(at(rows, 4)).getByText('90% discarded')).toBeInTheDocument(); // a search that wastes calls stands out
+    // its disallowed terms are in a column of their own, one badge each, so two searches with the same keywords can be told apart
+    expect(screen.getByRole('columnheader', { name: 'Disallowed terms' })).toBeInTheDocument();
+    const terms = within(at(rows, 1));
+    expect(terms.getByText('senior')).toBeInTheDocument();
+    expect(terms.getByText('intern')).toBeInTheDocument();
+  });
+
+  it('makes every row clickable, the one without keywords too', async () => {
+    mockApi({ ...common, '/searches': searches, '/searches/wttj': searchDetail({ source: 'wttj', keywords: [] }) });
     renderApp('/searches');
     const user = userEvent.setup();
-    await user.click(at(await rowsLoaded(4), 1));
-    expect(await screen.findByLabelText('Found by keyword')).toHaveValue('react engineer');
-    await waitFor(() =>
-      expect(seen.some((url) => url.startsWith('/dashboard/api/v1/jobs') && url.includes('found_by=react+engineer'))).toBe(true),
-    );
+    const rows = await rowsLoaded(6);
+    for (const row of rows.slice(1)) expect(row).toHaveClass('cursor-pointer');
+    await user.click(at(rows, 3));
+    expect(await screen.findByRole('complementary', { name: 'wttj: no keywords' })).toBeInTheDocument();
+  });
+
+  it('opens the detail of the search, with its health and its jobs, instead of going to the job list', async () => {
+    const seen = mockApi({ ...common, '/searches': searches, '/searches/linkedin': searchDetail({ disallowed: ['intern', 'senior'] }) });
+    renderApp('/searches');
+    const user = userEvent.setup();
+    await user.click(at(await rowsLoaded(6), 1));
+    const panel = await screen.findByRole('complementary', { name: 'linkedin: react engineer' });
+    expect(screen.queryByLabelText('Found by keywords')).not.toBeInTheDocument(); // still on the Searches page
+    const health = within(panel).getByRole('region', { name: 'Health' });
+    expect(within(health).getByText('healthy')).toBeInTheDocument();
+    expect(within(health).getByRole('img', { name: '70 of 80 jobs matched, 10 discarded' })).toBeInTheDocument();
+    expect(health).toHaveTextContent('Jobs found80');
+    expect(health).toHaveTextContent('Matched70');
+    expect(health).toHaveTextContent('Discarded10');
+    const list = within(panel).getByRole('list', { name: 'Jobs of this search' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(4);
+    expect(within(list).getByText('returned')).toBeInTheDocument();
+    expect(within(list).getAllByText('discarded')).toHaveLength(2);
+    expect(within(list).getByText('Job no longer stored')).toBeInTheDocument(); // an evicted job
+    expect(within(list).getByText('Title not recorded')).toBeInTheDocument(); // dropped by a search from before titles were kept
+    // a job dropped by its title was never stored: its recorded title shows as text, with no link to a page that does not exist
+    expect(within(list).getByText('Intern')).toBeInTheDocument();
+    expect(within(list).queryByRole('link', { name: 'Intern' })).not.toBeInTheDocument();
+    expect(within(list).getByTitle(/Dropped before its page was read, so its text was never stored/)).toBeInTheDocument();
+    expect(within(list).getByRole('link', { name: 'Senior Frontend Engineer' })).toHaveAttribute('href', '/jobs/linkedin/1000001');
+    const asked = seen.find((url) => url.startsWith('/dashboard/api/v1/searches/linkedin')) ?? '';
+    const asking = new URLSearchParams(asked.split('?')[1]);
+    expect(asking.getAll('keywords')).toEqual(['react engineer']);
+    expect(asking.getAll('disallowed')).toEqual(['intern', 'senior']); // the search is its keywords and its terms
+    const without = within(within(panel).getByText(/^without/));
+    expect(without.getByText('intern')).toBeInTheDocument(); // its terms, one badge each, in their own colour
+    expect(without.getByText('senior')).toBeInTheDocument();
+    expect(within(panel).getByText('Dropped: “intern” in the title')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('complementary')).not.toBeInTheDocument());
+  });
+
+  it('links from the detail to the list of the jobs the search found, with its keywords', async () => {
+    mockApi({ ...common, '/searches': searches, '/searches/linkedin': searchDetail({ keywords: ['react', 'vue'], disallowed: [] }) });
+    renderApp('/searches/linkedin?k=react&k=vue&days=7');
+    const link = await screen.findByRole('link', { name: /See all the jobs this search found/ });
+    const href = new URL(link.getAttribute('href') ?? '', 'http://x');
+    expect(href.pathname).toBe('/jobs');
+    expect(href.searchParams.getAll('found_by')).toEqual(['react', 'vue']);
+    expect(href.searchParams.get('no_disallowed')).toBe('1'); // exactly this search: it had no disallowed terms
+    expect(href.searchParams.get('tool')).toBe('linkedin');
+  });
+
+  it('links a search without keywords to the jobs found by no keyword', async () => {
+    mockApi({ ...common, '/searches': searches, '/searches/wttj': searchDetail({ source: 'wttj', keywords: [] }) });
+    renderApp('/searches/wttj?days=7');
+    const link = await screen.findByRole('link', { name: /See all the jobs this search found/ });
+    expect(new URL(link.getAttribute('href') ?? '', 'http://x').searchParams.get('no_keywords')).toBe('1');
+  });
+
+  it('explains a search in bad health, and lists the discarded jobs as such', async () => {
+    mockApi({
+      ...common,
+      '/searches': searches,
+      '/searches/linkedin': searchDetail({ ...badSearchRow(), jobs: [], jobsTruncated: true }),
+    });
+    renderApp('/searches/linkedin?k=intern&days=7');
+    const health = await screen.findByRole('region', { name: 'Health' });
+    expect(within(health).getByText('90% discarded')).toBeInTheDocument();
+    expect(health).toHaveTextContent('Most of the jobs it finds are dropped by the disallowed terms or the salary floor.');
+    expect(screen.getByText(/Only the first jobs are listed here/)).toBeInTheDocument();
+  });
+
+  it('says when the search did not run in the window', async () => {
+    mockApi({ ...common, '/searches': searches });
+    renderApp('/searches/linkedin?k=ghost&days=7');
+    expect(await screen.findByText(/did not run in the last 7 days/)).toBeInTheDocument();
   });
 
   it('asks only for the selected tool and says what an empty list means', async () => {
@@ -247,6 +396,134 @@ describe('searches', () => {
     renderApp('/searches?tool=wttj');
     expect(await screen.findByText(/No search recorded in this window/)).toBeInTheDocument();
     expect(seen.some((url) => url.startsWith('/dashboard/api/v1/searches') && url.includes('source=wttj'))).toBe(true);
+  });
+
+  it('links the search with its disallowed terms to exactly the jobs it found', async () => {
+    mockApi({
+      ...common,
+      '/searches': searches,
+      '/searches/linkedin': searchDetail({ keywords: ['react'], disallowed: ['intern', 'senior'] }),
+    });
+    renderApp('/searches/linkedin?k=react&d=intern&d=senior&days=7');
+    const link = await screen.findByRole('link', { name: /See all the jobs this search found/ });
+    const href = new URL(link.getAttribute('href') ?? '', 'http://x');
+    expect(href.searchParams.getAll('disallowed')).toEqual(['intern', 'senior']);
+    expect(href.searchParams.get('no_disallowed')).toBeNull();
+  });
+
+  it('cuts a keyword that is too long inside its badge, and puts the searches that differ by terms on one line of the job table', async () => {
+    const long = 'a very long keyword '.repeat(8).trim();
+    mockApi({
+      ...common,
+      '/jobs': page([job({ foundBy: [searchRef([long]), searchRef(['react'], ['senior']), searchRef(['react'], ['intern'])] })]),
+    });
+    renderApp('/jobs');
+    const user = userEvent.setup();
+    await rowsLoaded(2);
+    await showFoundBy(user);
+    const rows = await rowsLoaded(2);
+    const badge = within(at(rows, 1)).getByTitle(long);
+    expect(badge).toHaveClass('max-w-full', 'overflow-hidden', 'text-ellipsis'); // it cannot grow out of the column
+    // the same keywords with two sets of terms is one line, with the terms in its tooltip
+    expect(within(at(rows, 1)).getAllByText('react')).toHaveLength(1);
+    expect(within(at(rows, 1)).getByTitle('Without: senior, intern')).toBeInTheDocument();
+  });
+});
+
+describe('the searches that found a job', () => {
+  const found = [
+    jobSearch({ keywords: ['react', 'vue'], disallowed: ['senior'], outcome: 'returned' }),
+    jobSearch({
+      keywords: ['react'],
+      disallowed: ['intern', 'manager'],
+      outcome: 'excluded',
+      excludedBy: { reason: 'title', term: 'manager' },
+      health: { status: 'bad', issues: ['mostly_discarded'], discardedShare: 0.9 },
+      jobsFound: 10,
+      jobsExcluded: 9,
+    }),
+    jobSearch({ keywords: [], disallowed: [], outcome: 'other', source: undefined }),
+  ];
+  const open = async () => {
+    mockApi({ ...common, '/jobs': page([job()]), '/jobs/linkedin/1000001': detail({ foundBy: found }) });
+    renderApp('/jobs');
+    const user = userEvent.setup();
+    await user.click(at(await rowsLoaded(2), 1));
+    return { user, panel: await screen.findByRole('complementary', { name: 'Senior Frontend Engineer' }) };
+  };
+
+  it('is a closed section by default: only its title shows, with how many searches there are', async () => {
+    const { panel } = await open();
+    const toggle = within(panel).getByRole('button', { name: 'Found by 3 searches' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(panel).queryByRole('table', { name: 'Searches that found this job' })).not.toBeInTheDocument();
+    expect(within(panel).queryByText('manager')).not.toBeInTheDocument();
+  });
+
+  it('opens into a short table of the searches: keywords and terms, what each did with this job, and health', async () => {
+    const { user, panel } = await open();
+    await user.click(within(panel).getByRole('button', { name: 'Found by 3 searches' }));
+    const table = within(panel).getByRole('table', { name: 'Searches that found this job' });
+    const heads = within(table)
+      .getAllByRole('columnheader')
+      .map((cell) => cell.textContent);
+    expect(heads).toEqual(['Search', 'This job · health', 'Open']);
+    const rows = within(table).getAllByRole('row');
+    expect(rows).toHaveLength(4);
+    const first = within(at(rows, 1));
+    expect(first.getByText('react')).toBeInTheDocument();
+    expect(first.getByText('vue')).toBeInTheDocument(); // one badge per keyword
+    expect(first.getByText('senior')).toBeInTheDocument(); // and per disallowed term
+    expect(first.getByText('without')).toBeInTheDocument(); // under the keywords, in their own colour
+    expect(first.getByText('returned')).toBeInTheDocument();
+    expect(first.getByText('healthy')).toBeInTheDocument();
+    const second = within(at(rows, 2));
+    expect(second.getByText('dropped')).toBeInTheDocument();
+    expect(second.getByText('by “manager”')).toBeInTheDocument(); // the term that dropped it, on its own line
+    expect(second.getByTitle('Dropped: “manager” in the title')).toBeInTheDocument();
+    expect(second.getByText('90% discarded')).toBeInTheDocument();
+    expect(within(at(rows, 3)).queryByText('without')).not.toBeInTheDocument(); // a search with no terms has no such line
+    expect(within(at(rows, 3)).getByText('(no keywords)')).toBeInTheDocument();
+    expect(within(at(rows, 3)).getByText('not returned')).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', { name: 'Found by 3 searches' }));
+    expect(within(panel).queryByRole('table', { name: 'Searches that found this job' })).not.toBeInTheDocument(); // and closes again
+  });
+
+  it('links each row to its search, terms included, and says when a salary dropped the job', async () => {
+    mockApi({
+      ...common,
+      '/jobs': page([job()]),
+      '/jobs/linkedin/1000001': detail({
+        foundBy: [
+          jobSearch({
+            keywords: ['react'],
+            disallowed: ['intern'],
+            outcome: 'excluded',
+            excludedBy: { reason: 'salary', term: '40000-45000 EUR' },
+          }),
+        ],
+      }),
+    });
+    renderApp('/jobs');
+    const user = userEvent.setup();
+    await user.click(at(await rowsLoaded(2), 1));
+    const panel = await screen.findByRole('complementary', { name: 'Senior Frontend Engineer' });
+    await user.click(within(panel).getByRole('button', { name: 'Found by 1 search' }));
+    expect(within(panel).getByText('by its salary')).toBeInTheDocument();
+    expect(within(panel).getByTitle('Dropped: its salary (40000-45000 EUR) is under the floor')).toBeInTheDocument();
+    const link = within(panel).getByRole('link', { name: 'Open the search react' });
+    const href = new URL(link.getAttribute('href') ?? '', 'http://x');
+    expect(href.pathname).toBe('/searches/linkedin');
+    expect(href.searchParams.getAll('k')).toEqual(['react']);
+    expect(href.searchParams.getAll('d')).toEqual(['intern']);
+  });
+
+  it('has no section for a job that no search listed', async () => {
+    mockApi({ ...common, '/jobs': page([job()]), '/jobs/linkedin/1000001': detail({ foundBy: [] }) });
+    renderApp('/jobs');
+    await userEvent.setup().click(at(await rowsLoaded(2), 1));
+    const panel = await screen.findByRole('complementary', { name: 'Senior Frontend Engineer' });
+    expect(within(panel).queryByRole('button', { name: /^Found by/ })).not.toBeInTheDocument();
   });
 });
 

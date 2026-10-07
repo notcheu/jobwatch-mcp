@@ -129,7 +129,11 @@ function seededStore(): Store {
   store.putJob('linkedin', job('1000001', 'Frontend Engineer'), NOW - 3 * DAY);
   store.putJob('linkedin', job('1000002', 'Backend Engineer'), NOW - 2 * DAY);
   store.putJob('teamtailor', job('2000001', 'VP Engineering', 'bsport'), NOW - DAY);
-  store.recordSearch('linkedin', { query: 'react', found: ['1000001', '1000002'], returned: ['1000001'] }, NOW - 3 * DAY);
+  store.recordSearch(
+    'linkedin',
+    { keywords: ['react'], disallowed: [], found: ['1000001', '1000002'], returned: ['1000001'], excluded: [] },
+    NOW - 3 * DAY,
+  );
   return store;
 }
 
@@ -277,10 +281,10 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(page.calls.map((c: any) => c.requestId)).toEqual(['live', 'r3']);
     expect(page.next).not.toBeNull();
     expect(JSON.stringify(page)).not.toContain('skip_ids');
-    expect(page.calls[1]).toMatchObject({ keywords: 'vue', code: 'rate_limited', estimatedTokens: 570 });
+    expect(page.calls[1]).toMatchObject({ keywords: ['vue'], code: 'rate_limited', estimatedTokens: 570 });
     const filtered = await json(await t.call('/dashboard/api/v1/calls?tool=teamtailor_jobs'));
     expect(filtered.calls.map((c: any) => c.requestId)).toEqual(['r2']);
-    expect(filtered.calls[0].keywords).toBe('vp');
+    expect(filtered.calls[0].keywords).toEqual(['vp']);
     const running = await json(await t.call('/dashboard/api/v1/calls?code=running'));
     expect(running.calls.map((c: any) => c.requestId)).toEqual(['live']);
   });
@@ -302,10 +306,12 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(all.total).toBe(3);
     expect(all.jobs.map((j: any) => j.id)).toEqual(['2000001', '1000002', '1000001']);
     expect(JSON.stringify(all)).not.toContain('What you');
-    expect(all.jobs.find((j: any) => j.id === '1000001').foundBy).toEqual(['react']);
+    expect(all.jobs.find((j: any) => j.id === '1000001').foundBy).toEqual([{ keywords: ['react'], disallowed: [] }]);
     expect((await json(await t.call('/dashboard/api/v1/jobs?source=teamtailor'))).jobs.map((j: any) => j.id)).toEqual(['2000001']);
     expect((await json(await t.call('/dashboard/api/v1/jobs?q=backend'))).jobs.map((j: any) => j.id)).toEqual(['1000002']);
     expect((await json(await t.call('/dashboard/api/v1/jobs?found_by=REACT'))).total).toBe(2);
+    expect((await json(await t.call('/dashboard/api/v1/jobs?found_by=react&found_by=vue'))).total).toBe(0); // the whole list is the search
+    expect((await json(await t.call('/dashboard/api/v1/jobs?no_keywords=1'))).total).toBe(0);
     expect((await json(await t.call('/dashboard/api/v1/jobs?sort=title&dir=asc'))).jobs.map((j: any) => j.title)).toEqual([
       'Backend Engineer',
       'Frontend Engineer',
@@ -317,6 +323,112 @@ describe('the API in local development mode (no sign-in)', () => {
     expect((await t.call('/dashboard/api/v1/jobs?sort=password')).status).toBe(400);
   });
 
+  it('gives one search with its health, its counts and its jobs, and a 404 for a search that did not run', async () => {
+    const t = await build();
+    t.deps.store.recordSearch(
+      'linkedin',
+      {
+        keywords: ['staff', 'principal'],
+        disallowed: ['Backend', 'x'],
+        found: ['1000001', '1000002', '9000001', '9000002', '9000003', '9000004'],
+        returned: ['1000001'],
+        excluded: [
+          { id: '1000002', title: 'T', reason: 'title', term: 'backend' },
+          { id: '9000001', title: 'Backend', reason: 'description', term: 'Backend' },
+          { id: '9000002', title: 'T', reason: 'title', term: 'x' },
+          { id: '9000003', title: 'T', reason: 'title', term: 'x' },
+          { id: '9000004', title: 'T', reason: 'title', term: 'x' },
+        ],
+      },
+      NOW - DAY,
+    );
+    const detail = await json(
+      await t.call(
+        '/dashboard/api/v1/searches/linkedin?keywords=Principal&keywords=staff&disallowed=X&disallowed=backend&since=2026-10-01',
+      ),
+    );
+    expect(detail).toMatchObject({
+      source: 'linkedin',
+      keywords: ['principal', 'staff'],
+      disallowed: ['backend', 'x'],
+      runs: 1,
+      jobsFound: 6,
+      jobsReturned: 1,
+      jobsExcluded: 5,
+      health: { status: 'bad', issues: ['mostly_discarded'] },
+      jobsTruncated: false,
+    });
+    expect(detail.jobs[0]).toMatchObject({ id: '1000001', outcome: 'returned', title: 'Frontend Engineer' });
+    expect(detail.jobs.find((j: any) => j.id === '1000002')).toMatchObject({
+      outcome: 'excluded',
+      title: 'Backend Engineer',
+      excludedBy: { reason: 'title', term: 'backend' }, // the term that dropped it, and where
+    });
+    expect(detail.jobs.find((j: any) => j.id === '9000001')).toMatchObject({
+      outcome: 'excluded',
+      title: 'Backend',
+      stored: false,
+      url: null, // never stored: it was dropped before its page was read, so the title is the one kept with the hit
+      excludedBy: { reason: 'description', term: 'Backend' },
+    });
+    expect(detail.jobs[0].excludedBy).toBeNull(); // a returned job was not dropped
+    expect(detail.jobs[0]).toMatchObject({ stored: true, title: 'Frontend Engineer' }); // a stored job is a job page that opens
+    // the same keywords without these terms is another search, and did not run
+    expect((await t.call('/dashboard/api/v1/searches/linkedin?keywords=principal&keywords=staff')).status).toBe(404);
+    expect((await t.call('/dashboard/api/v1/searches/linkedin?keywords=nothing')).status).toBe(404);
+    expect((await t.call('/dashboard/api/v1/searches/Bad%20Source?keywords=x')).status).toBe(404);
+  });
+
+  it('filters the jobs by the exact search: its keywords, and its disallowed terms or none', async () => {
+    const t = await build();
+    t.deps.store.recordSearch(
+      'linkedin',
+      {
+        keywords: ['react'],
+        disallowed: ['backend'],
+        found: ['1000001', '1000002'],
+        returned: ['1000001'],
+        excluded: [{ id: '1000002', title: 'T', reason: 'title', term: 'backend' }],
+      },
+      NOW - DAY,
+    );
+    const total = async (query: string) => (await json(await t.call(`/dashboard/api/v1/jobs?${query}`))).total;
+    expect(await total('found_by=react')).toBe(2); // whatever the terms
+    expect(await total('found_by=react&no_disallowed=1')).toBe(2); // the search with no terms listed both
+    expect(await total('found_by=react&disallowed=Backend')).toBe(2);
+    expect(await total('found_by=react&disallowed=frontend')).toBe(0);
+    const one = (await json(await t.call('/dashboard/api/v1/jobs/linkedin/1000002'))).foundBy;
+    expect(one.map((search: any) => [search.disallowed, search.outcome, search.excludedBy])).toEqual([
+      [['backend'], 'excluded', { reason: 'title', term: 'backend' }],
+      [[], 'other', null],
+    ]);
+  });
+
+  it('puts the searches in bad health on the overview: nothing found at all, or most of it discarded', async () => {
+    const t = await build();
+    expect((await json(await t.call('/dashboard/api/v1/overview'))).badSearches).toEqual({ count: 0, items: [] });
+    const found = Array.from({ length: 6 }, (_unused, i) => `5${i}`);
+    t.deps.store.recordSearch(
+      'linkedin',
+      {
+        keywords: ['intern'],
+        disallowed: ['unpaid'],
+        found,
+        returned: [],
+        excluded: found.map((id) => ({ id, title: `Unpaid job ${id}`, reason: 'title' as const, term: 'unpaid' })),
+      },
+      NOW - DAY,
+    );
+    t.deps.store.recordSearch('apec', { keywords: ['ghost'], disallowed: [], found: [], returned: [], excluded: [] }, NOW - 2 * DAY);
+    t.deps.store.recordSearch('apec', { keywords: ['ghost'], disallowed: [], found: [], returned: [], excluded: [] }, NOW - DAY);
+    const { badSearches } = await json(await t.call('/dashboard/api/v1/overview'));
+    expect(badSearches.count).toBe(2);
+    expect(badSearches.items.map((row: any) => [row.keywords, row.health.issues])).toEqual([
+      [['intern'], ['mostly_discarded']], // and it carries its disallowed terms, so it can be told from the same keywords with other terms
+      [['ghost'], ['no_results']],
+    ]);
+  });
+
   it('gives one job in full, with sections and hints, and a 404 otherwise', async () => {
     const t = await build();
     const job = await json(await t.call('/dashboard/api/v1/jobs/linkedin/1000001'));
@@ -324,7 +436,21 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(job.outline.length).toBeGreaterThan(0);
     expect(job.hints).toMatchObject({ years: [5] });
     expect(job.hints.stack).toBeUndefined(); // no technology list is built in
-    expect(job.foundBy).toEqual(['react']);
+    // the searches that found it, each with its counts and health and what it did with this job
+    expect(job.foundBy).toEqual([
+      {
+        keywords: ['react'],
+        disallowed: [],
+        runs: 1,
+        lastRun: new Date(NOW - 3 * DAY).toISOString(),
+        jobsFound: 2,
+        jobsReturned: 1,
+        jobsExcluded: 0,
+        health: { status: 'good', issues: [], discardedShare: 0 },
+        outcome: 'returned',
+        excludedBy: null,
+      },
+    ]);
     expect((await t.call('/dashboard/api/v1/jobs/linkedin/9999999')).status).toBe(404);
     expect((await t.call('/dashboard/api/v1/jobs/Bad%20Source/1')).status).toBe(404);
   });
@@ -335,12 +461,16 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(searches.searches).toEqual([
       {
         source: 'linkedin',
-        query: 'react',
+        keywords: ['react'],
+        disallowed: [],
         runs: 1,
+        firstRun: new Date(NOW - 3 * DAY).toISOString(),
         lastRun: new Date(NOW - 3 * DAY).toISOString(),
         jobsFound: 2,
         jobsReturned: 1,
+        jobsExcluded: 0,
         jobsNew: 2,
+        health: { status: 'good', issues: [], discardedShare: 0 },
       },
     ]);
     const tools = await json(await t.call('/dashboard/api/v1/tools'));

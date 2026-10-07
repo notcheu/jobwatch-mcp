@@ -10,6 +10,7 @@ import type {
   HttpClient,
   HttpRequestOptions,
   HttpResponse,
+  SearchRecord,
   JobStore,
   Logger,
   NewJob,
@@ -45,7 +46,13 @@ export class FakePlatformMemory implements PlatformMemory {
 export class FakeJobStore implements JobStore {
   readonly jobs = new Map<string, StoredJob>();
   /** Every search an adapter recorded, in order. */
-  readonly searches: { query: string; found: string[]; returned: string[] }[] = [];
+  readonly searches: {
+    keywords: string[];
+    disallowed: string[];
+    found: string[];
+    returned: string[];
+    excluded: { id: string; title: string | null; reason: string; term: string }[];
+  }[] = [];
   constructor(
     private readonly clock: () => Date = () => new Date(),
     private readonly source = 'test',
@@ -72,8 +79,14 @@ export class FakeJobStore implements JobStore {
     return Promise.resolve();
   }
 
-  recordSearch(search: { query: string; found: readonly string[]; returned: readonly string[] }): Promise<void> {
-    this.searches.push({ query: search.query, found: [...search.found], returned: [...search.returned] });
+  recordSearch(search: SearchRecord): Promise<void> {
+    this.searches.push({
+      keywords: [...search.keywords],
+      disallowed: [...search.disallowed],
+      found: [...search.found],
+      returned: [...search.returned],
+      excluded: search.excluded.map((entry) => ({ ...entry })),
+    });
     return Promise.resolve();
   }
 

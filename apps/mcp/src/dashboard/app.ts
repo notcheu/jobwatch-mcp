@@ -10,6 +10,7 @@ import {
   getDocs,
   getJob,
   getOverview,
+  getSearch,
   getSettings,
   getTools,
   getUsage,
@@ -272,6 +273,14 @@ export function createDashboardApp(deps: DashboardDeps): Express {
   api.get(
     '/searches',
     wrap((req) => listSearches(deps, req.query)),
+  );
+  api.get(
+    '/searches/:source',
+    wrap((req, res) => {
+      const search = getSearch(deps, String(req.params['source']), req.query);
+      if (search === undefined) return void sendError(res, 404, 'not_found', 'No such search in this window.');
+      return search;
+    }),
   );
   api.get(
     '/tools',

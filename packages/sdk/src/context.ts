@@ -118,6 +118,29 @@ export interface StoredJob extends NewJob {
  * not its description then matched the caller's terms. A stored job is never read from the page again: it is judged from here,
  * with whatever terms the next call brings. Do not store what you only saw on a search card: that read is free to repeat.
  */
+/** One job a search dropped, and why: the disallowed term that matched (for `salary`, the salary the job states). */
+export interface SearchExclusion {
+  id: string;
+  /** The job's title, kept with the hit: a job dropped by its title is never stored, so this is the only place its title survives. */
+  title: string | null;
+  reason: 'title' | 'description' | 'salary';
+  term: string;
+}
+
+/**
+ * What a search leaves in the history (docs/plans/17-dashboard.md, Searches). A search is its keywords AND its disallowed terms: the
+ * same keywords with other terms is another search, because it keeps other jobs.
+ */
+export interface SearchRecord {
+  keywords: readonly string[];
+  /** The disallowed terms of the call (empty when it had none). */
+  disallowed: readonly string[];
+  found: readonly string[];
+  returned: readonly string[];
+  /** The jobs dropped by a disallowed term or the salary floor, each with the term that did it. */
+  excluded: readonly SearchExclusion[];
+}
+
 export interface JobStore {
   /** Which of `ids` are stored. Order and duplicates are irrelevant. */
   known(ids: readonly string[]): Promise<Set<string>>;
@@ -131,10 +154,11 @@ export interface JobStore {
   put(job: NewJob): Promise<void>;
   /**
    * Remember a search: its keywords and the ids it listed, so that a later summary can say which keyword brought which job in.
-   * `query` is the search text the caller typed (empty when there is none, for a whole-board listing); `found` is every id the
-   * search listed, `returned` the ones it handed back to the caller. Never pass anything else: no credentials, no page content.
+   * `keywords` is the list the caller searched for, any of them matching (empty when there is none, for a whole-board listing);
+   * `disallowed` the terms it refused; `found` is every id the search matched, `returned` the ones it handed back to the caller and
+   * `excluded` the ones it dropped, with the term that did it. Never pass anything else: no credentials, no page content.
    */
-  recordSearch(search: { query: string; found: readonly string[]; returned: readonly string[] }): Promise<void>;
+  recordSearch(search: SearchRecord): Promise<void>;
 }
 
 /**

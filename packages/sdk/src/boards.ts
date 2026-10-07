@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { HttpClient, JobStore } from './context';
 import { AdapterBroken, HostNotAllowedError, JobwatchError } from './errors';
 import { POSTED_WITHIN, containsAny, extractHints, fitToBytes, fold, matchedTerms, postedCutoff, termMatcher } from './jobtext';
+import { PIPE_SEPARATOR, keywordsSchema } from './keywords';
 import { salaryFilterFields, salaryFloor } from './salaryFilter';
 import { DETAILS, describeJob } from './summary';
 
@@ -60,11 +61,11 @@ export function detailFields(defaultDetail: (typeof DETAILS)[number]) {
 
 /** The filter arguments every board tool takes, to spread into the tool's input object. */
 export const boardFilters = {
-  title_any: z
-    .array(z.string().trim().min(1).max(60))
-    .max(20)
+  title_any: keywordsSchema(PIPE_SEPARATOR, { max: 20, maxChars: 60, allowEmpty: true })
     .default([])
-    .describe('Keep jobs whose title contains any of these (case and accents ignored, "front" matches "Frontend"). Empty keeps all.'),
+    .describe(
+      'Keep jobs whose title contains any of these (OR, never AND; case and accents ignored, "front" matches "Frontend"). A list, or one string with a pipe between the keywords ("react | vue"). Empty keeps all.',
+    ),
   location_any: z
     .array(z.string().trim().min(1).max(60))
     .max(20)
@@ -393,11 +394,14 @@ export async function runBoardTool<S extends string>(
     found.map((entry) => entry.posting),
     args,
   );
-  // what a search with these title words listed (empty words = the whole board), for the history of searches
+  // what a search with these title words matched (no words = the whole board, location and date filters aside), for the history of
+  // searches: the postings that did not match are not "found by" these keywords, and the discarded ones are counted against what matched
   await ctx.jobs.recordSearch({
-    query: args.title_any.join(' | '),
-    found: found.map((entry) => entry.posting.id),
+    keywords: args.title_any,
+    found: found.map((entry) => entry.posting.id).filter((id) => judged.relevantIds.has(id)),
     returned: judged.jobs.map((job) => job.id),
+    disallowed: args.disallowed_terms,
+    excluded: judged.excluded.map(({ id, title, reason, term }) => ({ id, title, reason, term })),
   });
   for (const report of reports) {
     if (report.status === 'ok')

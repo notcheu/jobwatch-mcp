@@ -81,10 +81,24 @@
         "type": "array"
       },
       "keywords": {
-        "description": "Search words, e.g. \"frontend react\".",
-        "maxLength": 200,
-        "minLength": 1,
-        "type": "string"
+        "anyOf": [
+          {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          }
+        ],
+        "description": "What to search for: a list of keywords (any of them matches, never all), e.g. [\"développeur react\", \"développeur vue\"]. One string with a pipe between the keywords is split into the list. Each keyword is a search of its own on Apec (up to 5)."
       },
       "max_jobs": {
         "default": 50,
@@ -154,7 +168,7 @@
   "limits": {
     "output_max_bytes": 262144,
     "rate": {
-      "cost": 56
+      "cost": 76
     },
     "timeout_s": 300
   },

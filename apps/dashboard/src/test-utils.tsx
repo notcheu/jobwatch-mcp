@@ -81,6 +81,52 @@ export const tools = {
   runtime: { enabled: true, state: 'cold', platform: null, peakMb: null, waiting: 0 },
 };
 
+/** One row of the Searches list: a search that is healthy unless the test says otherwise. */
+export const searchRow = (over: Record<string, unknown> = {}) => ({
+  source: 'linkedin',
+  keywords: ['react engineer'],
+  disallowed: [],
+  runs: 4,
+  firstRun: NOW,
+  lastRun: NOW,
+  jobsFound: 80,
+  jobsReturned: 30,
+  jobsExcluded: 10,
+  jobsNew: 20,
+  health: { status: 'good', issues: [], discardedShare: 0.125 },
+  ...over,
+});
+
+/** A search in bad health: most of what it lists is dropped. */
+export const badSearchRow = (over: Record<string, unknown> = {}) =>
+  searchRow({
+    keywords: ['intern'],
+    jobsFound: 10,
+    jobsReturned: 1,
+    jobsExcluded: 9,
+    jobsNew: 1,
+    health: { status: 'bad', issues: ['mostly_discarded'], discardedShare: 0.9 },
+    ...over,
+  });
+
+/** A search as it appears in a job's `foundBy` list on the Jobs table. */
+export const searchRef = (keywords: string[], disallowed: string[] = []) => ({ keywords, disallowed });
+
+/** A search that listed one job, as the job detail gets it: its counts and health, and what it did with that job. */
+export const jobSearch = (over: Record<string, unknown> = {}) => ({
+  keywords: ['react'],
+  disallowed: [],
+  runs: 3,
+  lastRun: NOW,
+  jobsFound: 20,
+  jobsReturned: 15,
+  jobsExcluded: 2,
+  health: { status: 'good', issues: [], discardedShare: 0.1 },
+  outcome: 'returned',
+  excludedBy: null,
+  ...over,
+});
+
 export const callRow = (over: Record<string, unknown> = {}) => ({
   id: 1,
   requestId: 'req-1',
@@ -95,7 +141,7 @@ export const callRow = (over: Record<string, unknown> = {}) => ({
   responseBytes: 2048,
   estimatedTokens: 585,
   warnings: 0,
-  keywords: 'react engineer',
+  keywords: ['react engineer'],
   ...over,
 });
 

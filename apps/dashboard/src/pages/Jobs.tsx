@@ -12,6 +12,8 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, E
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { DetailPanel, Field } from '@/components/DetailPanel';
+import { JobSearches } from '@/components/JobSearches';
+import { KeywordBadges } from '@/components/KeywordBadges';
 import { usePlatform } from '@/components/Shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -77,15 +79,29 @@ const columns = [
   column.accessor('foundBy', {
     header: 'Found by',
     enableSorting: false,
-    cell: (c) => (
-      <span className="flex max-w-56 flex-wrap gap-1">
-        {c.getValue().length === 0 ? (
-          <span className="text-muted-foreground">–</span>
-        ) : (
-          c.getValue().map((keyword) => <Badge key={keyword}>{keyword}</Badge>)
-        )}
-      </span>
-    ),
+    // one line per keyword list, each keyword its own badge: searches that differ only by their disallowed terms share a line (the job
+    // detail tells them apart). The cell keeps its width and long keywords are cut with an ellipsis.
+    cell: (c) => {
+      const lines = new Map<string, { keywords: string[]; terms: Set<string> }>();
+      for (const search of c.getValue()) {
+        const line = lines.get(search.keywords.join('\u0000')) ?? { keywords: search.keywords, terms: new Set<string>() };
+        for (const term of search.disallowed) line.terms.add(term);
+        lines.set(search.keywords.join('\u0000'), line);
+      }
+      return (
+        <div className="flex w-56 max-w-56 flex-col gap-1 overflow-hidden">
+          {lines.size === 0 ? (
+            <span className="text-muted-foreground">–</span>
+          ) : (
+            [...lines.entries()].map(([key, line]) => (
+              <span key={key} title={line.terms.size === 0 ? undefined : `Without: ${[...line.terms].join(', ')}`}>
+                <KeywordBadges keywords={line.keywords} empty="(no keywords)" />
+              </span>
+            ))
+          )}
+        </div>
+      );
+    },
   }),
   column.accessor('descriptionChars', { header: 'Size', cell: (c) => <span className="tabular-nums">{compact(c.getValue())}</span> }),
   column.display({
@@ -118,6 +134,23 @@ export function Jobs() {
   const navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
   const get = (key: string): string => search.get(key) ?? '';
+  // the search a job was found by is its keyword list: one `found_by` per keyword in the URL, `react | vue` in the box
+  const foundByText = search.get('no_keywords') === '1' ? '(no keywords)' : search.getAll('found_by').join(' | ');
+  // the disallowed terms of that search, set by the link of a search (not typed): shown as a chip that clears them
+  const terms = search.get('no_disallowed') === '1' ? [] : search.getAll('disallowed');
+  const hasTermsFilter = search.get('no_disallowed') === '1' || terms.length > 0;
+  const setFoundBy = (text: string): void => {
+    const next = new URLSearchParams(search);
+    next.delete('found_by');
+    next.delete('no_keywords');
+    next.delete('disallowed'); // a new set of keywords is not the same search
+    next.delete('no_disallowed');
+    next.delete('page');
+    for (const keyword of text.split(/\s+OR\s+|\s*\|\s*/).map((part) => part.trim()))
+      if (keyword !== '' && keyword !== '(no keywords)') next.append('found_by', keyword);
+    if (text.trim() === '(no keywords)') next.set('no_keywords', '1');
+    setSearch(next, { replace: true });
+  };
   const [text, setText] = useState(get('q'));
   const q = useDebounced(text);
   const page = Math.max(1, Number(get('page')) || 1);
@@ -125,7 +158,8 @@ export function Jobs() {
   const sortName = get('sort');
   const sorting: SortingState =
     SORT_COLUMNS[sortName] === undefined ? [] : [{ id: SORT_COLUMNS[sortName] ?? '', desc: get('dir') !== 'asc' }];
-  const [hidden, setHidden] = useState<VisibilityState>({ lastSeen: false });
+  // Last seen and Found by are off until asked for in the Columns menu: the second is a column of badges, and the job detail has the same data
+  const [hidden, setHidden] = useState<VisibilityState>({ lastSeen: false, foundBy: false });
   const selected =
     params['source'] !== undefined && params['id'] !== undefined ? { source: params['source'], id: params['id'] } : undefined;
 
@@ -147,7 +181,10 @@ export function Jobs() {
     q: get('q'),
     source,
     board: get('board'),
-    found_by: get('found_by'),
+    found_by: search.getAll('found_by'),
+    no_keywords: search.get('no_keywords') ?? undefined,
+    disallowed: search.getAll('disallowed'),
+    no_disallowed: search.get('no_disallowed') ?? undefined,
     from: get('from'),
     to: get('to'),
     dateField: get('dateField') || undefined,
@@ -208,14 +245,31 @@ export function Jobs() {
             onKeyDown={(event) => event.key === 'Enter' && update({ board: event.currentTarget.value.trim() })}
           />
           <Input
-            aria-label="Found by keyword"
-            placeholder="Found by keyword"
+            aria-label="Found by keywords"
+            placeholder="Found by keywords (react | vue)"
             className="w-44"
-            defaultValue={get('found_by')}
-            key={get('found_by')}
-            onBlur={(event) => update({ found_by: event.target.value.trim() })}
-            onKeyDown={(event) => event.key === 'Enter' && update({ found_by: event.currentTarget.value.trim() })}
+            defaultValue={foundByText}
+            key={foundByText}
+            onBlur={(event) => setFoundBy(event.target.value)}
+            onKeyDown={(event) => event.key === 'Enter' && setFoundBy(event.currentTarget.value)}
           />
+          {hasTermsFilter && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-accent"
+              aria-label="Clear the disallowed terms filter"
+              title="Only the search with exactly these disallowed terms. Click to include the same keywords whatever the terms."
+              onClick={() => {
+                const next = new URLSearchParams(search);
+                next.delete('disallowed');
+                next.delete('no_disallowed');
+                next.delete('page');
+                setSearch(next, { replace: true });
+              }}
+            >
+              {terms.length === 0 ? 'without terms' : `without ${terms.join(', ')}`} ×
+            </button>
+          )}
           <select
             aria-label="Date to filter on"
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
@@ -397,15 +451,7 @@ function JobBody({ job }: { job: JobDetail }) {
         <Field label="Length">{compact(job.descriptionChars)} characters</Field>
         {job.salary !== null && <Field label="Salary (yearly)">{formatSalary(job.salary)}</Field>}
       </div>
-      {job.foundBy.length > 0 && (
-        <Field label="Found by">
-          <span className="flex flex-wrap gap-1">
-            {job.foundBy.map((keyword) => (
-              <Badge key={keyword}>{keyword}</Badge>
-            ))}
-          </span>
-        </Field>
-      )}
+      {job.foundBy.length > 0 && <JobSearches source={job.source} searches={job.foundBy} />}
       {(job.hints.remote.length > 0 || job.hints.years.length > 0 || job.hints.salary !== null) && (
         <Field label="Hints">
           <span className="flex flex-wrap gap-1">

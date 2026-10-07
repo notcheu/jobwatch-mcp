@@ -105,7 +105,7 @@ describe('date range', () => {
     ['classic', classicLayout],
     ['ai', aiSearchResultsLayout],
   ])('puts it in the %s search url, with the geo and the page offset', (_name, layout) => {
-    const base = { keywords: 'full stack', geo: '104246759', remote_only: false, page: 3, max_results: 25 } as const;
+    const base = { keywords: ['full stack'], geo: '104246759', remote_only: false, page: 3, max_results: 25 } as const;
     const week = layout.searchUrl({ ...base, posted_within: 'past_week' });
     expect(week).toContain('f_TPR=r604800');
     expect(week).toContain('geoId=104246759');
@@ -115,8 +115,18 @@ describe('date range', () => {
     expect(layout.searchUrl({ ...base, posted_within: 'past_month' })).toContain('f_TPR=r2592000');
   });
 
+  it.each([
+    ['classic', classicLayout],
+    ['ai', aiSearchResultsLayout],
+  ])('joins the keywords with LinkedIn OR on the %s layout, never AND', (_name, layout) => {
+    const base = { geo: '1234', posted_within: 'any', remote_only: false, page: 1, max_results: 25 } as const;
+    const url = new URL(layout.searchUrl({ ...base, keywords: ['react', 'vue native', 'svelte'] }));
+    expect(url.searchParams.get('keywords')).toBe('react OR vue native OR svelte');
+    expect(new URL(layout.searchUrl({ ...base, keywords: ['react'] })).searchParams.get('keywords')).toBe('react');
+  });
+
   it('asks LinkedIn for remote jobs (f_WT=2) on the classic layout only', () => {
-    const base = { keywords: 'x', geo: '1234', posted_within: 'any', page: 1, max_results: 25 } as const;
+    const base = { keywords: ['x'], geo: '1234', posted_within: 'any', page: 1, max_results: 25 } as const;
     expect(classicLayout.searchUrl({ ...base, remote_only: true })).toContain('f_WT=2');
     expect(classicLayout.searchUrl({ ...base, remote_only: false })).not.toContain('f_WT');
     expect(aiSearchResultsLayout.searchUrl({ ...base, remote_only: true })).not.toContain('f_WT');

@@ -1,3 +1,4 @@
+import { OR_SEPARATOR, joinKeywords } from '@jobwatch/sdk';
 import { PAGE_SIZE, geoParam, postedParam } from '../parse';
 import type { SearchArgs } from '../search';
 import type { SearchLayout } from './layout';
@@ -6,7 +7,7 @@ import type { SearchLayout } from './layout';
 export const classicLayout: SearchLayout = {
   id: 'classic',
   searchUrl(args: SearchArgs): string {
-    const params = [`keywords=${encodeURIComponent(args.keywords)}`, geoParam(args.geo), 'distance=0'];
+    const params = [`keywords=${encodeURIComponent(joinKeywords(args.keywords, OR_SEPARATOR))}`, geoParam(args.geo), 'distance=0'];
     const posted = postedParam(args.posted_within);
     if (posted !== null) params.push(posted);
     if (args.remote_only) params.push('f_WT=2');

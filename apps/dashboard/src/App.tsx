@@ -22,6 +22,7 @@ export function AppRoutes() {
         <Route path="jobs" element={<Jobs />} />
         <Route path="jobs/:source/:id" element={<Jobs />} />
         <Route path="searches" element={<Searches />} />
+        <Route path="searches/:source" element={<Searches />} />
         <Route path="tools" element={<Tools />} />
         <Route path="docs" element={<Docs />} />
         <Route path="settings" element={<Settings />} />

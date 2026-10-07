@@ -299,15 +299,17 @@ const matches = defineBrowserTool({
         },
       },
     );
-    // the matches have no keyword: the search is recorded with an empty query
+    // the matches have no keyword: the search is recorded with an empty list
     await ctx.jobs.recordSearch({
-      query: '',
+      keywords: [],
       found: cards.map((card) => card.id),
       returned: returnedIds(
         cards.map((card) => card.id),
         outcome,
         args.max_jobs === 0,
       ),
+      disallowed: args.disallowed_terms,
+      excluded: outcome.excluded.map(({ id, title, reason, term }) => ({ id, title, reason, term })),
     });
     const { fit, rest } = fitToBytes(
       outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, args.hint_terms, byId)),

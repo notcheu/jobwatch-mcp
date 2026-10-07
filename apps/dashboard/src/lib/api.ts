@@ -11,6 +11,7 @@ import {
   meSchema,
   overviewSchema,
   restartSchema,
+  searchDetailSchema,
   searchesSchema,
   settingsSchema,
   toolsSchema,
@@ -26,6 +27,7 @@ import {
   type Me,
   type Overview,
   type Restart,
+  type SearchDetailInfo,
   type Searches,
   type Settings,
   type Tools,
@@ -77,9 +79,14 @@ async function request<T>(schema: z.ZodType<T>, path: string, init: RequestInit 
   return schema.parse(body);
 }
 
-const query = (params: Record<string, string | number | undefined>): string => {
+const query = (params: Record<string, string | number | readonly string[] | undefined>): string => {
   const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') search.set(key, String(value));
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === '') continue;
+    if (typeof value === 'object')
+      for (const item of value) search.append(key, item); // a list is one entry per item
+    else search.set(key, String(value));
+  }
   const text = search.toString();
   return text === '' ? '' : `?${text}`;
 };
@@ -90,11 +97,16 @@ export const api = {
   calls: (params: { tool?: string; platform?: string; code?: string; before?: number; limit?: number }): Promise<CallsPage> =>
     request(callsPageSchema, `/calls${query(params)}`),
   call: (id: number): Promise<CallDetail> => request(callDetailSchema, `/calls/${id}`),
-  jobs: (params: Record<string, string | number | undefined>): Promise<JobsPage> => request(jobsPageSchema, `/jobs${query(params)}`),
+  jobs: (params: Record<string, string | number | readonly string[] | undefined>): Promise<JobsPage> =>
+    request(jobsPageSchema, `/jobs${query(params)}`),
   job: (source: string, id: string): Promise<JobDetail> =>
     request(jobDetailSchema, `/jobs/${encodeURIComponent(source)}/${encodeURIComponent(id)}`),
   searches: (params: { since?: string; until?: string; source?: string }): Promise<Searches> =>
     request(searchesSchema, `/searches${query(params)}`),
+  search: (
+    source: string,
+    params: { keywords: readonly string[]; disallowed: readonly string[]; since?: string; until?: string },
+  ): Promise<SearchDetailInfo> => request(searchDetailSchema, `/searches/${encodeURIComponent(source)}${query(params)}`),
   docs: (): Promise<Docs> => request(docsSchema, '/docs'),
   tools: (): Promise<Tools> => request(toolsSchema, '/tools'),
   settings: (): Promise<Settings> => request(settingsSchema, '/settings'),

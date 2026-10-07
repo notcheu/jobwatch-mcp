@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { DetailPanel, Field } from '@/components/DetailPanel';
 import { JsonView } from '@/components/JsonView';
+import { KeywordBadges } from '@/components/KeywordBadges';
 import { usePlatform } from '@/components/Shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,7 +29,11 @@ const columns = [
   column.accessor('tool', { header: 'Tool', cell: (c) => <span className="font-medium">{c.getValue()}</span> }),
   column.accessor('keywords', {
     header: 'Keywords',
-    cell: (c) => <span className="block max-w-56 truncate text-muted-foreground">{c.getValue() ?? '–'}</span>,
+    cell: (c) => (
+      <div className="w-56 max-w-56 overflow-hidden">
+        <KeywordBadges keywords={c.getValue() ?? []} empty="–" />
+      </div>
+    ),
   }),
   column.display({ id: 'outcome', header: 'Outcome', cell: (c) => outcomeBadge(c.row.original) }),
   column.accessor('durationMs', { header: 'Duration', cell: (c) => <span className="tabular-nums">{duration(c.getValue())}</span> }),
@@ -156,7 +161,11 @@ function CallBody({ call }: { call: CallDetail }) {
         </Field>
         <Field label="Warnings">{call.warnings}</Field>
         <Field label="Adapter">{call.adapter}</Field>
-        {call.keywords !== null && <Field label="Keywords">{call.keywords}</Field>}
+        {call.keywords !== null && (
+          <Field label="Keywords">
+            <KeywordBadges keywords={call.keywords} />
+          </Field>
+        )}
         {call.jobText !== null && (
           <Field label="Job text sent / available">
             {compact(call.jobText.returned)} / {compact(call.jobText.available)} characters

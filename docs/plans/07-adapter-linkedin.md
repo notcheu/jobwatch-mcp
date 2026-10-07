@@ -14,6 +14,7 @@ The adapter implements a `SearchLayout` per variant (`packages/adapter-linkedin/
 
 ### Layout A: classic `/jobs/search/` (primary)
 Observed 2026-10-01 in the maintainer's Chrome (markers and counts only):
+- **Keywords** are a list, any of them matching (never all). One string holding LinkedIn's upper-case ` OR ` is split into the list before it is stored; the list is joined with ` OR ` for LinkedIn's own boolean search.
 - URL: `https://www.linkedin.com/jobs/search/?keywords=<urlencoded>&geoId=<id>|location=<name>&distance=0[&f_TPR=r86400][&start=<N>]`. LinkedIn adds `currentJobId=<first id>` to the URL on load. **Confirmed (S5, container, 2026-10-01): a client's boolean `OR` keywords work** ("Staff Frontend Engineer OR Lead Frontend OR Frontend Tech Lead", Paris, no time filter): 25 cards on load, `STATE: ok`. `f_TPR` and `start=` paging are still to verify on layout A.
 - Cards: `li[data-occludable-job-id]` (id = that attribute; 7 initially, more after scrolling; each has an `a[href*="/jobs/view/"]`); first three text lines are title / company / location (e.g. `European Union (Remote)`), as in layout B. Container `.scaffold-layout__list`; pagination `.jobs-search-pagination`; a promoted label appears in the list.
 - Details pane (split view, `currentJobId` in the URL): description in `#job-details` = `.jobs-box__html-content` = `.jobs-description__content` (same text, about 1.9 KB for the pane's default job); an "About the job" `h2` and the `job-details-jobs-unified-top-card` header exist; `h1` present. **Confirmed (S5).**
@@ -72,9 +73,9 @@ Passing jobs are returned newly read first (`new: true`), then stored ones, **at
 
 Typical run, two searches over 50 results each (2 calls):
 ```
-linkedin_search { keywords: "full stack engineer", geo: "Paris, France", max_results: 50,
+linkedin_search { keywords: ["full stack engineer", "backend engineer"], geo: "Paris, France", max_results: 50,
                            disallowed_terms: ["frontend", "front-end", "Angular"], disallowed_scope: "title_then_description" }
-linkedin_search { keywords: "backend engineer", max_results: 50, disallowed_terms: ["fullstack", "full-stack", "full stack"] }
+linkedin_search { keywords: ["backend engineer"], max_results: 50, disallowed_terms: ["fullstack", "full-stack", "full stack"] }
 ```
 For a deep sweep use `max_results: 250` (ten pages). If a result has `remaining_ids`, repeat that same call until it is empty.
 

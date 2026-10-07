@@ -21,9 +21,17 @@ beforeEach(() => {
   store = Store.open(':memory:');
   store.putJob('linkedin', job('1000001', 'Frontend'), NOW - 3 * DAY);
   store.putJob('linkedin', job('1000002', 'Backend'), NOW - 2 * DAY);
-  store.recordSearch('linkedin', { query: 'react', found: ['1000001', '1000002', '1000003'], returned: ['1000001'] }, NOW - 3 * DAY);
-  store.recordSearch('linkedin', { query: 'go', found: ['1000002'], returned: ['1000002'] }, NOW - 2 * DAY);
-  store.recordSearch('wttj', { query: '', found: ['w1'], returned: ['w1'] }, NOW - DAY);
+  store.recordSearch(
+    'linkedin',
+    { keywords: ['react'], disallowed: [], found: ['1000001', '1000002', '1000003'], returned: ['1000001'], excluded: [] },
+    NOW - 3 * DAY,
+  );
+  store.recordSearch(
+    'linkedin',
+    { keywords: ['go'], disallowed: [], found: ['1000002'], returned: ['1000002'], excluded: [] },
+    NOW - 2 * DAY,
+  );
+  store.recordSearch('wttj', { keywords: [], disallowed: [], found: ['w1'], returned: ['w1'], excluded: [] }, NOW - DAY);
 });
 afterEach(() => store.close());
 
@@ -37,10 +45,10 @@ describe('stored_searches', () => {
     const { data, cost } = await searches({});
     expect(cost).toBe(0);
     expect(data.window.until).toBe('2026-10-09T12:00:00.000Z');
-    expect(data.searches.map((s) => [s.source, s.query, s.runs, s.jobs_found, s.jobs_returned, s.jobs_new])).toEqual([
-      ['linkedin', 'react', 1, 3, 1, 2],
-      ['linkedin', 'go', 1, 1, 1, 1],
-      ['wttj', '', 1, 1, 1, 0],
+    expect(data.searches.map((s) => [s.source, s.keywords, s.runs, s.jobs_found, s.jobs_returned, s.jobs_new])).toEqual([
+      ['linkedin', ['react'], 1, 3, 1, 2],
+      ['linkedin', ['go'], 1, 1, 1, 1],
+      ['wttj', [], 1, 1, 1, 0],
     ]);
   });
 
@@ -60,8 +68,14 @@ describe('stored_jobs with the search history', () => {
 
   it('shows the keywords that listed each job and filters by one', async () => {
     const all = (await jobs({})).data.jobs;
-    expect(Object.fromEntries(all.map((j) => [j.id, j.found_by]))).toEqual({ '1000001': ['react'], '1000002': ['go', 'react'] });
-    expect((await jobs({ found_by: 'GO' })).data.jobs.map((j) => j.id)).toEqual(['1000002']);
-    expect((await jobs({ found_by: 'nothing' })).data.jobs).toEqual([]);
+    expect(Object.fromEntries(all.map((j) => [j.id, j.found_by]))).toEqual({
+      '1000001': [{ keywords: ['react'], disallowed_terms: [] }],
+      '1000002': [
+        { keywords: ['go'], disallowed_terms: [] },
+        { keywords: ['react'], disallowed_terms: [] },
+      ],
+    });
+    expect((await jobs({ found_by: ['GO'] })).data.jobs.map((j) => j.id)).toEqual(['1000002']);
+    expect((await jobs({ found_by: ['nothing'] })).data.jobs).toEqual([]);
   });
 });
