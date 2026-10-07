@@ -266,7 +266,7 @@ export function slugify(name: string): string {
 }
 
 /** A readable company name from a handle or a name: `swile` -> `Swile`, `my-company` -> `My Company`, `société générale` -> `Société Générale`. */
-export function pascalCase(handle: string): string {
+export function titleCase(handle: string): string {
   return handle
     .split(/[-_\s]+/)
     .filter((part) => part !== '')
@@ -384,7 +384,7 @@ export async function runBoardTool<S extends string>(
         seen.add(posting.id);
         fresh += 1;
         // an ATS that does not name the company on its postings (Ashby, Lever): the feed's name, else the handle the board is read by
-        found.push({ posting: { ...posting, company: posting.company ?? parsed.name ?? pascalCase(target.label), board: name }, report });
+        found.push({ posting: { ...posting, company: posting.company ?? parsed.name ?? titleCase(target.label), board: name }, report });
       }
       if (fresh < parsed.postings.length)
         warnings.push(`${name}: ${parsed.postings.length - fresh} job(s) already listed by another board of this call.`);

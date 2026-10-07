@@ -24,10 +24,10 @@ export function DetailPanel({
   }, [onClose]);
   return (
     <aside aria-label={title} className="flex w-[26rem] shrink-0 flex-col border-l bg-card">
-      <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
+      <div className="flex items-start justify-between gap-2 border-b px-4 py-2">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">{title}</h2>
-          {subtitle !== undefined && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
+          <h2 className="text-base font-semibold break-words">{title}</h2>
+          {subtitle !== undefined && <p className="text-sm break-words text-muted-foreground">{subtitle}</p>}
         </div>
         <Button variant="ghost" size="icon" className="size-7" aria-label="Close the detail" onClick={onClose}>
           <X className="size-4" />
