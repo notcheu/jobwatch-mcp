@@ -31,6 +31,33 @@ async function setup(over: Partial<Changes> = {}) {
       savedBy: 'operator' as const,
     })),
     forgetPlace: vi.fn(async () => true),
+    saveCustomAdapter: vi.fn(async (entry, mode) => ({
+      ...entry,
+      id: `custom-${entry.handle}`,
+      tool: `custom_${entry.handle}`,
+      host: 'careers.acme.com',
+      enabled: mode === 'update',
+      problem: null,
+      createdAt: '2026-10-07T10:00:00.000Z',
+      updatedAt: '2026-10-07T10:00:00.000Z',
+      events: [
+        { at: '2026-10-07T10:00:00.000Z', actor: 'me@example.com', action: mode === 'create' ? 'created' : 'updated', sha256: null },
+      ],
+    })),
+    setCustomAdapterEnabled: vi.fn(async (handle, enabled) => ({
+      handle,
+      id: `custom-${handle}`,
+      tool: `custom_${handle}`,
+      name: 'Acme jobs',
+      kind: 'http' as const,
+      url: 'https://careers.acme.com',
+      host: 'careers.acme.com',
+      enabled,
+      problem: null,
+      createdAt: '2026-10-07T10:00:00.000Z',
+      updatedAt: '2026-10-07T10:00:00.000Z',
+    })),
+    deleteCustomAdapter: vi.fn(async () => true),
     running: vi.fn(() => 0),
     restart: vi.fn(),
     ...over,
@@ -258,6 +285,78 @@ describe('remember a LinkedIn place', () => {
     expect(t.changes.forgetPlace).toHaveBeenCalledWith('home');
     const none = await setup({ forgetPlace: async () => false });
     expect((await none.send('DELETE', '/places/home')).status).toBe(404);
+  });
+});
+
+describe('custom adapters', () => {
+  const body = {
+    handle: 'acmejobs',
+    name: 'Acme jobs',
+    kind: 'http',
+    url: 'https://careers.acme.com/api',
+    script: 'async function read() { return { postings: [] }; }',
+  };
+
+  it('creates one, replaces one by its handle, and says who did it without putting the script in the log', async () => {
+    const t = await setup();
+    const created = await t.send('POST', '/custom-adapters', body);
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ handle: 'acmejobs', id: 'custom-acmejobs', kind: 'http' });
+    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith(body, 'create', 'me@example.com');
+    const { handle: _handle, ...rest } = body;
+    const updated = await t.send('PUT', '/custom-adapters/acmejobs', { ...rest, kind: 'browser' });
+    expect(updated.status).toBe(200);
+    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith({ ...body, kind: 'browser' }, 'update', 'me@example.com');
+    const logged = t.entries.filter((e) => e.msg.startsWith('dashboard_custom_adapter'));
+    expect(logged.map((e) => e.msg)).toEqual(['dashboard_custom_adapter_created', 'dashboard_custom_adapter_updated']);
+    expect(JSON.stringify(logged)).not.toContain('async function read');
+  });
+
+  it('refuses a handle, a kind, an address, a script or a key that is not valid before it reaches the router', async () => {
+    const t = await setup();
+    for (const change of [
+      { handle: 'Bad-Handle' },
+      { handle: 'a' },
+      { kind: 'worker' },
+      { name: '' },
+      { url: 'x' },
+      { script: '' },
+      { script: 'x'.repeat(60_001) },
+      { extra: 1 },
+    ])
+      expect((await t.send('POST', '/custom-adapters', { ...body, ...change })).status).toBe(400);
+    expect(
+      (await t.send('PUT', '/custom-adapters/Bad-Handle', { name: 'x', kind: 'http', url: 'https://x.test', script: 'x' })).status,
+    ).toBe(400);
+    expect(t.changes.saveCustomAdapter).not.toHaveBeenCalled();
+  });
+
+  it("shows the router's refusal: off, taken, not valid", async () => {
+    for (const [status, code] of [
+      [409, 'disabled'],
+      [409, 'exists'],
+      [400, 'invalid'],
+    ] as const) {
+      const t = await setup({
+        saveCustomAdapter: async () => {
+          throw new ChangeRefused(status, code, 'said');
+        },
+      });
+      expect(await t.send('POST', '/custom-adapters', body)).toEqual({ status, body: { error: code, message: 'said' } });
+    }
+  });
+
+  it('turns one on and off, and deletes one, saying when there is none', async () => {
+    const t = await setup();
+    expect((await t.send('PUT', '/custom-adapters/acmejobs/enabled', { enabled: true })).body).toMatchObject({
+      handle: 'acmejobs',
+      enabled: true,
+    });
+    expect(t.changes.setCustomAdapterEnabled).toHaveBeenCalledWith('acmejobs', true, 'me@example.com');
+    expect((await t.send('PUT', '/custom-adapters/acmejobs/enabled', { enabled: 'yes' })).status).toBe(400);
+    expect(await t.send('DELETE', '/custom-adapters/acmejobs')).toEqual({ status: 200, body: { handle: 'acmejobs' } });
+    const none = await setup({ deleteCustomAdapter: async () => false });
+    expect((await none.send('DELETE', '/custom-adapters/acmejobs')).status).toBe(404);
   });
 });
 

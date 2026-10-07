@@ -1,5 +1,10 @@
 import {
   API_PREFIX,
+  customAdapterDetailSchema,
+  customAdapterRemovedSchema,
+  customAdapterSampleSchema,
+  customAdapterSchema,
+  customAdaptersSchema,
   placeLookupsSchema,
   savedPlaceRemovedSchema,
   savedPlaceSchema,
@@ -26,6 +31,10 @@ import {
   usageSchemaResponse,
   type AdapterToggle,
   type AtsLookups,
+  type CustomAdapter,
+  type CustomAdapterDetail,
+  type CustomAdapterSample,
+  type CustomAdapters,
   type PlaceLookups,
   type SavedPlace,
   type SavedPlaces,
@@ -143,6 +152,31 @@ export const api = {
     request(savedPlaceSchema, '/places', { method: 'POST', body: JSON.stringify(entry) }),
   forgetPlace: (alias: string): Promise<{ alias: string }> =>
     request(savedPlaceRemovedSchema, `/places/${encodeURIComponent(alias)}`, { method: 'DELETE' }),
+  customAdapters: (): Promise<CustomAdapters> => request(customAdaptersSchema, '/custom-adapters'),
+  customAdapter: (handle: string): Promise<CustomAdapterDetail> =>
+    request(customAdapterDetailSchema, `/custom-adapters/${encodeURIComponent(handle)}`),
+  customAdapterSample: (kind: 'http' | 'browser'): Promise<CustomAdapterSample> =>
+    request(customAdapterSampleSchema, `/custom-adapters/sample/${kind}`),
+  createCustomAdapter: (entry: {
+    handle: string;
+    name: string;
+    kind: 'http' | 'browser';
+    url: string;
+    script: string;
+  }): Promise<CustomAdapterDetail> =>
+    request(customAdapterDetailSchema, '/custom-adapters', { method: 'POST', body: JSON.stringify(entry) }),
+  updateCustomAdapter: (
+    handle: string,
+    entry: { name: string; kind: 'http' | 'browser'; url: string; script: string },
+  ): Promise<CustomAdapterDetail> =>
+    request(customAdapterDetailSchema, `/custom-adapters/${encodeURIComponent(handle)}`, { method: 'PUT', body: JSON.stringify(entry) }),
+  setCustomAdapterEnabled: (handle: string, enabled: boolean): Promise<CustomAdapter> =>
+    request(customAdapterSchema, `/custom-adapters/${encodeURIComponent(handle)}/enabled`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
+  deleteCustomAdapter: (handle: string): Promise<{ handle: string }> =>
+    request(customAdapterRemovedSchema, `/custom-adapters/${encodeURIComponent(handle)}`, { method: 'DELETE' }),
   docs: (): Promise<Docs> => request(docsSchema, '/docs'),
   tools: (): Promise<Tools> => request(toolsSchema, '/tools'),
   settings: (): Promise<Settings> => request(settingsSchema, '/settings'),

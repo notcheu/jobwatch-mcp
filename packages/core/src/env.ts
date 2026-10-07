@@ -64,6 +64,12 @@ export const envSchema = z.object({
   DB_PATH: z.string().min(1).optional(),
   JOB_RETENTION_DAYS: integer(1, 3650, 30),
   CALL_LOG_RETENTION_DAYS: integer(1, 3650, 30),
+  CUSTOM_ADAPTERS: z.enum(['on', 'off']).default('off'),
+  CUSTOM_ADAPTERS_SANDBOX: z.enum(['docker', 'process']).default('docker'),
+  CUSTOM_ADAPTERS_IMAGE: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9_.:/@-]{0,255}$/)
+    .default('node:26-bookworm-slim'),
   ADAPTERS: z.string().optional(),
   UTILITIES: z.string().optional(),
   BROWSER_IDLE_TTL_S: integer(10, 3600, 120),

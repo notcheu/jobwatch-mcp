@@ -40,6 +40,7 @@ async function build(over: Partial<DashboardSettings> = {}) {
       limiter: new RateLimiter(store, () => Date.now(), policyFor(registry.adapters)),
       breaker: new CircuitBreaker(store, () => Date.now()),
       registry: () => registry,
+      custom: { available: false, sandbox: 'docker' as const, problems: () => new Map<string, string>() },
       installed: installedFixtures,
       budgets: await Budgets.load({ dataDir: tmpdir(), env: {}, ids: [], defaults: {} }),
       pinned: { adapters: false, utilities: false },

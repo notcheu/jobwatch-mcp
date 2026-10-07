@@ -33,6 +33,7 @@ export type {
   ToolOutcome,
 } from './call';
 export { createMetrics } from './metrics';
+export * from './custom';
 export { createCompanyBoards, createContextProvider, createJobStore, createPlaceLog, createPlatformMemory } from './contexts';
 export type { ContextProviderDeps } from './contexts';
 export { createHttpClient } from './http/client';
@@ -89,6 +90,8 @@ export {
   SCHEMA_VERSION,
   Store,
   StoreError,
+  CUSTOM_HANDLE,
+  MAX_CUSTOM_SCRIPT_CHARS,
   USAGE_RETENTION_MS,
   keywordsKey,
   normalizeKeywords,
@@ -97,6 +100,8 @@ export {
 export type {
   AtsLookup,
   BreakerReason,
+  CustomAdapterEvent,
+  CustomAdapterRow,
   BreakerRow,
   CallRecord,
   CompanyBoard,

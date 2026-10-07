@@ -213,6 +213,7 @@ async function build(over: Partial<DashboardDeps> = {}, authRequired = false, oi
     breaker,
     registry: () => holder.current(),
     installed: installedFixtures,
+    custom: { available: true, sandbox: 'docker', problems: () => new Map([['broken', 'The address must be https.']]) },
     budgets: await Budgets.load({ dataDir: tmpdir(), env: {}, ids: ['probe', 'other'], defaults: { probe: { hourly: 50, daily: 500 } } }),
     pinned: { adapters: false, utilities: false },
     runtime: () => undefined,
@@ -413,6 +414,45 @@ describe('the API in local development mode (no sign-in)', () => {
     ]);
     expect((await json(await t.call('/dashboard/api/v1/places?q=TOWN'))).items.map((p: any) => p.alias)).toEqual(['home']);
     expect((await json(await t.call('/dashboard/api/v1/places?q=zzz'))).total).toBe(0);
+  });
+
+  it('lists the custom adapters without their scripts, and gives one in full with who changed it and the sample an editor starts from', async () => {
+    const t = await build();
+    t.deps.store.saveCustomAdapter(
+      {
+        handle: 'acmejobs',
+        name: 'Acme jobs',
+        kind: 'http',
+        url: 'https://careers.acme.com/api',
+        script: 'async function read() { return { postings: [] }; }',
+      },
+      { create: true, actor: 'me@example.com' },
+      NOW,
+    );
+    t.deps.store.saveCustomAdapter(
+      { handle: 'broken', name: 'Broken', kind: 'browser', url: 'https://broken.example.com', script: 'x' },
+      { create: true, actor: 'me@example.com' },
+      NOW,
+    );
+    t.deps.store.setCustomAdapterEnabled('broken', true, 'me@example.com', NOW);
+    const list = await json(await t.call('/dashboard/api/v1/custom-adapters'));
+    expect(list).toMatchObject({ available: true, sandbox: 'docker' });
+    expect(list.items.map((i: any) => [i.handle, i.id, i.tool, i.kind, i.host, i.enabled, i.problem])).toEqual([
+      ['acmejobs', 'custom-acmejobs', 'custom_acmejobs', 'http', 'careers.acme.com', false, null],
+      ['broken', 'custom-broken', 'custom_broken', 'browser', 'broken.example.com', true, 'The address must be https.'],
+    ]);
+    expect(JSON.stringify(list)).not.toContain('async function read');
+    const one = await json(await t.call('/dashboard/api/v1/custom-adapters/acmejobs'));
+    expect(one.script).toContain('async function read');
+    expect(one.events.map((e: any) => [e.actor, e.action])).toEqual([['me@example.com', 'created']]);
+    expect(one.events[0].sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(one.events)).not.toContain('async function read');
+    expect((await t.call('/dashboard/api/v1/custom-adapters/ghost')).status).toBe(404);
+    expect((await t.call('/dashboard/api/v1/custom-adapters/Bad-Handle')).status).toBe(404);
+    const sample = await json(await t.call('/dashboard/api/v1/custom-adapters/sample/browser'));
+    expect(sample.script).toContain('session.goto');
+    expect((await json(await t.call('/dashboard/api/v1/custom-adapters/sample/http'))).script).not.toContain('session.goto');
+    expect((await t.call('/dashboard/api/v1/custom-adapters/sample/ftp')).status).toBe(400);
   });
 
   it('gives one search with its health, its counts and its jobs, and a 404 for a search that did not run', async () => {

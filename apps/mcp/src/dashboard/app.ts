@@ -16,7 +16,10 @@ import {
   getUsage,
   listCalls,
   listJobs,
+  getCustomAdapter,
+  getCustomAdapterSample,
   listAtsLookups,
+  listCustomAdapters,
   listPlaceLookups,
   listSavedPlaces,
   listCompanyBoards,
@@ -289,6 +292,22 @@ export function createDashboardApp(deps: DashboardDeps): Express {
   api.get(
     '/ats-lookups',
     wrap((req) => listAtsLookups(deps, req.query)),
+  );
+  api.get(
+    '/custom-adapters',
+    wrap(() => listCustomAdapters(deps)),
+  );
+  api.get(
+    '/custom-adapters/sample/:kind',
+    wrap((req) => getCustomAdapterSample(req.params['kind'])),
+  );
+  api.get(
+    '/custom-adapters/:handle',
+    wrap((req, res) => {
+      const found = getCustomAdapter(deps, String(req.params['handle']));
+      if (found === undefined) return void sendError(res, 404, 'not_found', 'No such custom adapter.');
+      return found;
+    }),
   );
   api.get(
     '/place-lookups',

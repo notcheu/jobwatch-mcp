@@ -400,6 +400,55 @@ export const savedPlacesSchema = z.object({ items: z.array(savedPlaceSchema), to
 export type SavedPlaces = z.infer<typeof savedPlacesSchema>;
 export const savedPlaceRemovedSchema = z.object({ alias: z.string() }).strict();
 
+// ------------------------------------------------------------------------------------------------------ custom adapters
+
+/** The handle of a custom adapter: its module id is `custom-<handle>`, its tool `custom_<handle>`. */
+export const customHandleSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9]{1,23}$/, '2 to 24 lower-case letters and digits, starting with a letter');
+
+/** An adapter written on the dashboard. The script is only in the detail, never in the list. */
+export const customAdapterSchema = z
+  .object({
+    handle: z.string(),
+    id: z.string(),
+    tool: z.string(),
+    name: z.string(),
+    kind: z.enum(['http', 'browser']),
+    url: z.string(),
+    host: z.string(),
+    enabled: z.boolean(),
+    /** Why it is not loaded although it is enabled (a bad address, an invalid definition); null when it is fine or off. */
+    problem: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .strict();
+export type CustomAdapter = z.infer<typeof customAdapterSchema>;
+
+export const customAdaptersSchema = z
+  .object({
+    /** `CUSTOM_ADAPTERS=on`. When off, nothing here is loaded and every change is refused. */
+    available: z.boolean(),
+    sandbox: z.enum(['docker', 'process']),
+    items: z.array(customAdapterSchema),
+  })
+  .strict();
+export type CustomAdapters = z.infer<typeof customAdaptersSchema>;
+
+export const customAdapterDetailSchema = customAdapterSchema
+  .extend({
+    script: z.string(),
+    /** Who changed it and what they did, newest first. The script itself is never in it, only its hash. */
+    events: z.array(z.object({ at: z.string(), actor: z.string(), action: z.string(), sha256: z.string().nullable() }).strict()),
+  })
+  .strict();
+export type CustomAdapterDetail = z.infer<typeof customAdapterDetailSchema>;
+
+export const customAdapterSampleSchema = z.object({ kind: z.enum(['http', 'browser']), script: z.string() }).strict();
+export type CustomAdapterSample = z.infer<typeof customAdapterSampleSchema>;
+export const customAdapterRemovedSchema = z.object({ handle: z.string() }).strict();
+
 // ------------------------------------------------------------------------------------------------------ overview and usage
 
 export const overviewSchema = z
