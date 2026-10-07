@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { Shell } from '@/components/Shell';
 import { Analytics } from '@/pages/Analytics';
 import { AtsDiscovery } from '@/pages/AtsDiscovery';
@@ -9,7 +9,6 @@ import { Overview } from '@/pages/Overview';
 import { Runs } from '@/pages/Runs';
 import { Searches } from '@/pages/Searches';
 import { Settings } from '@/pages/Settings';
-import { Tools } from '@/pages/Tools';
 import { Soon } from '@/pages/Soon';
 
 export function AppRoutes() {
@@ -25,7 +24,7 @@ export function AppRoutes() {
         <Route path="searches" element={<Searches />} />
         <Route path="searches/:source" element={<Searches />} />
         <Route path="ats-discovery" element={<AtsDiscovery />} />
-        <Route path="tools" element={<Tools />} />
+        <Route path="tools" element={<Navigate to="/settings?view=tools" replace />} />
         <Route path="docs" element={<Docs />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Soon name="This page" />} />

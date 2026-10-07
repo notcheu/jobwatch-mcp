@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, BarChart3, BookOpen, Briefcase, LogOut, Moon, Search, Settings, Sun, Telescope, Wrench, Zap } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { Activity, BarChart3, BookOpen, Briefcase, LogOut, Moon, Search, Settings, Sun, Telescope, Zap } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,17 +9,17 @@ import { api } from '@/lib/api';
 import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
-const SECTIONS = [
+/** `group`: the heading the item sits under, for the pages of the utilities (they fetch no jobs, so they have no platform tab). */
+const SECTIONS: readonly { to: string; label: string; icon: LucideIcon; end: boolean; tabs: boolean; group?: string }[] = [
   { to: '/', label: 'Overview', icon: Activity, end: true, tabs: false },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, end: false, tabs: true },
   { to: '/runs', label: 'Runs', icon: Zap, end: false, tabs: true },
   { to: '/jobs', label: 'Jobs', icon: Briefcase, end: false, tabs: true },
   { to: '/searches', label: 'Searches', icon: Search, end: false, tabs: true },
-  { to: '/ats-discovery', label: 'ATS discovery', icon: Telescope, end: false, tabs: false },
-  { to: '/tools', label: 'Tools & status', icon: Wrench, end: false, tabs: false },
+  { to: '/ats-discovery', label: 'ATS discovery', icon: Telescope, end: false, tabs: false, group: 'Tools' },
   { to: '/docs', label: 'Docs', icon: BookOpen, end: false, tabs: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false, tabs: false },
-] as const;
+];
 
 /** `?tool=linkedin` filters the section to one platform; the tab is kept in the URL so a view is a link. */
 export function usePlatform(): string | undefined {
@@ -44,8 +45,11 @@ export function Shell() {
       <nav aria-label="Sections" className="flex w-52 shrink-0 flex-col border-r bg-card">
         <div className="px-4 py-4 text-sm font-semibold tracking-wide">jobwatch</div>
         <ul className="flex-1 space-y-0.5 px-2">
-          {SECTIONS.map(({ to, label, icon: Icon, end }) => (
+          {SECTIONS.map(({ to, label, icon: Icon, end, group }, index) => (
             <li key={to}>
+              {group !== undefined && SECTIONS[index - 1]?.group !== group && (
+                <div className="px-3 pt-3 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{group}</div>
+              )}
               <NavLink
                 to={{
                   pathname: to,
@@ -54,7 +58,8 @@ export function Shell() {
                 end={end}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                    'flex items-center gap-2 rounded-md py-2 pr-3 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                    group === undefined ? 'pl-3' : 'pl-5',
                     isActive && 'bg-accent text-accent-foreground',
                   )
                 }

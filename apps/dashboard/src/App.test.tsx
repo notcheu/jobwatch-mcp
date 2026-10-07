@@ -24,7 +24,7 @@ describe('the shell', () => {
     mockApi({ '/me': me, '/tools': tools, '/overview': overview });
     renderApp('/');
     const nav = await screen.findByRole('navigation', { name: 'Sections' });
-    for (const label of ['Overview', 'Analytics', 'Runs', 'Jobs', 'Searches', 'ATS discovery', 'Tools & status', 'Settings'])
+    for (const label of ['Overview', 'Analytics', 'Runs', 'Jobs', 'Searches', 'ATS discovery', 'Docs', 'Settings'])
       expect(within(nav).getByText(label)).toBeInTheDocument();
     expect(await screen.findByText('me@example.com')).toBeInTheDocument();
     expect(screen.getByText('v1.2.3')).toBeInTheDocument();
@@ -40,6 +40,18 @@ describe('the shell', () => {
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
     ).toEqual(['All', 'linkedin', 'apec']); // wttj is disabled
+  });
+
+  it('puts the pages of the utilities under a Tools heading in the menu', async () => {
+    mockApi({ '/me': me, '/tools': tools, '/overview': overview });
+    renderApp('/');
+    const nav = await screen.findByRole('navigation', { name: 'Sections' });
+    expect(within(nav).getByText('Tools')).toBeInTheDocument();
+    expect(within(nav).queryByText('Tools & status')).not.toBeInTheDocument();
+    const items = within(nav)
+      .getAllByRole('link')
+      .map((link) => link.textContent);
+    expect(items.indexOf('ATS discovery')).toBeGreaterThan(items.indexOf('Searches'));
   });
 
   it('gives no tab to a utility: it fetches no jobs', async () => {

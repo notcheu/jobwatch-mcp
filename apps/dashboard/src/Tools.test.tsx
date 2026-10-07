@@ -73,7 +73,7 @@ const toggled = {
 describe('tools and status', () => {
   it('groups the adapters by enabled and disabled, with kind, hosts, tools and parameters', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter(), linkedin) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     await screen.findByText('Teamtailor');
     const enabled = screen.getByRole('region', { name: 'Enabled adapters' });
     const disabled = screen.getByRole('region', { name: 'Disabled adapters' });
@@ -89,7 +89,7 @@ describe('tools and status', () => {
 
   it('shows the rate usage of the platform and of each company board', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter()) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     await screen.findByText('Teamtailor');
     expect(screen.getByText('4 / 600')).toBeInTheDocument();
     expect(screen.getByText('40 / 3000')).toBeInTheDocument();
@@ -113,7 +113,7 @@ describe('tools and status', () => {
         adapter({ id: 'wttj', displayName: 'WTTJ', platform: 'wttj', kind: 'browser', session: null }),
       ),
     });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     expect(await screen.findByText(/needs login ·/)).toBeInTheDocument();
     expect(screen.getByText('breaker open: needs_login')).toBeInTheDocument();
     expect(screen.getByText('session not checked')).toBeInTheDocument();
@@ -123,7 +123,7 @@ describe('tools and status', () => {
 
   it('enables an adapter from its settings menu, says what was added and that the connector must reconnect', async () => {
     const seen = mockApi({ '/me': me, '/tools': tools(adapter(), linkedin), '/adapters/linkedin': toggled });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     await pick(user, await screen.findByLabelText('LinkedIn'), 'Enable');
     expect(await screen.findByRole('status')).toHaveTextContent(
@@ -143,7 +143,7 @@ describe('tools and status', () => {
 
   it('warns once at the top, and disables enable / disable in the menus, when ADAPTERS pins the adapters', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter({ pinned: true }), utility()) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     expect(await toggleItem(user, await screen.findByLabelText('Teamtailor'))).toHaveAttribute('aria-disabled', 'true');
     const alerts = screen.getAllByRole('alert');
@@ -157,7 +157,7 @@ describe('tools and status', () => {
 
   it('warns about UTILITIES the same way', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter(), utility({ pinned: true })) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'UTILITIES is set in the environment, so the utilities cannot be enabled or disabled here',
     );
@@ -168,7 +168,7 @@ describe('tools and status', () => {
 
   it('lists both warnings when both variables are set', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter({ pinned: true }), utility({ pinned: true })) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     await screen.findAllByRole('alert');
     expect(screen.getAllByRole('alert').map((alert) => alert.textContent)).toEqual([
       expect.stringContaining('ADAPTERS is set'),
@@ -178,14 +178,14 @@ describe('tools and status', () => {
 
   it('shows no warning when nothing is pinned', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter(), utility()) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     await screen.findByLabelText('Teamtailor');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('puts the kind and the state tags next to the name', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter()) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const card = await screen.findByLabelText('Teamtailor');
     const header = within(card).getByText('Teamtailor').parentElement as HTMLElement;
     expect(within(header).getByText('HTTP')).toBeInTheDocument();
@@ -200,7 +200,7 @@ describe('tools and status', () => {
         status: 422,
       }),
     });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     await pick(user, await screen.findByLabelText('LinkedIn'), 'Enable');
     expect(await screen.findByRole('alert')).toHaveTextContent('Adapter "linkedin" failed its checks.');
@@ -216,7 +216,7 @@ describe('tools and status', () => {
     });
     const toReauth = vi.spyOn(navigation, 'toReauth').mockImplementation(() => undefined);
     const toLogin = vi.spyOn(navigation, 'toLogin').mockImplementation(() => undefined);
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     await pick(user, await screen.findByLabelText('LinkedIn'), 'Enable');
     const banner = await screen.findByText('Changes need a recent sign-in. Sign in again to continue.');
@@ -229,7 +229,7 @@ describe('tools and status', () => {
 describe('clear stored data', () => {
   it('is an item of the settings menu, and asks in a dialog before it clears', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter()), '/adapters/teamtailor/data': { id: 'teamtailor', jobs: 12, searches: 1 } });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const call = () => vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/adapters/teamtailor/data'));
     const card = await screen.findByLabelText('Teamtailor');
@@ -246,7 +246,7 @@ describe('clear stored data', () => {
 
   it('can be cancelled, and is not offered on a utility', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter(), utility()) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const card = await screen.findByLabelText('Teamtailor');
     await pick(user, card, 'Clear stored data…');
@@ -279,7 +279,7 @@ const saved = (hourly = 600, daily = 3000) => ({
 describe('the settings menu', () => {
   it('replaces the switch and the delete button with one button that lists enable or disable, the budget and the delete', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter(), linkedin) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const card = await screen.findByLabelText('Teamtailor');
     expect(within(card).queryByRole('switch')).not.toBeInTheDocument();
@@ -300,7 +300,7 @@ describe('the settings menu', () => {
 
   it('moves with the arrow keys, closes with Escape and gives the focus back, and closes on a click outside', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter()) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const card = await screen.findByLabelText('Teamtailor');
     const button = within(card).getByRole('button', { name: 'Settings of Teamtailor' });
@@ -327,7 +327,7 @@ describe('the settings menu', () => {
 
   it('skips a disabled action with the arrow keys, and picking it does nothing', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter({ pinned: true })) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const card = await screen.findByLabelText('Teamtailor');
     await user.click(within(card).getByRole('button', { name: 'Settings of Teamtailor' }));
@@ -349,7 +349,7 @@ describe('the budget', () => {
 
   it('opens a dialog with the hourly and daily budget, and the default of each', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter()) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const dialog = await open(userEvent.setup());
     const hourly = within(dialog).getByLabelText('Hourly budget');
     const daily = within(dialog).getByLabelText('Daily budget');
@@ -368,7 +368,7 @@ describe('the budget', () => {
 
   it('saves both numbers, says so, and reads the list again', async () => {
     const seen = mockApi({ '/me': me, '/tools': tools(adapter()), '/adapters/teamtailor/budget': saved(100, 900) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const dialog = await open(user);
     await user.clear(within(dialog).getByLabelText('Hourly budget'));
@@ -386,7 +386,7 @@ describe('the budget', () => {
 
   it('accepts 0 and 1000000, and refuses anything else with a message and no request', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter()), '/adapters/teamtailor/budget': saved(0, 1_000_000) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const dialog = await open(user);
     const hourly = within(dialog).getByLabelText('Hourly budget');
@@ -409,7 +409,7 @@ describe('the budget', () => {
 
   it('warns, without blocking, when the hourly budget is above the daily one', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter()) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const dialog = await open(user);
     await user.clear(within(dialog).getByLabelText('Hourly budget'));
@@ -420,7 +420,7 @@ describe('the budget', () => {
 
   it('puts the defaults back in the fields without saving, and a saved value shows next to its default', async () => {
     mockApi({ '/me': me, '/tools': tools(withBudget({ value: 100, source: 'config' }, { value: 900, source: 'config' })) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const dialog = await open(user);
     expect(within(dialog).getByLabelText('Hourly budget')).toHaveValue(100);
@@ -440,7 +440,7 @@ describe('the budget', () => {
         budget: { hourly: value({ value: 150, source: 'env' }), daily: value({ value: 900, source: 'config' }) },
       },
     });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const dialog = await open(user);
     const warning = within(dialog).getByRole('alert');
@@ -462,7 +462,7 @@ describe('the budget', () => {
 
   it('when the environment sets both: lists both, locks both and cannot be saved', async () => {
     mockApi({ '/me': me, '/tools': tools(withBudget({ value: 150, source: 'env' }, { value: 300, source: 'env' })) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const dialog = await open(userEvent.setup());
     const warning = within(dialog).getByRole('alert');
     expect(warning).toHaveTextContent(
@@ -487,7 +487,7 @@ describe('the budget', () => {
         },
       ),
     });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const dialog = await open(user);
     await user.clear(within(dialog).getByLabelText('Hourly budget'));
@@ -507,7 +507,7 @@ describe('the budget', () => {
       ),
     });
     vi.spyOn(navigation, 'toLogin').mockImplementation(() => undefined);
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     const dialog = await open(user);
     await user.clear(within(dialog).getByLabelText('Hourly budget'));
@@ -519,7 +519,7 @@ describe('the budget', () => {
 
   it('opens for a disabled adapter and for a utility too', async () => {
     mockApi({ '/me': me, '/tools': tools(linkedin, utility()) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     await pick(user, await screen.findByLabelText('LinkedIn'), 'Budget…');
     expect(await screen.findByRole('dialog', { name: 'Budget of LinkedIn' })).toBeInTheDocument();
@@ -532,7 +532,7 @@ describe('the budget', () => {
 describe('restart', () => {
   it('asks before it restarts, then says the page reconnects by itself', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter()), '/router/restart': { restarting: true } });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /Restart router/ }));
     expect(screen.getByText(/Calls that are running are cut/)).toBeInTheDocument();
@@ -545,7 +545,7 @@ describe('restart', () => {
 
   it('can be cancelled', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter()) });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /Restart router/ }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -563,7 +563,7 @@ describe('restart', () => {
           ? new Response(JSON.stringify({ error: 'busy', message: '1 call is still running. Restarting would cut it.' }), { status: 409 })
           : { restarting: true },
     });
-    renderApp('/tools');
+    renderApp('/settings?view=tools');
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /Restart router/ }));
     await user.click(screen.getByRole('button', { name: 'Yes, restart' }));
