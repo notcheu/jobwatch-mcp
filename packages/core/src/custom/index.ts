@@ -3,3 +3,5 @@ export { SANDBOX_LIMITS, dockerSandboxArgs, dockerSpawner, processSpawner, reapS
 export type { SandboxProcess, SandboxRun, SandboxSpawner } from './sandbox';
 export { buildCustomModule, checkTargetUrl, customId, sampleScript } from './module';
 export type { CustomModuleDeps } from './module';
+export { scriptDocs } from './docs';
+export type { DocBlock, DocItem } from './docs';

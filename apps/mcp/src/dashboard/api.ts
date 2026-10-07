@@ -54,6 +54,7 @@ import {
   checkTargetUrl,
   customId,
   sampleScript,
+  scriptDocs,
   type CompanyBoard as CompanyBoardRow,
   type CallLog,
   type Budgets,
@@ -516,7 +517,7 @@ export function getCustomAdapter(data: DashboardData, handle: string): CustomAda
 /** What the editor starts from for a kind of context. */
 export const getCustomAdapterSample = (kind: unknown): CustomAdapterSample => {
   const parsed = z.enum(['http', 'browser']).parse(kind);
-  return checked(customAdapterSampleSchema, { kind: parsed, script: sampleScript(parsed) });
+  return checked(customAdapterSampleSchema, { kind: parsed, script: sampleScript(parsed), docs: scriptDocs(parsed) });
 };
 
 // ---------------------------------------------------------------------------------------------------------- tools

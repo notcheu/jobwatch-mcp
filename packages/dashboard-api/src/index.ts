@@ -445,7 +445,27 @@ export const customAdapterDetailSchema = customAdapterSchema
   .strict();
 export type CustomAdapterDetail = z.infer<typeof customAdapterDetailSchema>;
 
-export const customAdapterSampleSchema = z.object({ kind: z.enum(['http', 'browser']), script: z.string() }).strict();
+/** One attribute, method or global in the reference next to the editor. */
+export const docItemSchema = z
+  .object({
+    name: z.string(),
+    /** Short, for the collapsed row. */
+    type: z.string(),
+    /** In full, for the expanded row; the short one when omitted. */
+    fullType: z.string().optional(),
+    description: z.string(),
+    optional: z.boolean().optional(),
+  })
+  .strict();
+/** An object or type a script works with, as a table of its attributes. */
+export const docBlockSchema = z.object({ id: z.string(), title: z.string(), summary: z.string(), items: z.array(docItemSchema) }).strict();
+export type DocBlock = z.infer<typeof docBlockSchema>;
+export type DocItem = z.infer<typeof docItemSchema>;
+
+/** What the editor starts from for a kind of context: the script, and the reference to read beside it. */
+export const customAdapterSampleSchema = z
+  .object({ kind: z.enum(['http', 'browser']), script: z.string(), docs: z.array(docBlockSchema) })
+  .strict();
 export type CustomAdapterSample = z.infer<typeof customAdapterSampleSchema>;
 export const customAdapterRemovedSchema = z.object({ handle: z.string() }).strict();
 

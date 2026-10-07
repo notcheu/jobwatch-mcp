@@ -450,8 +450,11 @@ describe('the API in local development mode (no sign-in)', () => {
     expect((await t.call('/dashboard/api/v1/custom-adapters/ghost')).status).toBe(404);
     expect((await t.call('/dashboard/api/v1/custom-adapters/Bad-Handle')).status).toBe(404);
     const sample = await json(await t.call('/dashboard/api/v1/custom-adapters/sample/browser'));
-    expect(sample.script).toContain('@global {Session} session');
-    expect((await json(await t.call('/dashboard/api/v1/custom-adapters/sample/http'))).script).not.toContain('Session');
+    expect(sample.script).toContain('async function read(board, filters)');
+    expect(sample.docs.map((block: any) => block.id)).toEqual(['globals', 'http', 'response', 'session', 'filters', 'posting', 'result']);
+    expect(sample.docs[0].items.map((item: any) => item.name)).toContain('session');
+    const plain = await json(await t.call('/dashboard/api/v1/custom-adapters/sample/http'));
+    expect(plain.docs.map((block: any) => block.id)).not.toContain('session'); // no browser, no session
     expect((await t.call('/dashboard/api/v1/custom-adapters/sample/ftp')).status).toBe(400);
   });
 

@@ -26,7 +26,34 @@ const detail = (over: Record<string, unknown> = {}) => ({
   events: [{ at: NOW, actor: 'me@example.com', action: 'created', sha256: 'a'.repeat(64) }],
   ...over,
 });
-const sample = (kind: string) => ({ kind, script: `// sample for ${kind}\nasync function read(board, filters) {\n  // TODO\n}` });
+const item = (name: string, over: Record<string, unknown> = {}) => ({ name, type: 'string', description: `What ${name} is for.`, ...over });
+const docs = (kind: string) => [
+  {
+    id: 'globals',
+    title: 'Globals',
+    summary: 'Available in the script.',
+    items: [item('http', { type: 'Http' }), ...(kind === 'browser' ? [item('session', { type: 'Session' })] : [])],
+  },
+  {
+    id: 'posting',
+    title: 'Posting',
+    summary: 'One job you found.',
+    items: [
+      item('id', { description: 'Unique within this adapter. See `postings`.' }),
+      item('postedAt', {
+        type: 'string | null',
+        fullType: "string | null // a date, '2026-10-01'",
+        optional: true,
+        description: 'When it was posted.',
+      }),
+    ],
+  },
+];
+const sample = (kind: string) => ({
+  kind,
+  script: `// sample for ${kind}\nasync function read(board, filters) {\n  // TODO\n}`,
+  docs: docs(kind),
+});
 const common = { '/me': me, '/tools': tools };
 const routes = (extra: Record<string, unknown> = {}) => ({
   ...common,
@@ -123,6 +150,98 @@ describe('custom adapters page', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await user.click(screen.getByRole('button', { name: 'Edit Acme jobs' }));
     expect(await screen.findByRole('dialog')).toHaveAttribute('data-expanded', 'false');
+  });
+
+  it('hides the documentation until its icon button is pressed, between the script title and the editor, and hides it again', async () => {
+    const user = userEvent.setup();
+    mockApi(routes({ '/custom-adapters': list([]) }));
+    renderApp('/custom-adapters');
+    await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByRole('region', { name: 'Script documentation' })).not.toBeInTheDocument();
+    const toggle = within(dialog).getByRole('button', { name: 'Show the documentation' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(toggle);
+    const region = await within(dialog).findByRole('region', { name: 'Script documentation' });
+    expect(within(dialog).getByRole('button', { name: 'Hide the documentation' })).toHaveAttribute('aria-expanded', 'true');
+    // the order in the column: the title and its button, then the documentation, then the editor
+    const script = within(dialog).getByRole('textbox', { name: 'Script' });
+    const title = within(dialog).getByText('Script', { selector: 'div' });
+    expect(title.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(region.compareDocumentPosition(script) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await user.click(within(dialog).getByRole('button', { name: 'Hide the documentation' }));
+    expect(within(dialog).queryByRole('region', { name: 'Script documentation' })).not.toBeInTheDocument();
+    expect((script as HTMLTextAreaElement).value).toContain('sample for http'); // the script is untouched
+  });
+
+  it('shows one table for each object or type, with a row for each attribute, and the browser context adds the session', async () => {
+    const user = userEvent.setup();
+    mockApi(routes({ '/custom-adapters': list([]) }));
+    renderApp('/custom-adapters');
+    await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Show the documentation' }));
+    const region = await within(dialog).findByRole('region', { name: 'Script documentation' });
+    expect(
+      within(region)
+        .getAllByRole('table')
+        .map((table) => table.getAttribute('aria-label')),
+    ).toEqual(['Globals', 'Posting']);
+    const posting = within(region).getByRole('table', { name: 'Posting' });
+    expect(
+      within(posting)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent),
+    ).toEqual(['Name', 'Type', 'Required']);
+    const rows = within(posting).getAllByRole('row');
+    expect(within(rows[1] as HTMLElement).getByText('id')).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText('Required')).toBeInTheDocument();
+    expect(within(posting).getByText('Optional')).toBeInTheDocument();
+    expect(within(region).queryByText('session')).not.toBeInTheDocument();
+    await user.selectOptions(within(dialog).getByLabelText('Context'), 'browser');
+    expect(await within(dialog).findByText('session')).toBeInTheDocument();
+    expect(within(dialog).getByRole('region', { name: 'Script documentation' })).toBe(region); // the same panel: it did not close and reopen
+  });
+
+  it('opens a row into a description list of its name, description and type in full, and closes it again', async () => {
+    const user = userEvent.setup();
+    mockApi(routes({ '/custom-adapters': list([]) }));
+    renderApp('/custom-adapters');
+    await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Show the documentation' }));
+    const region = await within(dialog).findByRole('region', { name: 'Script documentation' });
+    const row = within(region).getByRole('button', { name: 'postedAt in Posting' });
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+    expect(within(region).queryByText('When it was posted.')).not.toBeInTheDocument(); // a collapsed row shows no description
+    await user.click(row);
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+    const terms = within(region)
+      .getAllByRole('term')
+      .map((term) => term.textContent);
+    expect(terms).toEqual(['Name', 'Description', 'Type', 'Required']);
+    expect(within(region).getByText('When it was posted.')).toBeInTheDocument();
+    expect(within(region).getByText("string | null // a date, '2026-10-01'")).toBeInTheDocument(); // the type in full
+    expect(within(region).getByText(/leave it out/)).toBeInTheDocument(); // optional
+    await user.click(row);
+    expect(within(region).queryByText('When it was posted.')).not.toBeInTheDocument();
+    // rows open on their own: another stays as it is
+    await user.click(within(region).getByRole('button', { name: 'id in Posting' }));
+    await user.click(row);
+    expect(within(region).getByText('When it was posted.')).toBeInTheDocument();
+    expect(within(region).getByText(/Unique within this adapter/)).toBeInTheDocument();
+    expect(within(region).getByText('postings', { selector: 'code' })).toBeInTheDocument(); // `backticks` are code
+  });
+
+  it('shows the reference of an adapter that is being edited too', async () => {
+    const user = userEvent.setup();
+    mockApi(routes({ '/custom-adapters': list([adapter()]), '/custom-adapters/acmejobs': detail() }));
+    renderApp('/custom-adapters');
+    await user.click(await screen.findByRole('button', { name: 'Edit Acme jobs' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(await within(dialog).findByRole('button', { name: 'Show the documentation' }));
+    expect(await within(dialog).findByRole('table', { name: 'Posting' })).toBeInTheDocument();
+    expect((within(dialog).getByRole('textbox', { name: 'Script' }) as HTMLTextAreaElement).value).toContain('async function read(board)'); // its own script, not the sample
   });
 
   it('indents with Tab and keeps the indentation on Enter in the editor', async () => {

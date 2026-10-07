@@ -9,6 +9,7 @@ import {
 } from '@jobwatch/sdk/testkit';
 import { describe, expect, it } from 'vitest';
 import { RUNNER_SOURCE } from './runner';
+import { scriptDocs } from './docs';
 import { buildCustomModule, checkTargetUrl, sampleScript } from './module';
 import { SANDBOX_LIMITS, dockerSandboxArgs, processSpawner, runInSandbox, toBoardRead, type SandboxSpawner } from './sandbox';
 import type { CustomAdapterRow } from '../store/store';
@@ -207,6 +208,66 @@ describe('what comes back', () => {
   });
 });
 
+describe('the reference shown beside the editor', () => {
+  const ids = (kind: 'http' | 'browser') => scriptDocs(kind).map((block) => block.id);
+
+  it('has one block for the globals and for each object or type: Http, Response, Filters, Posting and Result, and Session for a browser', () => {
+    expect(ids('http')).toEqual(['globals', 'http', 'response', 'filters', 'posting', 'result']);
+    expect(ids('browser')).toEqual(['globals', 'http', 'response', 'session', 'filters', 'posting', 'result']);
+    const globals = (kind: 'http' | 'browser') => scriptDocs(kind)[0]?.items.map((item) => item.name);
+    expect(globals('http')).toEqual(['http', 'htmlToText', 'slugify', 'titleCase', 'log']);
+    expect(globals('browser')).toEqual(['http', 'htmlToText', 'slugify', 'titleCase', 'log', 'session']);
+  });
+
+  it('gives every attribute a name, a type and an explanation, and no name twice in a block', () => {
+    for (const kind of ['http', 'browser'] as const)
+      for (const block of scriptDocs(kind)) {
+        expect(block.title).not.toBe('');
+        expect(block.summary).not.toBe('');
+        expect(block.items.length).toBeGreaterThan(0);
+        expect(new Set(block.items.map((item) => item.name)).size).toBe(block.items.length);
+        for (const item of block.items) {
+          expect(item.name).toMatch(/^[A-Za-z_]+$/);
+          expect(item.type).not.toBe('');
+          expect(item.description.length).toBeGreaterThan(15);
+        }
+      }
+  });
+
+  it('says what the router accepts: the fields of a posting are those it validates', () => {
+    const posting = scriptDocs('http').find((block) => block.id === 'posting');
+    expect(posting?.items.map((item) => [item.name, item.optional === true])).toEqual([
+      ['id', false],
+      ['title', false],
+      ['company', true],
+      ['locations', true],
+      ['url', false],
+      ['postedAt', true],
+      ['description', true],
+    ]);
+    // a posting made of its required fields only is accepted, and one missing a required field is not
+    const required = { id: 'a', title: 'T', url: 'https://x.test' };
+    expect(() => toBoardRead({ postings: [required] })).not.toThrow();
+    for (const missing of ['id', 'title', 'url']) {
+      const { [missing]: _removed, ...rest } = required as Record<string, string>;
+      expect(() => toBoardRead({ postings: [rest] })).toThrow(/wrong shape/);
+    }
+    expect(
+      scriptDocs('http')
+        .find((block) => block.id === 'result')
+        ?.items.map((item) => item.name),
+    ).toEqual(['name', 'postings']);
+  });
+
+  it('documents the filters the script really receives', async () => {
+    const received = await run('async function read(board, filters) { return { name: Object.keys(filters).join(","), postings: [] }; }', {
+      filters: { title_any: [], location_any: [], posted_within: 'any', disallowed_terms: [], only_new: false, max_results: 50 },
+    });
+    const given = (received.name ?? '').split(',');
+    for (const item of scriptDocs('http').find((block) => block.id === 'filters')?.items ?? []) expect(given).toContain(item.name);
+  }, 20_000);
+});
+
 describe('the bare-process sandbox', () => {
   it('refuses to run on a Node that leaves the network open to the script (older than 26)', () => {
     expect(() => processSpawner(process.execPath, '22.23.3').start()).toThrow(/needs Node 26 \(this router runs 22\.23\.3\)/);
@@ -357,32 +418,17 @@ describe('the module built from a row', () => {
     expect(boards[1]?.message).toMatch(/The script failed: nope/);
   }, 30_000);
 
-  it('starts the editor from a sample documented with JSDoc: the globals, the input, the output, and a body left to write', () => {
-    const http = sampleScript('http');
-    const browser = sampleScript('browser');
-    for (const text of [http, browser]) {
+  it('starts the editor from the read function alone, documented with JSDoc, with its body left to write', () => {
+    for (const kind of ['http', 'browser'] as const) {
+      const text = sampleScript(kind);
       expect(text).toContain('async function read(board, filters)');
       expect(text).toContain('TODO');
-      // the contract is JSDoc, not prose: types for the input and the output, and the signature
-      for (const tag of [
-        '@typedef {Object} Filters',
-        '@typedef {Object} Posting',
-        '@typedef {Object} Result',
-        '@param {string} board',
-        '@param {Filters} filters',
-        '@returns {Promise<Result>}',
-        '@global {Http} http',
-      ])
-        expect(text).toContain(tag);
-      expect(text).toContain('@property {string} id');
-      expect(text).toContain('@property {Posting[]} postings');
-      expect(text).toMatch(/^\/\*\*\n/); // opens with a JSDoc block
+      for (const tag of ['@param {string} board', '@param {Filters} filters', '@returns {Promise<Result>}']) expect(text).toContain(tag);
+      expect(text).toMatch(/^\/\*\*\n/); // opens with the JSDoc of read
+      // the reference is next to the editor, not in the script
+      for (const gone of ['@typedef', '@global', '@property']) expect(text).not.toContain(gone);
+      expect(text.match(/\/\*\*/g)).toHaveLength(1);
     }
-    expect(http).not.toContain('Session');
-    expect(http).not.toContain('session.goto');
-    expect(browser).toContain('@typedef {Object} Session');
-    expect(browser).toContain('@global {Session} session');
-    expect(browser).toContain('goto');
   });
 
   it('is a script that runs as it stands (it returns no postings), whatever the kind', async () => {

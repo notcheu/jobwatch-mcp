@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CustomAdapter } from '@jobwatch/dashboard-api';
-import { AlertTriangle, Maximize2, Minimize2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, BookOpen, Maximize2, Minimize2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { CodeEditor } from '@/components/CodeEditor';
+import { ScriptDocs } from '@/components/ScriptDocs';
 import { useChangeError } from '@/components/Discovery';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,7 +54,14 @@ function AdapterForm({
   const [script, setScript] = useState('');
   const untouched = useRef(true); // the script is still a sample: changing the context may swap it for the other sample
   const loaded = useRef(false);
-  const sample = useQuery({ queryKey: ['custom-adapter-sample', kind], queryFn: () => api.customAdapterSample(kind), enabled: !editing });
+  // the sample gives a new adapter its script; the reference of the context is shown whether the adapter is new or not
+  const sample = useQuery({
+    queryKey: ['custom-adapter-sample', kind],
+    queryFn: () => api.customAdapterSample(kind),
+    placeholderData: (previous) => previous, // the reference stays while the other context's loads
+  });
+  const [docsOpen, setDocsOpen] = useState(false);
+  const docsId = useId();
   const { error, fail } = useChangeError(() => {
     onClose();
     onReauth();
@@ -207,7 +215,30 @@ function AdapterForm({
           )}
         </div>
         <div className="flex min-h-80 min-w-0 flex-col gap-1 md:min-h-0">
-          <div className="text-sm font-medium">Script</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-medium">Script</div>
+            <Button
+              type="button"
+              variant={docsOpen ? 'secondary' : 'ghost'}
+              size="icon"
+              className="size-7"
+              aria-label={docsOpen ? 'Hide the documentation' : 'Show the documentation'}
+              aria-expanded={docsOpen}
+              aria-controls={docsId}
+              title="Documentation: the globals and the shapes of the input and the output"
+              onClick={() => setDocsOpen((value) => !value)}
+            >
+              <BookOpen className="size-4" />
+            </Button>
+          </div>
+          {docsOpen && sample.data !== undefined && (
+            <ScriptDocs id={docsId} blocks={sample.data.docs} className="max-h-80 shrink-0 md:max-h-[45%]" />
+          )}
+          {docsOpen && sample.data === undefined && (
+            <p id={docsId} className="text-xs text-muted-foreground">
+              {sample.isError ? 'The documentation could not be loaded.' : 'Loading the documentation…'}
+            </p>
+          )}
           <CodeEditor
             label="Script"
             className="min-h-0 flex-1"
