@@ -1,0 +1,23 @@
+{
+  "name": "@jobwatch/adapter-breezy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Breezy HR adapter (read-only).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@jobwatch/sdk": "*"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "nx": {
+    "tags": [
+      "type:adapter"
+    ]
+  }
+}
