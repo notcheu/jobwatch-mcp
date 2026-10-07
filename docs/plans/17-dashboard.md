@@ -148,7 +148,7 @@ Search and filtering run in SQL (`Store.listJobs` gains `q` over title and compa
 | Column | Notes |
 |---|---|
 | Title, Company, Location | text, sortable |
-| Source | badge; the company name of an ATS job is its company (the feed's name, else the board handle) |
+| Source | badge; the company name of an ATS job is its company (the feed's name, else the board handle in Pascal case) |
 | First seen, Last seen | relative time with an absolute tooltip, sortable |
 | Found by (off by default, turn it on in the Columns menu) | one line per list of keywords that found the job, each keyword as its own badge (from `found_by`), cut with an ellipsis so it never grows out of the column; searches that differ only by their disallowed terms share a line, with the terms in its tooltip |
 | Size | description characters |

@@ -265,6 +265,15 @@ export function slugify(name: string): string {
     .slice(0, 60);
 }
 
+/** A readable company name from a handle: `swile` -> `Swile`, `my-company` -> `MyCompany` (only the first letter of each part changes). */
+export function pascalCase(handle: string): string {
+  return handle
+    .split(/[-_\s]+/)
+    .filter((part) => part !== '')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('');
+}
+
 /** Where a handle or URL points: the address of the board's job list, and a label for reports. */
 export interface BoardAddress {
   feedUrl: string;
@@ -375,7 +384,7 @@ export async function runBoardTool<S extends string>(
         seen.add(posting.id);
         fresh += 1;
         // an ATS that does not name the company on its postings (Ashby, Lever): the feed's name, else the handle the board is read by
-        found.push({ posting: { ...posting, company: posting.company ?? parsed.name ?? target.label, board: name }, report });
+        found.push({ posting: { ...posting, company: posting.company ?? parsed.name ?? pascalCase(target.label), board: name }, report });
       }
       if (fresh < parsed.postings.length)
         warnings.push(`${name}: ${parsed.postings.length - fresh} job(s) already listed by another board of this call.`);

@@ -120,7 +120,7 @@ describe('lever_jobs', () => {
     const result = await run(c.ctx);
     expect(c.spent()).toBe(1); // one request for one board
     expect(ids(result)).toEqual([J1, J4, J2, J3]);
-    expect(data(result).jobs[0]).toMatchObject({ source: 'lever', board: 'acme', company: 'acme', locations: ['Paris, France'] });
+    expect(data(result).jobs[0]).toMatchObject({ source: 'lever', board: 'acme', company: 'Acme', locations: ['Paris, France'] });
     const full = await run(c.ctx, { detail: 'full' });
     expect(data(full).jobs[0]?.description).toContain('We use React and TypeScript.');
     expect(data(full).jobs[0]?.description).toContain('- Build UIs');
