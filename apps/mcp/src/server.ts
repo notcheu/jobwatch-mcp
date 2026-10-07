@@ -22,6 +22,7 @@ import {
   RegistryError,
   RuntimeManager,
   Store,
+  createPlatformMemory,
   StoreError,
   createGuard,
   createLogger,
@@ -48,8 +49,9 @@ import {
   type RuntimeHooks,
 } from '@jobwatch/core';
 import { budgetDefaults, installedModules } from '@jobwatch/mcp-modules';
-import { roleOf, type McpModule } from '@jobwatch/sdk';
+import { forgetLocation, roleOf, saveLocation, savedLocation, type McpModule } from '@jobwatch/sdk';
 import { createApp, type AppDeps } from './app';
+import { toCompanyBoard, toSavedPlace } from './dashboard/api';
 import { DashboardManager } from './dashboard/manager';
 import { ChangeRefused, registerWrites } from './dashboard/writes';
 import { createMetricsServer } from './metrics-server';
@@ -345,9 +347,12 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const app = createApp(appDeps);
 
   /** Run one of the registry's tools from the host (the control socket): the same guard, budget, log and call history as an MCP call. */
-  const runTool = async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    if (!holder.current().tools.has(name))
-      throw new Error(`The tool ${name} is not available: enable its adapter first (jobwatch adapters enable linkedin-geo).`);
+  const runTool = async (
+    name: string,
+    args: Record<string, unknown>,
+    enable = 'jobwatch adapters enable linkedin-geo',
+  ): Promise<Record<string, unknown>> => {
+    if (!holder.current().tools.has(name)) throw new Error(`The tool ${name} is not available: enable its adapter first (${enable}).`);
     const { result } = await callTool(appDeps, name, args);
     if (result.isError) {
       const failure = JSON.parse(result.content[0]?.text ?? '{}') as { message?: string };
@@ -484,6 +489,26 @@ export async function start(options: StartOptions): Promise<RunningServer> {
               const { jobs, searches } = await clearAdapterData(id);
               return { jobs, searches };
             },
+            addCompanyBoard: (entry) => {
+              const board = store.addCompanyBoard(entry, clock());
+              if (board === null)
+                throw new ChangeRefused(409, 'exists', `${entry.company} already has a ${entry.ats} board. Remove it first to change it.`);
+              return toCompanyBoard(board);
+            },
+            removeCompanyBoard: (id) => store.deleteCompanyBoard(id),
+            savePlace: async (entry) => {
+              const memory = createPlatformMemory(store, clock);
+              await saveLocation(memory, entry.alias, entry, 'operator');
+              const saved = await savedLocation(memory, entry.alias);
+              if (saved === null) throw new ChangeRefused(400, 'invalid', 'That name could not be saved.');
+              return toSavedPlace(saved);
+            },
+            forgetPlace: async (alias) => {
+              const memory = createPlatformMemory(store, clock);
+              if ((await savedLocation(memory, alias)) === null) return false;
+              await forgetLocation(memory, alias);
+              return true;
+            },
             running: () => callLog.all().filter((call) => call.state === 'running').length,
             restart: () => void process.kill(process.pid, 'SIGTERM'),
           },
@@ -513,6 +538,18 @@ export async function start(options: StartOptions): Promise<RunningServer> {
             'dashboard.stop': async () => ({ ...(await dashboard.stop()) }),
             'dashboard.status': async () => ({ ...dashboard.status() }),
             // places: look up, remember and forget names for LinkedIn locations, through the linkedin_locations tool
+            // ATS discovery: look companies up, logged on the dashboard's ATS discovery page like any ats_find call
+            'ats.find': (request) =>
+              runTool(
+                'ats_find',
+                {
+                  companies: Array.isArray(request['companies']) ? request['companies'].map(String) : [],
+                  ...(Array.isArray(request['ats']) ? { ats: request['ats'].map(String) } : {}),
+                  ...(typeof request['handles'] === 'number' ? { handles_per_company: request['handles'] } : {}),
+                  ...(request['refresh'] === true ? { refresh: true } : {}),
+                },
+                'jobwatch utilities enable ats-discovery',
+              ),
             'linkedin-geo.lookup': (request) => runTool('linkedin_locations', { query: String(request['query'] ?? '') }),
             'linkedin-geo.save': (request) =>
               runTool('linkedin_locations', {

@@ -23,6 +23,25 @@ const settings = {
   adaptersPinned: false,
 };
 
+describe('settings tabs', () => {
+  it('has the settings and Tools & status as two tabs, and /tools leads to the second', async () => {
+    mockApi({ '/me': me, '/tools': tools, '/settings': settings });
+    renderApp('/settings');
+    const user = userEvent.setup();
+    const list = await screen.findByRole('tablist', { name: 'Settings' });
+    expect(list.textContent).toBe('SettingsTools & status');
+    await user.click(screen.getByRole('tab', { name: 'Tools & status' }));
+    expect(await screen.findByText('LinkedIn')).toBeInTheDocument();
+    expect(screen.queryByText('Limits in force (read only)')).not.toBeInTheDocument();
+  });
+
+  it('sends the old /tools address to the Tools & status tab', async () => {
+    mockApi({ '/me': me, '/tools': tools, '/settings': settings });
+    renderApp('/tools');
+    expect(await screen.findByRole('tab', { name: 'Tools & status', selected: true })).toBeInTheDocument();
+  });
+});
+
 describe('settings', () => {
   it('shows the limits in force, read only, with what each one means', async () => {
     mockApi({ '/me': me, '/tools': tools, '/settings': settings });

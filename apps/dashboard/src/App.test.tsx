@@ -24,7 +24,7 @@ describe('the shell', () => {
     mockApi({ '/me': me, '/tools': tools, '/overview': overview });
     renderApp('/');
     const nav = await screen.findByRole('navigation', { name: 'Sections' });
-    for (const label of ['Overview', 'Analytics', 'Runs', 'Jobs', 'Searches', 'Tools & status', 'Settings'])
+    for (const label of ['Overview', 'Analytics', 'Runs', 'Jobs', 'Searches', 'ATS discovery', 'Docs', 'Settings'])
       expect(within(nav).getByText(label)).toBeInTheDocument();
     expect(await screen.findByText('me@example.com')).toBeInTheDocument();
     expect(screen.getByText('v1.2.3')).toBeInTheDocument();
@@ -40,6 +40,69 @@ describe('the shell', () => {
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
     ).toEqual(['All', 'linkedin', 'apec']); // wttj is disabled
+  });
+
+  it('puts the pages of the utilities under a Tools menu item that folds and unfolds, open at first', async () => {
+    mockApi({ '/me': me, '/tools': tools, '/overview': overview });
+    renderApp('/');
+    const user = userEvent.setup();
+    const nav = await screen.findByRole('navigation', { name: 'Sections' });
+    const group = within(nav).getByRole('button', { name: 'Tools' });
+    expect(group).toHaveAttribute('aria-expanded', 'true');
+    expect(within(nav).getByRole('link', { name: 'ATS discovery' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'LinkedIn places' })).toBeInTheDocument();
+    expect(within(nav).queryByText('Tools & status')).not.toBeInTheDocument();
+    await user.click(group);
+    expect(group).toHaveAttribute('aria-expanded', 'false');
+    expect(within(nav).queryByRole('link', { name: 'ATS discovery' })).not.toBeInTheDocument();
+    await user.click(group);
+    expect(within(nav).getByRole('link', { name: 'ATS discovery' })).toBeInTheDocument();
+  });
+
+  it('offers one Utility tab on Runs and Analytics, only when a utility is enabled, and sends role=utility', async () => {
+    const first = tools.adapters[0] as Record<string, unknown>;
+    const utility = (id: string, enabled = true) => ({ ...first, id, platform: id, role: 'utility', kind: 'http', enabled });
+    const withUtilities = { ...tools, adapters: [...tools.adapters, utility('ats-discovery'), utility('linkedin-geo')] };
+    const seen = mockApi({ '/me': me, '/tools': withUtilities, '/calls': { calls: [], total: 0, next: null } });
+    renderApp('/runs?tool=utility');
+    const list = await screen.findByRole('tablist', { name: 'Tool' });
+    await waitFor(() => expect(within(list).getByRole('tab', { name: 'Utility' })).toHaveAttribute('data-state', 'active'));
+    expect(
+      within(list)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['All', 'linkedin', 'apec', 'Utility']);
+    await waitFor(() => expect(seen.some((url) => url.startsWith('/dashboard/api/v1/calls?') && url.includes('role=utility'))).toBe(true));
+    expect(seen.some((url) => url.includes('platform=utility'))).toBe(false);
+  });
+
+  it('has no Utility tab when no utility is enabled, nor on Jobs', async () => {
+    const first = tools.adapters[0] as Record<string, unknown>;
+    const off = {
+      ...tools,
+      adapters: [
+        ...tools.adapters,
+        { ...first, id: 'ats-discovery', platform: 'ats-discovery', role: 'utility', kind: 'http', enabled: false },
+      ],
+    };
+    mockApi({ '/me': me, '/tools': off, '/calls': { calls: [], total: 0, next: null } });
+    renderApp('/runs');
+    const list = await screen.findByRole('tablist', { name: 'Tool' });
+    await waitFor(() => expect(within(list).getByRole('tab', { name: 'linkedin' })).toBeInTheDocument());
+    expect(within(list).queryByRole('tab', { name: 'Utility' })).not.toBeInTheDocument();
+  });
+
+  it('gives no tab to a utility: it fetches no jobs', async () => {
+    const first = tools.adapters[0] as Record<string, unknown>;
+    const withUtility = {
+      ...tools,
+      adapters: [...tools.adapters, { ...first, id: 'ats-discovery', platform: 'ats-discovery', role: 'utility', kind: 'http' }],
+    };
+    mockApi({ '/me': me, '/tools': withUtility, '/calls': { calls: [], total: 0, next: null } });
+    renderApp('/runs');
+    const list = await screen.findByRole('tablist', { name: 'Tool' });
+    await waitFor(() => expect(within(list).getByRole('tab', { name: 'linkedin' })).toBeInTheDocument());
+    expect(within(list).queryByRole('tab', { name: 'ats-discovery' })).not.toBeInTheDocument();
   });
 
   it('has no tabs on the overview', async () => {

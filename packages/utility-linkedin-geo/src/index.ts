@@ -74,7 +74,7 @@ export const locations = defineHttpTool({
       input: { list: true },
     },
   ],
-  handler: async (args, { http, memory }) => {
+  handler: async (args, { http, memory, places: log }) => {
     const modes = [
       args.query !== undefined,
       args.save_as !== undefined || args.id !== undefined || args.label !== undefined,
@@ -91,6 +91,7 @@ export const locations = defineHttpTool({
 
     if (args.query !== undefined) {
       const places = await lookupLocations(http, args.query);
+      await log.recordLookup({ query: args.query, hits: places.slice(0, 10) });
       return {
         data: { ...empty, places, best: bestLocation(places, args.query) ?? null },
         warnings:

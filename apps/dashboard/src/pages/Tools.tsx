@@ -242,7 +242,7 @@ export function Tools() {
     .map((role) => ({ plural: role === 'adapter' ? 'adapters' : 'utilities', variable: role === 'adapter' ? 'ADAPTERS' : 'UTILITIES' }));
 
   return (
-    <div className="w-full space-y-5 overflow-auto p-5">
+    <div className="min-h-0 w-full flex-1 space-y-5 overflow-auto p-5">
       {reauth && (
         <div role="alert" className="flex items-center justify-between rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
           <span>Changes need a recent sign-in. Sign in again to continue.</span>

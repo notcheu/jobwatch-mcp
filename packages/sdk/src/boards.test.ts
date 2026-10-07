@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { boardFilters, judgeBoardPostings, runBoardTool, type BoardPosting } from './boards';
 import { z } from 'zod';
 import { AdapterBroken } from './errors';
-import { FakeJobStore } from './testkit/fakes';
+import { FakeCompanyBoards, FakeJobStore } from './testkit/fakes';
 
 const filters = (over: object = {}) => z.object(boardFilters).parse(over);
 const DAY = 86_400_000;
@@ -200,7 +200,7 @@ describe('runBoardTool', () => {
     const h = http({
       'https://demo.example.com/acme.json': { status: 200, body: { name: 'Acme', jobs: [{ id: '1', title: 'Engineer' }] } },
     });
-    const result = await runBoardTool({ http: h, jobs: new FakeJobStore() }, 'demo', source, {
+    const result = await runBoardTool({ http: h, jobs: new FakeJobStore(), companies: new FakeCompanyBoards() }, 'demo', source, {
       ...args(),
       boards: ['acme', ' acme ', 'https://demo.example.com/x/acme'],
     });
@@ -210,12 +210,30 @@ describe('runBoardTool', () => {
     expect(result.data.jobs).toHaveLength(1);
   });
 
+  it('reads a company name from the board the operator mapped it to, and still checks what that board answers', async () => {
+    const h = http({
+      'https://demo.example.com/sg.json': { status: 200, body: { name: 'Société Générale', jobs: [{ id: '1', title: 'Engineer' }] } },
+    });
+    const companies = new FakeCompanyBoards();
+    companies.set('Société Générale', 'demo', 'sg');
+    const result = await runBoardTool({ http: h, jobs: new FakeJobStore(), companies }, 'demo', source, {
+      ...args(),
+      boards: ['societe generale', 'https://demo.example.com/x/other'],
+    });
+    expect(h.seen).toEqual(['https://demo.example.com/sg.json', 'https://demo.example.com/other.json']);
+    expect(result.data.jobs).toHaveLength(1);
+    // a mapping on another ATS is not used here
+    companies.set('Other', 'greenhouse', 'other');
+    const again = await runBoardTool({ http: h, jobs: new FakeJobStore(), companies }, 'demo', source, { ...args(), boards: ['Other'] });
+    expect(again.data.boards[0]?.status).toBe('not_found');
+  });
+
   it('maps failures to a status per board and counts only real requests', async () => {
     const h = http({
       'https://demo.example.com/acme.json': { status: 200, body: { name: 'Acme', jobs: [] } },
       'https://demo.example.com/odd.json': { status: 200, body: { nope: 1 } },
     });
-    const result = await runBoardTool({ http: h, jobs: new FakeJobStore() }, 'demo', source, {
+    const result = await runBoardTool({ http: h, jobs: new FakeJobStore(), companies: new FakeCompanyBoards() }, 'demo', source, {
       ...args(),
       boards: ['acme', 'ghost', 'odd'],
     });

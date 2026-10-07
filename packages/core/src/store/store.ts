@@ -2,7 +2,7 @@ import { chmodSync, closeSync, mkdirSync, openSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { SearchRecord } from '@jobwatch/sdk';
-import { findSalaryRange } from '@jobwatch/sdk';
+import { findSalaryRange, slugify } from '@jobwatch/sdk';
 
 /** Milliseconds since the epoch. Injected everywhere time matters, so tests control it. */
 export type Clock = () => number;
@@ -69,7 +69,7 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
  * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
  * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`),
  * 9 the keyword list of a search and the jobs it excluded, 10 its disallowed terms and the term that dropped each job,
- * 11 the title of a dropped job, 12 the detail of a call (its parameters among it).
+ * 11 the title of a dropped job, 12 the detail of a call (its parameters among it), 13 the company lookups and the company-to-board map, 14 the log of LinkedIn place lookups.
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -212,6 +212,39 @@ const MIGRATIONS: readonly string[] = [
   // log survives a restart. Null for a call made before this migration. Deleted with its row, after CALL_LOG_RETENTION_DAYS.
   `
   ALTER TABLE call_log ADD COLUMN detail TEXT;
+  `,
+  // 13: ATS discovery. ats_lookups is the log of what a company lookup found (matches as JSON: ats, handle, jobs, board page);
+  // company_boards is the operator's map of a company to its board on an ATS, read first by every ATS tool. company_key is the slug
+  // of the name, so "Société Générale" and "societe-generale" are one company.
+  `
+  CREATE TABLE ats_lookups (
+    id      INTEGER PRIMARY KEY,
+    ts      INTEGER NOT NULL,
+    company TEXT    NOT NULL,
+    tried   TEXT    NOT NULL,
+    matches TEXT    NOT NULL
+  );
+  CREATE INDEX ats_lookups_ts ON ats_lookups (ts);
+
+  CREATE TABLE company_boards (
+    id          INTEGER PRIMARY KEY,
+    company_key TEXT    NOT NULL,
+    company     TEXT    NOT NULL,
+    ats         TEXT    NOT NULL,
+    handle      TEXT    NOT NULL,
+    created_at  INTEGER NOT NULL,
+    UNIQUE (company_key, ats)
+  );
+  `,
+  // 14: the log of LinkedIn place lookups (a linkedin_locations query, or a search that looked a place name up by itself); hits as JSON.
+  `
+  CREATE TABLE place_lookups (
+    id     INTEGER PRIMARY KEY,
+    ts     INTEGER NOT NULL,
+    query  TEXT    NOT NULL,
+    hits   TEXT    NOT NULL
+  );
+  CREATE INDEX place_lookups_ts ON place_lookups (ts);
   `,
 ];
 
@@ -462,6 +495,130 @@ export class Store {
       textAvailable: Number(row['text_available']),
       textReturned: Number(row['text_returned']),
     }));
+  }
+
+  // ------------------------------------------------------------------------------------------- ATS discovery
+
+  /** Log one company lookup. The log is kept as long as the call log (`prune`), and at most MAX_ATS_LOOKUPS rows. */
+  recordLookup(lookup: { company: string; tried: readonly string[]; matches: readonly CompanyBoardLookupMatch[] }, now: number): void {
+    this.transaction(() => {
+      this.db
+        .prepare('INSERT INTO ats_lookups (ts, company, tried, matches) VALUES (?, ?, ?, ?)')
+        .run(now, lookup.company.slice(0, 300), JSON.stringify(lookup.tried.slice(0, 20)), JSON.stringify(lookup.matches.slice(0, 20)));
+      this.db
+        .prepare('DELETE FROM ats_lookups WHERE id IN (SELECT id FROM ats_lookups ORDER BY id DESC LIMIT -1 OFFSET ?)')
+        .run(MAX_ATS_LOOKUPS);
+    });
+  }
+
+  /** The lookups, newest first. */
+  listLookups(limit: number, offset: number): { rows: AtsLookup[]; total: number } {
+    const total = Number((this.db.prepare('SELECT count(*) AS n FROM ats_lookups').get() as Rows | undefined)?.['n'] ?? 0);
+    const rows = this.db
+      .prepare('SELECT id, ts, company, tried, matches FROM ats_lookups ORDER BY id DESC LIMIT ? OFFSET ?')
+      .all(limit, offset) as Rows[];
+    return {
+      total,
+      rows: rows.map((row) => ({
+        id: Number(row['id']),
+        ts: Number(row['ts']),
+        company: String(row['company']),
+        tried: JSON.parse(String(row['tried'])) as string[],
+        matches: JSON.parse(String(row['matches'])) as CompanyBoardLookupMatch[],
+      })),
+    };
+  }
+
+  /** The handle mapped to a company on an ATS, or null. */
+  findCompanyBoard(company: string, ats: string): string | null {
+    const key = slugify(company);
+    if (key === '') return null;
+    const row = this.db.prepare('SELECT handle FROM company_boards WHERE company_key = ? AND ats = ?').get(key, ats) as Rows | undefined;
+    return row === undefined ? null : String(row['handle']);
+  }
+
+  /** Map a company to a board. Returns null when the company already has a board on that ATS (delete it first to change it). */
+  addCompanyBoard(entry: { company: string; ats: string; handle: string }, now: number): CompanyBoard | null {
+    const company = entry.company.trim().slice(0, 120);
+    const key = slugify(company);
+    if (key === '') throw new StoreError('the company needs a name');
+    if (!/^[a-z][a-z0-9-]{0,31}$/.test(entry.ats)) throw new StoreError('invalid ATS name');
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,59}$/.test(entry.handle)) throw new StoreError('invalid board handle');
+    const result = this.db
+      .prepare('INSERT OR IGNORE INTO company_boards (company_key, company, ats, handle, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(key, company, entry.ats, entry.handle, now);
+    if (Number(result.changes) === 0) return null;
+    return { id: Number(result.lastInsertRowid), company, ats: entry.ats, handle: entry.handle, createdAt: now };
+  }
+
+  /** The mapped companies, A to Z; `q` keeps those whose name or board handle contains it. */
+  listCompanyBoards(filter: { q?: string; ats?: string; limit: number; offset: number }): { rows: CompanyBoard[]; total: number } {
+    const where: string[] = ['1 = 1'];
+    const params: (string | number)[] = [];
+    if (filter.q !== undefined && filter.q.trim() !== '') {
+      const like = `%${filter.q.trim().replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+      where.push("(company LIKE ? ESCAPE '\\' OR handle LIKE ? ESCAPE '\\')");
+      params.push(like, like);
+    }
+    if (filter.ats !== undefined) {
+      where.push('ats = ?');
+      params.push(filter.ats);
+    }
+    const condition = where.join(' AND ');
+    const total = Number(
+      (this.db.prepare(`SELECT count(*) AS n FROM company_boards WHERE ${condition}`).get(...params) as Rows | undefined)?.['n'] ?? 0,
+    );
+    const rows = this.db
+      .prepare(
+        `SELECT id, company, ats, handle, created_at FROM company_boards WHERE ${condition} ORDER BY company COLLATE NOCASE, ats LIMIT ? OFFSET ?`,
+      )
+      .all(...params, filter.limit, filter.offset) as Rows[];
+    return {
+      total,
+      rows: rows.map((row) => ({
+        id: Number(row['id']),
+        company: String(row['company']),
+        ats: String(row['ats']),
+        handle: String(row['handle']),
+        createdAt: Number(row['created_at']),
+      })),
+    };
+  }
+
+  /** Forget a mapping. False when there was none. */
+  deleteCompanyBoard(id: number): boolean {
+    return Number(this.db.prepare('DELETE FROM company_boards WHERE id = ?').run(id).changes) > 0;
+  }
+
+  // ------------------------------------------------------------------------------------------ LinkedIn places
+
+  /** Log one place lookup (newest kept, at most MAX_PLACE_LOOKUPS rows; dropped with the call log). */
+  recordPlaceLookup(lookup: { query: string; hits: readonly { id: string; label: string }[] }, now: number): void {
+    this.transaction(() => {
+      this.db
+        .prepare('INSERT INTO place_lookups (ts, query, hits) VALUES (?, ?, ?)')
+        .run(now, lookup.query.slice(0, 100), JSON.stringify(lookup.hits.slice(0, 10)));
+      this.db
+        .prepare('DELETE FROM place_lookups WHERE id IN (SELECT id FROM place_lookups ORDER BY id DESC LIMIT -1 OFFSET ?)')
+        .run(MAX_PLACE_LOOKUPS);
+    });
+  }
+
+  /** The place lookups, newest first. */
+  listPlaceLookups(limit: number, offset: number): { rows: PlaceLookup[]; total: number } {
+    const total = Number((this.db.prepare('SELECT count(*) AS n FROM place_lookups').get() as Rows | undefined)?.['n'] ?? 0);
+    const rows = this.db
+      .prepare('SELECT id, ts, query, hits FROM place_lookups ORDER BY id DESC LIMIT ? OFFSET ?')
+      .all(limit, offset) as Rows[];
+    return {
+      total,
+      rows: rows.map((row) => ({
+        id: Number(row['id']),
+        ts: Number(row['ts']),
+        query: String(row['query']),
+        hits: JSON.parse(String(row['hits'])) as { id: string; label: string }[],
+      })),
+    };
   }
 
   // ------------------------------------------------------------------------------------------------ adapter memory
@@ -929,6 +1086,8 @@ export class Store {
       .prepare('DELETE FROM tool_usage_daily WHERE day < ?')
       .run(new Date(now - DAILY_USAGE_RETENTION_DAYS * 24 * 3600 * 1000).toISOString().slice(0, 10));
     const calls = Number(this.db.prepare('DELETE FROM call_log WHERE ts < ?').run(now - this.callLogRetentionMs).changes);
+    this.db.prepare('DELETE FROM ats_lookups WHERE ts < ?').run(now - this.callLogRetentionMs);
+    this.db.prepare('DELETE FROM place_lookups WHERE ts < ?').run(now - this.callLogRetentionMs);
     const usage = Number(this.db.prepare('DELETE FROM usage WHERE ts < ?').run(now - USAGE_RETENTION_MS).changes);
     return { calls, usage, jobs };
   }
@@ -977,7 +1136,44 @@ export const MAX_MEMORY_ENTRIES = 1000;
 /** Ids kept per search: a board listing can hold thousands of postings, and the counts stay exact whatever is kept. */
 const MAX_SEARCH_HITS = 1000;
 
+/** Lookups kept in the LinkedIn places log. */
+const MAX_PLACE_LOOKUPS = 2000;
+/** Lookups kept in the ATS discovery log. */
+const MAX_ATS_LOOKUPS = 2000;
+
 export type { SearchRecord };
+
+/** One board a company lookup found, as the log keeps it. */
+export interface CompanyBoardLookupMatch {
+  ats: string;
+  handle: string;
+  jobs: number;
+  boardUrl: string;
+}
+
+export interface AtsLookup {
+  id: number;
+  ts: number;
+  company: string;
+  tried: string[];
+  matches: CompanyBoardLookupMatch[];
+}
+
+export interface PlaceLookup {
+  id: number;
+  ts: number;
+  query: string;
+  hits: { id: string; label: string }[];
+}
+
+/** A company the operator mapped to its board on an ATS. */
+export interface CompanyBoard {
+  id: number;
+  company: string;
+  ats: string;
+  handle: string;
+  createdAt: number;
+}
 
 /** A search as a job lists it: its keywords and its disallowed terms, lower case and sorted. */
 export interface SearchRef {

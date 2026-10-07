@@ -1,10 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { useSearchParams } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
 import { useTheme } from '@/lib/theme';
+import { Tools } from '@/pages/Tools';
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
@@ -18,13 +21,40 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   );
 }
 
-/** The theme is the only thing to set here; the rest are the limits in force, read from the router and shown as they are. */
+/** Two tabs, kept in `?view=`: the settings of the dashboard, and the adapters and utilities with their status. */
 export function Settings() {
+  const [params, setParams] = useSearchParams();
+  const view = params.get('view') === 'tools' ? 'tools' : 'settings';
+  return (
+    <div className="flex min-w-0 flex-1 flex-col">
+      <div className="border-b px-5 py-2">
+        <Tabs
+          value={view}
+          onValueChange={(value) => {
+            const next = new URLSearchParams(params);
+            if (value === 'tools') next.set('view', 'tools');
+            else next.delete('view');
+            setParams(next);
+          }}
+        >
+          <TabsList aria-label="Settings">
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="tools">Tools & status</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+      {view === 'tools' ? <Tools /> : <DashboardSettings />}
+    </div>
+  );
+}
+
+/** The theme is the only thing to set here; the rest are the limits in force, read from the router and shown as they are. */
+function DashboardSettings() {
   const [dark, toggle] = useTheme();
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const s = settings.data;
   return (
-    <div className="w-full max-w-3xl space-y-4 overflow-auto p-5">
+    <div className="min-h-0 w-full max-w-3xl flex-1 space-y-4 overflow-auto p-5">
       <Card>
         <CardHeader>
           <CardTitle>Appearance</CardTitle>

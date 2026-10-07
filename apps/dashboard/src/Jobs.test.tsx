@@ -438,9 +438,6 @@ describe('the searches that found a job', () => {
       disallowed: ['intern', 'manager'],
       outcome: 'excluded',
       excludedBy: { reason: 'title', term: 'manager' },
-      health: { status: 'bad', issues: ['mostly_discarded'], discardedShare: 0.9 },
-      jobsFound: 10,
-      jobsExcluded: 9,
     }),
     jobSearch({ keywords: [], disallowed: [], outcome: 'other', source: undefined }),
   ];
@@ -460,14 +457,14 @@ describe('the searches that found a job', () => {
     expect(within(panel).queryByText('manager')).not.toBeInTheDocument();
   });
 
-  it('opens into a short table of the searches: keywords and terms, what each did with this job, and health', async () => {
+  it('opens into a short table of the searches: keywords and terms, what each did with this job', async () => {
     const { user, panel } = await open();
     await user.click(within(panel).getByRole('button', { name: 'Found by 3 searches' }));
     const table = within(panel).getByRole('table', { name: 'Searches that found this job' });
     const heads = within(table)
       .getAllByRole('columnheader')
       .map((cell) => cell.textContent);
-    expect(heads).toEqual(['Search', 'This job · health', 'Open']);
+    expect(heads).toEqual(['Search', 'This job', 'Open']);
     const rows = within(table).getAllByRole('row');
     expect(rows).toHaveLength(4);
     const first = within(at(rows, 1));
@@ -476,12 +473,12 @@ describe('the searches that found a job', () => {
     expect(first.getByText('senior')).toBeInTheDocument(); // and per disallowed term
     expect(first.getByText('without')).toBeInTheDocument(); // under the keywords, in their own colour
     expect(first.getByText('returned')).toBeInTheDocument();
-    expect(first.getByText('healthy')).toBeInTheDocument();
+    expect(first.queryByText('healthy')).not.toBeInTheDocument(); // the health of a search is not shown here
     const second = within(at(rows, 2));
     expect(second.getByText('dropped')).toBeInTheDocument();
     expect(second.getByText('by “manager”')).toBeInTheDocument(); // the term that dropped it, on its own line
     expect(second.getByTitle('Dropped: “manager” in the title')).toBeInTheDocument();
-    expect(second.getByText('90% discarded')).toBeInTheDocument();
+    expect(second.queryByText('90% discarded')).not.toBeInTheDocument();
     expect(within(at(rows, 3)).queryByText('without')).not.toBeInTheDocument(); // a search with no terms has no such line
     expect(within(at(rows, 3)).getByText('(no keywords)')).toBeInTheDocument();
     expect(within(at(rows, 3)).getByText('not returned')).toBeInTheDocument();

@@ -135,6 +135,29 @@ describe('analytics', () => {
     expect(screen.getByRole('img', { name: /Estimated tokens returned per hour/ })).toBeInTheDocument();
   });
 
+  it('asks for every utility together on the Utility tab, and leaves the job searches out', async () => {
+    const first = (adapters.adapters as Record<string, unknown>[])[0] as Record<string, unknown>;
+    const withUtility = {
+      ...adapters,
+      adapters: [
+        ...adapters.adapters,
+        { ...first, id: 'ats-discovery', platform: 'ats-discovery', role: 'utility', kind: 'http', enabled: true },
+      ],
+    };
+    const seen = mockApi({ ...common, '/tools': withUtility, '/usage': usage() });
+    renderApp('/analytics?tool=utility');
+    expect(await screen.findByText('Request health')).toBeInTheDocument();
+    await waitFor(() => expect(seen.some((url) => url.startsWith('/dashboard/api/v1/usage?') && url.includes('role=utility'))).toBe(true));
+    expect(seen.some((url) => url.includes('platform='))).toBe(false);
+    expect(seen.some((url) => url.startsWith('/dashboard/api/v1/searches'))).toBe(false);
+  });
+
+  it('says since when the session counts, and that the token counts are estimates', async () => {
+    mockApi({ ...common, '/usage': usage() });
+    renderApp('/analytics');
+    expect(await screen.findByText(`since ${new Date(NOW).toLocaleDateString()}. Token counts are estimates (~).`)).toBeInTheDocument();
+  });
+
   it('lists each tool with its calls, errors, tokens, durations and share of the tokens', async () => {
     mockApi({ ...common, '/usage': usage() });
     renderApp('/analytics');

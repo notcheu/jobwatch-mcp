@@ -15,10 +15,6 @@ export function Overview() {
   if (o === undefined) return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
   return (
     <div className="w-full space-y-4 overflow-auto p-5">
-      <p className="text-xs text-muted-foreground">
-        The most recent calls, kept with their parameters for the number of days set under Settings, and loaded again when the router
-        restarts
-      </p>
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>

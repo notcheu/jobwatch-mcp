@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { HttpClient, JobStore } from './context';
+import type { CompanyBoards, HttpClient, JobStore } from './context';
 import { AdapterBroken, HostNotAllowedError, JobwatchError } from './errors';
 import { POSTED_WITHIN, containsAny, extractHints, fitToBytes, fold, matchedTerms, postedCutoff, termMatcher } from './jobtext';
 import { PIPE_SEPARATOR, keywordsSchema } from './keywords';
@@ -321,7 +321,7 @@ export function boardsInput(description: string, maxBoards = 10) {
  * then judge the postings with `judgeBoardPostings`. The cost is what the engine counts: one unit per request made.
  */
 export async function runBoardTool<S extends string>(
-  ctx: { http: HttpClient; jobs: JobStore },
+  ctx: { http: HttpClient; jobs: JobStore; companies: CompanyBoards },
   source: S,
   board: BoardSource,
   args: BoardFilters & { boards: readonly string[] },
@@ -336,7 +336,9 @@ export async function runBoardTool<S extends string>(
   };
 
   for (const raw of new Set(args.boards.map((entry) => entry.trim()))) {
-    const address = board.resolve(raw);
+    // a company the operator mapped to a board of this ATS is read from that board; anything else is resolved as given
+    const mapped = /^https?:\/\//i.test(raw) ? null : await ctx.companies.handle(raw, source);
+    const address = board.resolve(mapped ?? raw);
     if (address === null) {
       fail(raw.slice(0, 80), null, 'invalid', board.invalidMessage);
       continue;

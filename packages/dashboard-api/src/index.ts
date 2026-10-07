@@ -97,12 +97,6 @@ export type ExcludedByInfo = z.infer<typeof excludedBySchema>;
 /** A search that listed a job, summarised: its counts and health, and what it did with this job. */
 export const jobSearchSchema = searchRefSchema
   .extend({
-    runs: z.number(),
-    lastRun: iso,
-    jobsFound: z.number(),
-    jobsReturned: z.number(),
-    jobsExcluded: z.number(),
-    health: searchHealthSchema,
     /** returned: this job was handed back. excluded: dropped by a disallowed term or the salary floor. other: matched but not returned. */
     outcome: z.enum(['returned', 'excluded', 'other']),
     excludedBy: excludedBySchema.nullable(),
@@ -347,6 +341,64 @@ export type DataCleared = z.infer<typeof dataClearedSchema>;
 
 export const restartSchema = z.object({ restarting: z.boolean() }).strict();
 export type Restart = z.infer<typeof restartSchema>;
+
+// ------------------------------------------------------------------------------------------------------ ATS discovery
+
+/** The ATS a company can be mapped to: the ones the company-board tools read. */
+export const ATS_IDS = ['greenhouse', 'lever', 'ashby', 'teamtailor'] as const;
+export const atsSchema = z.enum(ATS_IDS);
+export type Ats = z.infer<typeof atsSchema>;
+
+/** A company lookup (`ats_find`): what was tried and the boards found. `mapped`: the company already has a board on that ATS. */
+export const atsLookupSchema = z
+  .object({
+    id: z.number(),
+    at: z.string(),
+    company: z.string(),
+    tried: z.array(z.string()),
+    matches: z.array(
+      z.object({ ats: z.string(), handle: z.string(), jobs: z.number(), boardUrl: z.string(), mapped: z.boolean() }).strict(),
+    ),
+  })
+  .strict();
+export type AtsLookup = z.infer<typeof atsLookupSchema>;
+export const atsLookupsSchema = z.object({ items: z.array(atsLookupSchema), total: z.number() }).strict();
+export type AtsLookups = z.infer<typeof atsLookupsSchema>;
+
+/** A company the operator mapped to its board on an ATS. */
+export const companyBoardSchema = z
+  .object({ id: z.number(), company: z.string(), ats: z.string(), handle: z.string(), createdAt: z.string() })
+  .strict();
+export type CompanyBoard = z.infer<typeof companyBoardSchema>;
+export const companyBoardsSchema = z.object({ items: z.array(companyBoardSchema), total: z.number() }).strict();
+export type CompanyBoards = z.infer<typeof companyBoardsSchema>;
+export const companyBoardRemovedSchema = z.object({ id: z.number() }).strict();
+
+// ------------------------------------------------------------------------------------------------------ LinkedIn places
+
+/**
+ * A lookup of a place (a `linkedin_locations` query, or a search that looked a name up by itself) with what LinkedIn suggested. Per
+ * candidate, `saved` says what the name is remembered as: `none`, `same` (this candidate), or `other` (another place).
+ */
+export const placeLookupSchema = z
+  .object({
+    id: z.number(),
+    at: z.string(),
+    query: z.string(),
+    hits: z.array(z.object({ id: z.string(), label: z.string(), saved: z.enum(['none', 'same', 'other']) }).strict()),
+  })
+  .strict();
+export const placeLookupsSchema = z.object({ items: z.array(placeLookupSchema), total: z.number() }).strict();
+export type PlaceLookups = z.infer<typeof placeLookupsSchema>;
+
+/** A name remembered for a LinkedIn place: by the operator, or by a search that looked it up (`auto`). */
+export const savedPlaceSchema = z
+  .object({ alias: z.string(), id: z.string(), label: z.string(), savedBy: z.enum(['operator', 'auto']) })
+  .strict();
+export type SavedPlace = z.infer<typeof savedPlaceSchema>;
+export const savedPlacesSchema = z.object({ items: z.array(savedPlaceSchema), total: z.number() }).strict();
+export type SavedPlaces = z.infer<typeof savedPlacesSchema>;
+export const savedPlaceRemovedSchema = z.object({ alias: z.string() }).strict();
 
 // ------------------------------------------------------------------------------------------------------ overview and usage
 

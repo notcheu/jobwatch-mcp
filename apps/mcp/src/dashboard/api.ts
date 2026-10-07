@@ -1,4 +1,10 @@
 import {
+  placeLookupsSchema,
+  savedPlaceSchema,
+  savedPlacesSchema,
+  atsLookupsSchema,
+  companyBoardSchema,
+  companyBoardsSchema,
   callDetailSchema,
   callRowSchema,
   docsSchema,
@@ -11,6 +17,12 @@ import {
   settingsSchema,
   toolsSchema,
   usageSchemaResponse,
+  type AtsLookups,
+  type PlaceLookups,
+  type SavedPlace,
+  type SavedPlaces,
+  type CompanyBoard,
+  type CompanyBoards,
   type CallDetail,
   type Docs,
   type CallsPage,
@@ -26,9 +38,11 @@ import {
 import { describeInstalledModules } from '@jobwatch/mcp-modules';
 import {
   JOB_SORT_COLUMNS,
+  createPlatformMemory,
   effectiveRate,
   searchHealth,
   type CallEntry,
+  type CompanyBoard as CompanyBoardRow,
   type CallLog,
   type Budgets,
   type CircuitBreaker,
@@ -43,7 +57,17 @@ import {
   type SearchStat,
   type Store,
 } from '@jobwatch/core';
-import { buildCatalog, describeParams, extractHints, sampleInput, summarizeJob } from '@jobwatch/sdk';
+import {
+  buildCatalog,
+  roleOf,
+  savedLocation,
+  savedLocations,
+  type SavedLocation,
+  describeParams,
+  extractHints,
+  sampleInput,
+  summarizeJob,
+} from '@jobwatch/sdk';
 import { z } from 'zod';
 
 /** What the dashboard reads. Nothing here can start a browser, call a site or spend a rate-limit unit. */
@@ -78,6 +102,8 @@ export const checked = <T>(schema: z.ZodType<T>, value: unknown): T => schema.pa
 const callQuery = z.object({
   tool: z.string().max(64).optional(),
   platform: z.string().max(32).optional(),
+  /** `utility`: the calls of every utility together (the Utility tab). */
+  role: z.enum(['utility']).optional(),
   code: z.string().max(32).optional(),
   before: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -101,10 +127,22 @@ const callRow = (entry: CallEntry) =>
     keywords: entry.keywords,
   });
 
-export function listCalls(data: DashboardData, query: unknown): CallsPage {
+/** The platforms of the installed utilities (they fetch no jobs): what the dashboard's Utility tab groups. */
+async function utilityPlatforms(data: DashboardData): Promise<string[]> {
+  const found: string[] = [];
+  for (const load of Object.values(data.installed)) {
+    const module = await load();
+    if (roleOf(module) === 'utility') found.push(module.platform);
+  }
+  return found;
+}
+
+export async function listCalls(data: DashboardData, query: unknown): Promise<CallsPage> {
   const q = callQuery.parse(query);
+  const platforms = q.role === 'utility' ? await utilityPlatforms(data) : undefined;
   const page = data.callLog.list({
     limit: q.limit,
+    ...(platforms === undefined ? {} : { platforms }),
     ...(q.tool === undefined ? {} : { tool: q.tool }),
     ...(q.platform === undefined ? {} : { platform: q.platform }),
     ...(q.code === undefined ? {} : { code: q.code }),
@@ -294,16 +332,10 @@ const toSearchRow = (stat: SearchStat) => ({
   health: searchHealth(stat),
 });
 
-/** One search that listed a job: its counts and health, and what it did with that job. */
+/** One search that listed a job, and what it did with that job. */
 const toJobSearch = (search: JobSearch) => ({
   keywords: search.keywords,
   disallowed: search.disallowed,
-  runs: search.runs,
-  lastRun: iso(search.lastRun),
-  jobsFound: search.jobsFound,
-  jobsReturned: search.jobsReturned,
-  jobsExcluded: search.jobsExcluded,
-  health: searchHealth(search),
   outcome: search.outcome,
   excludedBy: search.excludedBy,
 });
@@ -338,6 +370,92 @@ export function getSearch(data: DashboardData, source: string, query: unknown): 
     })),
     jobsTruncated: jobs.length > SEARCH_JOBS_LIMIT,
   });
+}
+
+// ---------------------------------------------------------------------------------------------------------- ATS discovery
+
+const pageQuery = {
+  page: z.coerce.number().int().min(1).max(100_000).default(1),
+  pageSize: z.coerce.number().int().min(10).max(100).default(25),
+};
+const lookupsQuery = z.object(pageQuery);
+const companyBoardsQuery = z.object({
+  q: z.string().trim().max(120).optional(),
+  ats: z
+    .string()
+    .max(32)
+    .regex(/^[a-z][a-z0-9-]*$/)
+    .optional(),
+  ...pageQuery,
+});
+
+export const toCompanyBoard = (row: CompanyBoardRow): CompanyBoard =>
+  checked(companyBoardSchema, { id: row.id, company: row.company, ats: row.ats, handle: row.handle, createdAt: iso(row.createdAt) });
+
+/** The past company lookups, newest first; each board found says whether its company is already mapped on that ATS. */
+export function listAtsLookups(data: DashboardData, query: unknown): AtsLookups {
+  const q = lookupsQuery.parse(query);
+  const { rows, total } = data.store.listLookups(q.pageSize, (q.page - 1) * q.pageSize);
+  return checked(atsLookupsSchema, {
+    total,
+    items: rows.map((row) => ({
+      id: row.id,
+      at: iso(row.ts),
+      company: row.company,
+      tried: row.tried,
+      matches: row.matches.map((match) => ({ ...match, mapped: data.store.findCompanyBoard(row.company, match.ats) !== null })),
+    })),
+  });
+}
+
+/** The companies mapped to a board, A to Z. */
+export function listCompanyBoards(data: DashboardData, query: unknown): CompanyBoards {
+  const q = companyBoardsQuery.parse(query);
+  const { rows, total } = data.store.listCompanyBoards({
+    ...(q.q === undefined || q.q === '' ? {} : { q: q.q }),
+    ...(q.ats === undefined ? {} : { ats: q.ats }),
+    limit: q.pageSize,
+    offset: (q.page - 1) * q.pageSize,
+  });
+  return checked(companyBoardsSchema, { total, items: rows.map(toCompanyBoard) });
+}
+
+// ---------------------------------------------------------------------------------------------------------- LinkedIn places
+
+const savedPlacesQuery = z.object({ q: z.string().trim().max(120).optional(), ...pageQuery });
+
+export const toSavedPlace = (place: SavedLocation): SavedPlace =>
+  checked(savedPlaceSchema, { alias: place.alias, id: place.id, label: place.label, savedBy: place.by });
+
+/** The past place lookups, newest first; each candidate says whether the name looked up is remembered as it, as another place, or not. */
+export async function listPlaceLookups(data: DashboardData, query: unknown): Promise<PlaceLookups> {
+  const q = lookupsQuery.parse(query);
+  const memory = createPlatformMemory(data.store);
+  const { rows, total } = data.store.listPlaceLookups(q.pageSize, (q.page - 1) * q.pageSize);
+  const items = [];
+  for (const row of rows) {
+    const saved = await savedLocation(memory, row.query);
+    items.push({
+      id: row.id,
+      at: iso(row.ts),
+      query: row.query,
+      hits: row.hits.map((hit) => ({ ...hit, saved: saved === null ? 'none' : saved.id === hit.id ? 'same' : 'other' })),
+    });
+  }
+  return checked(placeLookupsSchema, { total, items });
+}
+
+/** The remembered place names, A to Z; `q` keeps those whose name or LinkedIn label contains it. */
+export async function listSavedPlaces(data: DashboardData, query: unknown): Promise<SavedPlaces> {
+  const q = savedPlacesQuery.parse(query);
+  const wanted = (q.q ?? '').toLowerCase();
+  const all = (await savedLocations(createPlatformMemory(data.store)))
+    .filter(
+      (place) => wanted === '' || place.alias.includes(wanted) || place.label.toLowerCase().includes(wanted) || place.id.includes(wanted),
+    )
+    .sort((a, b) => a.alias.localeCompare(b.alias));
+  const start = (q.page - 1) * q.pageSize;
+  return checked(savedPlacesSchema, { total: all.length, items: all.slice(start, start + q.pageSize).map(toSavedPlace) });
 }
 
 // ---------------------------------------------------------------------------------------------------------- tools
@@ -500,6 +618,8 @@ const usageQuery = z.object({
   to: z.string().max(32).optional(),
   tool: z.string().max(64).optional(),
   platform: z.string().max(32).optional(),
+  /** `utility`: every utility together (the Utility tab). */
+  role: z.enum(['utility']).optional(),
 });
 
 const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
@@ -508,19 +628,25 @@ const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
  * The analytics. `session` reads the calls in memory (hourly buckets, with percentiles); `lifetime` and `historical` read the persisted
  * daily totals, which survive a restart (daily buckets; durations are averages and a maximum, since percentiles need every call).
  */
-export function getUsage(data: DashboardData, query: unknown): Usage {
+export async function getUsage(data: DashboardData, query: unknown): Promise<Usage> {
   const q = usageQuery.parse(query);
-  if (q.scope !== 'session') return getPersistedUsage(data, q);
-  return getSessionUsage(data, q);
+  const platforms = q.role === 'utility' ? await utilityPlatforms(data) : undefined;
+  if (q.scope !== 'session') return getPersistedUsage(data, q, platforms);
+  return getSessionUsage(data, q, platforms);
 }
 
-function getPersistedUsage(data: DashboardData, q: z.infer<typeof usageQuery>): Usage {
+function getPersistedUsage(data: DashboardData, q: z.infer<typeof usageQuery>, platforms: readonly string[] | undefined): Usage {
   const now = data.clock();
   const to = q.scope === 'historical' && q.to !== undefined && q.to !== '' ? day(parseDate('to', q.to, now)) : day(now);
   const from = q.scope === 'historical' && q.from !== undefined && q.from !== '' ? day(parseDate('from', q.from, now)) : '0000-01-01';
   const rows = data.store
     .dailyUsage(from, to)
-    .filter((row) => (q.tool === undefined || row.tool === q.tool) && (q.platform === undefined || row.platform === q.platform));
+    .filter(
+      (row) =>
+        (q.tool === undefined || row.tool === q.tool) &&
+        (q.platform === undefined || row.platform === q.platform) &&
+        (platforms === undefined || platforms.includes(row.platform)),
+    );
   const sum = (pick: (row: (typeof rows)[number]) => number, list = rows): number => list.reduce((total, row) => total + pick(row), 0);
   const calls = sum((row) => row.calls);
   const byTool = new Map<string, typeof rows>();
@@ -571,14 +697,15 @@ function getPersistedUsage(data: DashboardData, q: z.infer<typeof usageQuery>): 
 }
 
 /** The analytics of the calls in memory (this router's session). */
-function getSessionUsage(data: DashboardData, q: z.infer<typeof usageQuery>): Usage {
+function getSessionUsage(data: DashboardData, q: z.infer<typeof usageQuery>, platforms: readonly string[] | undefined): Usage {
   const calls = data.callLog
     .all()
     .filter(
       (call) =>
         call.state === 'done' &&
         (q.tool === undefined || call.tool === q.tool) &&
-        (q.platform === undefined || call.platform === q.platform),
+        (q.platform === undefined || call.platform === q.platform) &&
+        (platforms === undefined || platforms.includes(call.platform)),
     );
   const durations = calls.flatMap((call) => (call.durationMs === null ? [] : [call.durationMs])).sort((a, b) => a - b);
   const byTool = new Map<string, CallEntry[]>();

@@ -116,12 +116,6 @@ export const searchRef = (keywords: string[], disallowed: string[] = []) => ({ k
 export const jobSearch = (over: Record<string, unknown> = {}) => ({
   keywords: ['react'],
   disallowed: [],
-  runs: 3,
-  lastRun: NOW,
-  jobsFound: 20,
-  jobsReturned: 15,
-  jobsExcluded: 2,
-  health: { status: 'good', issues: [], discardedShare: 0.1 },
   outcome: 'returned',
   excludedBy: null,
   ...over,

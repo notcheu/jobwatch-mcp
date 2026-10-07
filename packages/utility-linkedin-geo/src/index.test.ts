@@ -28,6 +28,16 @@ describe('linkedin_locations: look up', () => {
     expect(result.data.best).toEqual({ id: '103035651', label: 'Berlin, Germany' });
   });
 
+  it('logs each lookup with its candidates, and nothing for a save or a list', async () => {
+    const c = make(BERLIN);
+    await run(c.ctx, { query: 'Berlin' });
+    await run(c.ctx, { save_as: 'home', id: '103035651' });
+    await run(c.ctx, { list: true });
+    expect(c.places.lookups).toHaveLength(1);
+    expect(c.places.lookups[0]).toMatchObject({ query: 'Berlin' });
+    expect(c.places.lookups[0]?.hits.length).toBeGreaterThan(0);
+  });
+
   it('says so when LinkedIn suggests nothing or does not answer, and never throws for it', async () => {
     for (const routes of [
       [],

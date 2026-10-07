@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useNavigate } from 'react-router';
 import { StatCard } from '@/components/StatCard';
-import { usePlatform } from '@/components/Shell';
+import { useToolFilter } from '@/components/Shell';
 import { DisallowedBadges, KeywordBadges } from '@/components/KeywordBadges';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 
 type Scope = 'session' | 'lifetime' | 'historical';
 const SCOPES: { value: Scope; label: string; hint: string }[] = [
-  { value: 'session', label: 'Session', hint: 'The most recent calls (also after a restart), by the hour' },
+  { value: 'session', label: 'Session', hint: '' },
   { value: 'lifetime', label: 'Lifetime', hint: 'Daily totals kept across restarts' },
   { value: 'historical', label: 'Historical', hint: 'Daily totals for the dates you pick' },
 ];
@@ -44,15 +44,23 @@ function Bar({ share, tone = 'primary' }: { share: number; tone?: 'primary' | 'w
 }
 
 export function Analytics() {
-  const platform = usePlatform();
+  const filter = useToolFilter();
+  const { platform } = filter;
+  const utilities = filter.role === 'utility';
   const [scope, setScope] = useState<Scope>('session');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const usage = useQuery({
-    queryKey: ['usage', scope, from, to, platform],
-    queryFn: () => api.usage({ scope, ...(scope === 'historical' ? { from, to } : {}), ...(platform === undefined ? {} : { platform }) }),
+    queryKey: ['usage', scope, from, to, filter],
+    queryFn: () => api.usage({ scope, ...(scope === 'historical' ? { from, to } : {}), ...filter }),
     refetchInterval: scope === 'session' ? 5000 : 30_000,
   });
+  const hint = [
+    SCOPES.find((item) => item.value === scope)?.hint,
+    usage.data?.since ? `since ${new Date(usage.data.since).toLocaleDateString()}` : undefined,
+  ]
+    .filter((part) => part !== undefined && part !== '')
+    .join(' · ');
   const overview = useQuery({ queryKey: ['overview'], queryFn: api.overview, refetchInterval: 5000 });
   const tools = useQuery({ queryKey: ['tools'], queryFn: api.tools, refetchInterval: 15_000 });
 
@@ -81,8 +89,8 @@ export function Analytics() {
           </div>
         )}
         <span className="text-xs text-muted-foreground">
-          {SCOPES.find((item) => item.value === scope)?.hint}
-          {usage.data?.since ? ` · since ${new Date(usage.data.since).toLocaleDateString()}` : ''}. Token counts are estimates (~).
+          {hint === '' ? '' : `${hint}. `}
+          Token counts are estimates (~).
         </span>
       </div>
 
@@ -100,10 +108,13 @@ export function Analytics() {
       {usage.data !== undefined && usage.data.totals.calls > 0 && <UsagePanels usage={usage.data} />}
       {tools.data !== undefined && (
         <Budgets
-          adapters={tools.data.adapters.filter((adapter) => adapter.enabled && (platform === undefined || adapter.platform === platform))}
+          adapters={tools.data.adapters.filter(
+            (adapter) =>
+              adapter.enabled && (utilities ? adapter.role === 'utility' : platform === undefined || adapter.platform === platform),
+          )}
         />
       )}
-      <SearchEffectiveness platform={platform} />
+      {!utilities && <SearchEffectiveness platform={platform} />}
     </div>
   );
 }

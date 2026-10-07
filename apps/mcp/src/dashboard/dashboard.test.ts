@@ -16,6 +16,7 @@ import {
 } from '@jobwatch/core';
 import { exportJWK, generateKeyPair, SignJWT, createLocalJWKSet, type JWK } from 'jose';
 import { afterEach, describe, expect, it } from 'vitest';
+import { SDK_API_VERSION, defineHttpTool, defineUtility, z } from '@jobwatch/sdk';
 import { installedFixtures } from '../harness';
 import { createDashboardApp, type DashboardDeps } from './app';
 import { Oidc } from './oidc';
@@ -137,7 +138,28 @@ function seededStore(): Store {
   return store;
 }
 
-function seededLog(): CallLog {
+const utilityFixture = defineUtility({
+  id: 'ats-discovery',
+  displayName: 'ATS discovery',
+  description: 'Utility used by the dashboard tests.',
+  sdkApi: SDK_API_VERSION,
+  platform: 'ats-discovery',
+  allowedHosts: ['api.probe.example.com'],
+  tools: [
+    defineHttpTool({
+      name: 'ats_find',
+      title: 'Find (read-only)',
+      description: 'Finds. Read-only, no side effects.',
+      input: z.object({}).strict(),
+      output: z.object({}),
+      annotations: { readOnlyHint: true, openWorldHint: false, idempotentHint: true },
+      limits: { timeoutS: 5, cost: 1, outputMaxBytes: 4096 },
+      handler: async () => ({ data: {}, warnings: [] }),
+    }),
+  ],
+});
+
+function seededLog(utility = false): CallLog {
   const log = new CallLog(50);
   const call = (requestId: string, tool: string, platform: string, code: 'ok' | 'rate_limited', params: Record<string, unknown>) => {
     log.start({ requestId, tool, adapter: platform, platform, startedAt: NOW - 1000 });
@@ -165,6 +187,10 @@ function seededLog(): CallLog {
   call('r1', 'linkedin_search', 'linkedin', 'ok', { keywords: 'react engineer', geo: 'france', skip_ids: ['1', '2'] });
   call('r2', 'teamtailor_jobs', 'teamtailor', 'ok', { boards: ['bsport'], title_any: ['vp'] });
   call('r3', 'linkedin_search', 'linkedin', 'rate_limited', { keywords: 'vue' });
+  if (utility) {
+    call('u1', 'ats_find', 'ats-discovery', 'ok', { companies: ['Acme'] });
+    call('u2', 'linkedin_locations', 'linkedin-geo', 'ok', { query: 'Berlin' });
+  }
   log.start({ requestId: 'live', tool: 'apec_search', adapter: 'apec', platform: 'apec', startedAt: NOW });
   return log;
 }
@@ -290,6 +316,25 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(running.calls.map((c: any) => c.requestId)).toEqual(['live']);
   });
 
+  it('groups the calls and the usage of every utility under role=utility, whichever utility they come from', async () => {
+    const t = await build({
+      callLog: seededLog(true),
+      installed: {
+        ...installedFixtures,
+        'ats-discovery': async () => utilityFixture,
+        'linkedin-geo': async () => ({ ...utilityFixture, id: 'linkedin-geo', platform: 'linkedin-geo' }),
+      },
+    });
+    const calls = await json(await t.call('/dashboard/api/v1/calls?role=utility'));
+    expect(calls.calls.map((c: any) => c.platform).sort()).toEqual(['ats-discovery', 'linkedin-geo']);
+    expect((await json(await t.call('/dashboard/api/v1/calls'))).calls).toHaveLength(6);
+    const usage = await json(await t.call('/dashboard/api/v1/usage?role=utility'));
+    expect(usage.totals.calls).toBe(2);
+    expect(usage.byTool.map((row: any) => row.tool).sort()).toEqual(['ats_find', 'linkedin_locations']);
+    expect((await json(await t.call('/dashboard/api/v1/usage?role=utility&scope=lifetime'))).totals.calls).toBe(0);
+    expect((await t.call('/dashboard/api/v1/calls?role=adapter')).status).toBe(400);
+  });
+
   it('gives the full parameters of one call, and a 404 for a call that left memory', async () => {
     const t = await build();
     const first = (await json(await t.call('/dashboard/api/v1/calls?tool=linkedin_search&code=ok'))).calls[0];
@@ -322,6 +367,52 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(second.jobs).toEqual([]);
     expect((await t.call('/dashboard/api/v1/jobs?pageSize=3')).status).toBe(400);
     expect((await t.call('/dashboard/api/v1/jobs?sort=password')).status).toBe(400);
+  });
+
+  it('lists the company lookups with what is already mapped, and the mappings with a search by company or board', async () => {
+    const t = await build();
+    const match = { ats: 'greenhouse', handle: 'acme', jobs: 4, boardUrl: 'https://boards.greenhouse.io/acme' };
+    t.deps.store.recordLookup({ company: 'Acme', tried: ['acme'], matches: [match, { ...match, ats: 'lever' }] }, NOW - DAY);
+    t.deps.store.addCompanyBoard({ company: 'acme', ats: 'lever', handle: 'acme' }, NOW);
+    t.deps.store.addCompanyBoard({ company: 'Zeta', ats: 'ashby', handle: 'zeta-hq' }, NOW);
+    const lookups = await json(await t.call('/dashboard/api/v1/ats-lookups'));
+    expect(lookups.total).toBe(1);
+    expect(lookups.items[0]).toMatchObject({ company: 'Acme', tried: ['acme'] });
+    expect(lookups.items[0].matches.map((m: any) => [m.ats, m.mapped])).toEqual([
+      ['greenhouse', false],
+      ['lever', true],
+    ]);
+    const boards = await json(await t.call('/dashboard/api/v1/company-boards'));
+    expect(boards.items.map((b: any) => [b.company, b.ats, b.handle])).toEqual([
+      ['acme', 'lever', 'acme'],
+      ['Zeta', 'ashby', 'zeta-hq'],
+    ]);
+    expect(Object.keys(boards.items[0]).sort()).toEqual(['ats', 'company', 'createdAt', 'handle', 'id']);
+    expect((await json(await t.call('/dashboard/api/v1/company-boards?q=HQ'))).items.map((b: any) => b.company)).toEqual(['Zeta']);
+    expect((await json(await t.call('/dashboard/api/v1/company-boards?ats=lever'))).total).toBe(1);
+    expect((await t.call('/dashboard/api/v1/company-boards?ats=Bad!')).status).toBe(400);
+  });
+
+  it('lists the place lookups with what each name is remembered as, and the remembered names with a search', async () => {
+    const t = await build();
+    const berlin = { id: '103035651', label: 'Berlin, Germany' };
+    const other = { id: '90009712', label: 'Berlin Metropolitan Area' };
+    t.deps.store.recordPlaceLookup({ query: 'Berlin', hits: [berlin, other] }, NOW - DAY);
+    t.deps.store.recordPlaceLookup({ query: 'Lisbon', hits: [{ id: '100364837', label: 'Lisbon, Portugal' }] }, NOW);
+    t.deps.store.setMemory('linkedin.geo:berlin', JSON.stringify({ id: berlin.id, label: berlin.label, by: 'auto' }), NOW);
+    t.deps.store.setMemory('linkedin.geo:home', JSON.stringify({ id: '555000', label: 'Home town', by: 'operator' }), NOW);
+    const lookups = await json(await t.call('/dashboard/api/v1/place-lookups'));
+    expect(lookups.total).toBe(2);
+    expect(lookups.items.map((i: any) => i.query)).toEqual(['Lisbon', 'Berlin']);
+    expect(lookups.items[0].hits[0].saved).toBe('none');
+    expect(lookups.items[1].hits.map((h: any) => h.saved)).toEqual(['same', 'other']);
+    const places = await json(await t.call('/dashboard/api/v1/places'));
+    expect(places.items).toEqual([
+      { alias: 'berlin', id: '103035651', label: 'Berlin, Germany', savedBy: 'auto' },
+      { alias: 'home', id: '555000', label: 'Home town', savedBy: 'operator' },
+    ]);
+    expect((await json(await t.call('/dashboard/api/v1/places?q=TOWN'))).items.map((p: any) => p.alias)).toEqual(['home']);
+    expect((await json(await t.call('/dashboard/api/v1/places?q=zzz'))).total).toBe(0);
   });
 
   it('gives one search with its health, its counts and its jobs, and a 404 for a search that did not run', async () => {
@@ -437,17 +528,11 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(job.outline.length).toBeGreaterThan(0);
     expect(job.hints).toMatchObject({ years: [5] });
     expect(job.hints.stack).toBeUndefined(); // no technology list is built in
-    // the searches that found it, each with its counts and health and what it did with this job
+    // the searches that found it, each with what it did with this job and no figure of its own
     expect(job.foundBy).toEqual([
       {
         keywords: ['react'],
         disallowed: [],
-        runs: 1,
-        lastRun: new Date(NOW - 3 * DAY).toISOString(),
-        jobsFound: 2,
-        jobsReturned: 1,
-        jobsExcluded: 0,
-        health: { status: 'good', issues: [], discardedShare: 0 },
         outcome: 'returned',
         excludedBy: null,
       },

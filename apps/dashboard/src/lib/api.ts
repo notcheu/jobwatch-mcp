@@ -1,5 +1,13 @@
 import {
   API_PREFIX,
+  placeLookupsSchema,
+  savedPlaceRemovedSchema,
+  savedPlaceSchema,
+  savedPlacesSchema,
+  atsLookupsSchema,
+  companyBoardRemovedSchema,
+  companyBoardSchema,
+  companyBoardsSchema,
   adapterToggleSchema,
   budgetUpdatedSchema,
   dataClearedSchema,
@@ -17,6 +25,12 @@ import {
   toolsSchema,
   usageSchemaResponse,
   type AdapterToggle,
+  type AtsLookups,
+  type PlaceLookups,
+  type SavedPlace,
+  type SavedPlaces,
+  type CompanyBoard,
+  type CompanyBoards,
   type BudgetUpdated,
   type DataCleared,
   type Docs,
@@ -94,8 +108,14 @@ const query = (params: Record<string, string | number | readonly string[] | unde
 export const api = {
   me: (): Promise<Me> => request(meSchema, '/me'),
   overview: (): Promise<Overview> => request(overviewSchema, '/overview'),
-  calls: (params: { tool?: string; platform?: string; code?: string; before?: number; limit?: number }): Promise<CallsPage> =>
-    request(callsPageSchema, `/calls${query(params)}`),
+  calls: (params: {
+    tool?: string;
+    platform?: string;
+    role?: 'utility';
+    code?: string;
+    before?: number;
+    limit?: number;
+  }): Promise<CallsPage> => request(callsPageSchema, `/calls${query(params)}`),
   call: (id: number): Promise<CallDetail> => request(callDetailSchema, `/calls/${id}`),
   jobs: (params: Record<string, string | number | readonly string[] | undefined>): Promise<JobsPage> =>
     request(jobsPageSchema, `/jobs${query(params)}`),
@@ -107,6 +127,22 @@ export const api = {
     source: string,
     params: { keywords: readonly string[]; disallowed: readonly string[]; since?: string; until?: string },
   ): Promise<SearchDetailInfo> => request(searchDetailSchema, `/searches/${encodeURIComponent(source)}${query(params)}`),
+  atsLookups: (params: { page?: number; pageSize?: number }): Promise<AtsLookups> =>
+    request(atsLookupsSchema, `/ats-lookups${query(params)}`),
+  companyBoards: (params: { q?: string; ats?: string; page?: number; pageSize?: number }): Promise<CompanyBoards> =>
+    request(companyBoardsSchema, `/company-boards${query(params)}`),
+  addCompanyBoard: (entry: { company: string; ats: string; handle: string }): Promise<CompanyBoard> =>
+    request(companyBoardSchema, '/company-boards', { method: 'POST', body: JSON.stringify(entry) }),
+  removeCompanyBoard: (id: number): Promise<{ id: number }> =>
+    request(companyBoardRemovedSchema, `/company-boards/${id}`, { method: 'DELETE' }),
+  placeLookups: (params: { page?: number; pageSize?: number }): Promise<PlaceLookups> =>
+    request(placeLookupsSchema, `/place-lookups${query(params)}`),
+  places: (params: { q?: string; page?: number; pageSize?: number }): Promise<SavedPlaces> =>
+    request(savedPlacesSchema, `/places${query(params)}`),
+  savePlace: (entry: { alias: string; id: string; label?: string }): Promise<SavedPlace> =>
+    request(savedPlaceSchema, '/places', { method: 'POST', body: JSON.stringify(entry) }),
+  forgetPlace: (alias: string): Promise<{ alias: string }> =>
+    request(savedPlaceRemovedSchema, `/places/${encodeURIComponent(alias)}`, { method: 'DELETE' }),
   docs: (): Promise<Docs> => request(docsSchema, '/docs'),
   tools: (): Promise<Tools> => request(toolsSchema, '/tools'),
   settings: (): Promise<Settings> => request(settingsSchema, '/settings'),
@@ -116,6 +152,7 @@ export const api = {
     to?: string;
     tool?: string;
     platform?: string;
+    role?: 'utility';
   }): Promise<Usage> => request(usageSchemaResponse, `/usage${query(params)}`),
   setAdapter: (id: string, enabled: boolean): Promise<AdapterToggle> =>
     request(adapterToggleSchema, `/adapters/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
