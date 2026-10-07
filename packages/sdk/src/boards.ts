@@ -283,14 +283,75 @@ export interface BoardAddress {
   label: string;
 }
 
-/** What one ATS adapter knows. Everything else is shared. */
-export interface BoardSource {
+/** What a source returns for one board: its name, and the postings whose text was read. */
+export interface BoardRead {
+  name: string | null;
+  postings: Omit<BoardPosting, 'board'>[];
+  /** Postings the board lists in all, when the source read only part of the list. Default: `postings.length`. */
+  total?: number;
+  /** Postings that matched the filters but whose text was not read, because `MAX_DETAIL_READS` was reached. */
+  unread?: number;
+}
+
+/** The board answered 404: `runBoardTool` reports it as `not_found`. Thrown by a source's `read`. */
+export class BoardNotFound extends Error {
+  constructor(message = 'No such board.') {
+    super(message);
+    this.name = 'BoardNotFound';
+  }
+}
+
+/** The board answered with an error status: `runBoardTool` reports it as `error`. Thrown by a source's `read`. */
+export class BoardHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`HTTP ${status}`);
+    this.name = 'BoardHttpError';
+  }
+}
+
+/** Throws `BoardNotFound` for a 404 and `BoardHttpError` for any other error status; returns the response otherwise. */
+export function expectBoardResponse<R extends { status: number; ok: boolean }>(response: R): R {
+  if (response.status === 404) throw new BoardNotFound();
+  if (!response.ok) throw new BoardHttpError(response.status);
+  return response;
+}
+
+/**
+ * Most postings whose text a source reads with one request each (SmartRecruiters, Workday...), per board and per call. The ones
+ * that matched the date, title and place filters are read newest first; the others are counted in `BoardRead.unread`.
+ */
+export const MAX_DETAIL_READS = 40;
+
+/**
+ * For a source whose list carries no text: which postings are worth one request each. Applies the filters that need no text (date range,
+ * `title_any`, `location_any`) the way `judgeBoardPostings` does, newest first, and splits off what is not read:
+ * `rest` are the ones a disallowed term in the TITLE drops (nothing to read, `judgeBoardPostings` reports them), `unread` how many
+ * matched but did not fit `limit`.
+ */
+export function selectForDetail<T extends { title: string; postedAt: string | null; locations: string[]; locationText?: string }>(
+  postings: readonly T[],
+  filters: BoardFilters,
+  now: number = Date.now(),
+  limit: number = MAX_DETAIL_READS,
+): { toRead: T[]; rest: T[]; unread: number } {
+  const cutoff = postedCutoff(filters.posted_within, now);
+  const titleWords = filters.title_any.map(fold);
+  const places = filters.location_any.map(fold);
+  const matches = termMatcher(filters.disallowed_terms);
+  const relevant = postings
+    .filter((posting) => cutoff === null || posting.postedAt === null || Date.parse(posting.postedAt) >= cutoff)
+    .filter((posting) => containsAny(posting.title, titleWords) && containsAny(posting.locationText ?? posting.locations.join(' '), places))
+    .sort((a, b) => (Date.parse(b.postedAt ?? '') || 0) - (Date.parse(a.postedAt ?? '') || 0));
+  const rest = relevant.filter((posting) => matches(posting.title) !== null);
+  const worth = relevant.filter((posting) => matches(posting.title) === null);
+  return { toRead: worth.slice(0, limit), rest, unread: Math.max(0, worth.length - limit) };
+}
+
+interface BoardSourceBase {
   /** Human name for messages: `Greenhouse`. */
   ats: string;
   /** From a handle or a URL, or null when it is neither. Must never return an address on a host the adapter may not reach. */
   resolve(input: string): BoardAddress | null;
-  /** Parse the response with `parse(schema)` (a changed shape throws `adapter_broken`) into postings, without the `board`. */
-  parse(parse: <T>(schema: z.ZodType<T>) => T, address: BoardAddress): { name: string | null; postings: Omit<BoardPosting, 'board'>[] };
   /**
    * Called once when `feedUrl` answered 404 or did not look like this ATS, and the input was a URL. Looks at the page the caller
    * pointed at and returns where the board really is, or null. Whatever it returns goes through the same HTTP client rules.
@@ -299,6 +360,31 @@ export interface BoardSource {
   /** Said for an input that is not a handle or a URL of this ATS. */
   invalidMessage: string;
 }
+
+/**
+ * What one ATS adapter knows. Everything else is shared. Either `parse` (the board is one GET of `feedUrl`, answered in JSON) or
+ * `read` (anything else: a POST, a list with a request per posting, XML, a header), never both.
+ */
+export type BoardSource = BoardSourceBase &
+  (
+    | {
+        /** Parse the response with `parse(schema)` (a changed shape throws `adapter_broken`) into postings, without the `board`. */
+        parse(
+          parse: <T>(schema: z.ZodType<T>) => T,
+          address: BoardAddress,
+        ): { name: string | null; postings: Omit<BoardPosting, 'board'>[] };
+        read?: undefined;
+      }
+    | {
+        /**
+         * Reads the board with `http` (every request counts as one unit). Throws `BoardNotFound` or `BoardHttpError` through
+         * `expectBoardResponse`, and `AdapterBroken` for a shape that changed (`response.json(schema)` does). Gets the call's filters
+         * so that it can leave out what it would only throw away (`selectForDetail`).
+         */
+        read(address: BoardAddress, http: HttpClient, filters: BoardFilters): Promise<BoardRead>;
+        parse?: undefined;
+      }
+  );
 
 const looksLikeJson = (text: string): boolean => /^\s*[[{]/.test(text);
 
@@ -348,35 +434,40 @@ export async function runBoardTool<S extends string>(
     requested.add(address.feedUrl);
     let target: BoardAddress = address;
     try {
-      let response = await ctx.http.get(address.feedUrl, { timeoutMs: 25_000 });
-      // The address built from the input is not a board: look at the page the caller named, once, to find the real one.
-      if (
-        (response.status === 404 || (response.ok && !looksLikeJson(response.text))) &&
-        address.pageUrl !== undefined &&
-        board.discover !== undefined
-      ) {
-        const found = await board.discover(address, ctx.http);
-        if (found !== null && found.feedUrl !== address.feedUrl && !requested.has(found.feedUrl)) {
-          requested.add(found.feedUrl);
-          response = await ctx.http.get(found.feedUrl, { timeoutMs: 25_000 });
-          target = { ...found, label: address.label };
+      let parsed: BoardRead;
+      if (board.read !== undefined) {
+        parsed = await board.read(address, ctx.http, args);
+      } else {
+        let response = await ctx.http.get(address.feedUrl, { timeoutMs: 25_000 });
+        // The address built from the input is not a board: look at the page the caller named, once, to find the real one.
+        if (
+          (response.status === 404 || (response.ok && !looksLikeJson(response.text))) &&
+          address.pageUrl !== undefined &&
+          board.discover !== undefined
+        ) {
+          const found = await board.discover(address, ctx.http);
+          if (found !== null && found.feedUrl !== address.feedUrl && !requested.has(found.feedUrl)) {
+            requested.add(found.feedUrl);
+            response = await ctx.http.get(found.feedUrl, { timeoutMs: 25_000 });
+            target = { ...found, label: address.label };
+          }
         }
+        if (response.status === 404) {
+          fail(target.label, target.feedUrl, 'not_found', `No ${board.ats} job board at this address.`);
+          continue;
+        }
+        if (!response.ok) {
+          fail(target.label, target.feedUrl, 'error', `HTTP ${response.status}`);
+          continue;
+        }
+        parsed = board.parse((schema) => response.json(schema), target);
       }
-      if (response.status === 404) {
-        fail(target.label, target.feedUrl, 'not_found', `No ${board.ats} job board at this address.`);
-        continue;
-      }
-      if (!response.ok) {
-        fail(target.label, target.feedUrl, 'error', `HTTP ${response.status}`);
-        continue;
-      }
-      const parsed = board.parse((schema) => response.json(schema), target);
       const name = slugify(parsed.name ?? '') || slugify(target.label) || target.label;
       const report: BoardReport = {
         board: name,
         feed_url: target.feedUrl,
         status: 'ok',
-        jobs_total: parsed.postings.length,
+        jobs_total: parsed.total ?? parsed.postings.length,
         relevant: null,
       };
       reports.push(report);
@@ -388,10 +479,16 @@ export async function runBoardTool<S extends string>(
         // an ATS that does not name the company on its postings (Ashby, Lever): the feed's name, else the handle the board is read by
         found.push({ posting: { ...posting, company: posting.company ?? parsed.name ?? titleCase(target.label), board: name }, report });
       }
+      if ((parsed.unread ?? 0) > 0)
+        warnings.push(
+          `${name}: ${parsed.unread} more job(s) matched the filters but their text was not read (${MAX_DETAIL_READS} at most per board and call): narrow the filters.`,
+        );
       if (fresh < parsed.postings.length)
         warnings.push(`${name}: ${parsed.postings.length - fresh} job(s) already listed by another board of this call.`);
     } catch (error) {
-      if (error instanceof HostNotAllowedError)
+      if (error instanceof BoardNotFound) fail(target.label, target.feedUrl, 'not_found', `No ${board.ats} job board at this address.`);
+      else if (error instanceof BoardHttpError) fail(target.label, target.feedUrl, 'error', error.message);
+      else if (error instanceof HostNotAllowedError)
         fail(target.label, target.feedUrl, 'refused', 'This host cannot be read (not a public https site).');
       else if (error instanceof AdapterBroken)
         fail(target.label, target.feedUrl, 'not_this_ats', `The address does not answer like a ${board.ats} job board.`);

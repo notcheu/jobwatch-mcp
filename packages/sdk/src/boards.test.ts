@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { boardFilters, judgeBoardPostings, runBoardTool, type BoardPosting } from './boards';
+import {
+  BoardNotFound,
+  boardFilters,
+  expectBoardResponse,
+  judgeBoardPostings,
+  runBoardTool,
+  selectForDetail,
+  type BoardPosting,
+  type BoardSource,
+} from './boards';
 import { z } from 'zod';
 import { AdapterBroken } from './errors';
 import { FakeCompanyBoards, FakeJobStore } from './testkit/fakes';
@@ -32,6 +41,41 @@ const postings = [
 const judge = (over: object = {}, store = new FakeJobStore(() => new Date(NOW), 'ats')) =>
   judgeBoardPostings(store, 'ats', postings, filters(over), NOW).then((judged) => ({ judged, store }));
 const ids = (jobs: { id: string }[]) => jobs.map((job) => job.id);
+
+describe('selectForDetail', () => {
+  const NOW_MS = Date.UTC(2026, 9, 7, 12);
+  const item = (id: string, title: string, daysAgo: number | null, place = 'Paris') => ({
+    id,
+    title,
+    postedAt: daysAgo === null ? null : new Date(NOW_MS - daysAgo * DAY).toISOString(),
+    locations: [place],
+  });
+  const all = [
+    item('old', 'Engineer', 40),
+    item('new', 'Engineer', 1),
+    item('mid', 'Designer', 10),
+    item('none', 'Engineer', null),
+    item('boss', 'Senior Manager', 2),
+  ];
+
+  it('keeps what matches the date, title and place filters, newest first, and leaves the title-dropped ones unread', () => {
+    const picked = selectForDetail(
+      all,
+      filters({ posted_within: 'past_month', title_any: ['engineer', 'manager'], disallowed_terms: ['manager'] }),
+      NOW_MS,
+    );
+    expect(picked.toRead.map((p) => p.id)).toEqual(['new', 'none']);
+    expect(picked.rest.map((p) => p.id)).toEqual(['boss']);
+    expect(picked.unread).toBe(0);
+    expect(selectForDetail(all, filters({ location_any: ['Berlin'] }), NOW_MS).toRead).toEqual([]);
+  });
+
+  it('reads at most the limit and counts the others', () => {
+    const picked = selectForDetail(all, filters(), NOW_MS, 2);
+    expect(picked.toRead.map((p) => p.id)).toEqual(['new', 'boss']);
+    expect(picked.unread).toBe(3);
+  });
+});
 
 describe('judgeBoardPostings', () => {
   it('returns every job newest first, undated ones last, and stores them with the board', async () => {
@@ -226,6 +270,70 @@ describe('runBoardTool', () => {
     companies.set('Other', 'greenhouse', 'other');
     const again = await runBoardTool({ http: h, jobs: new FakeJobStore(), companies }, 'demo', source, { ...args(), boards: ['Other'] });
     expect(again.data.boards[0]?.status).toBe('not_found');
+  });
+
+  describe('a source that reads its board itself', () => {
+    const reading: BoardSource = {
+      ats: 'Reading',
+      resolve: (input: string) => ({ feedUrl: `https://demo.example.com/${input}`, label: input }),
+      read: async (address, http) => {
+        const list = expectBoardResponse(await http.get(address.feedUrl)); // the list
+        const ids = list.json(z.array(z.string()));
+        const postings = [];
+        for (const id of ids) {
+          const detail = expectBoardResponse(await http.get(`${address.feedUrl}/${id}`)); // one request per posting
+          postings.push({
+            id,
+            company: 'Acme',
+            title: `Job ${id}`,
+            locations: [],
+            url: 'https://x.test',
+            postedAt: null,
+            description: detail.text,
+          });
+        }
+        return { name: 'Acme', postings, total: 7, unread: 3 };
+      },
+      invalidMessage: 'nope',
+    };
+
+    it('uses what it read: the postings, the total it was told, and a warning for the ones it did not read', async () => {
+      const h = http({
+        'https://demo.example.com/acme': { status: 200, body: ['1', '2'] },
+        'https://demo.example.com/acme/1': { status: 200, body: 'text one' },
+        'https://demo.example.com/acme/2': { status: 200, body: 'text two' },
+      });
+      const result = await runBoardTool({ http: h, jobs: new FakeJobStore(), companies: new FakeCompanyBoards() }, 'demo', reading, args());
+      expect(h.seen).toHaveLength(3);
+      expect(result.data.jobs.map((job) => [job.id, job.board])).toEqual([
+        ['1', 'acme'],
+        ['2', 'acme'],
+      ]);
+      expect(result.data.boards[0]).toMatchObject({ status: 'ok', jobs_total: 7 });
+      expect(result.warnings.join(' ')).toMatch(/3 more job\(s\) matched the filters but their text was not read/);
+    });
+
+    it('reports a 404 as not_found and another error status as an error, whichever request it was', async () => {
+      const missing = await runBoardTool(
+        { http: http({}), jobs: new FakeJobStore(), companies: new FakeCompanyBoards() },
+        'demo',
+        reading,
+        args(),
+      );
+      expect(missing.data.boards[0]).toMatchObject({ status: 'not_found' });
+      const failing = await runBoardTool(
+        {
+          http: http({ 'https://demo.example.com/acme': { status: 503, body: '' } }),
+          jobs: new FakeJobStore(),
+          companies: new FakeCompanyBoards(),
+        },
+        'demo',
+        reading,
+        args(),
+      );
+      expect(failing.data.boards[0]).toMatchObject({ status: 'error', message: 'HTTP 503' });
+      expect(() => expectBoardResponse({ status: 404, ok: false })).toThrow(BoardNotFound);
+    });
   });
 
   it('maps failures to a status per board and counts only real requests', async () => {
