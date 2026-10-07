@@ -91,6 +91,40 @@ describe('custom adapters page', () => {
     expect(script.value).toContain('sample for browser');
   });
 
+  it('puts the settings on the left and the script on the right, and expands to nearly the whole window and back', async () => {
+    const user = userEvent.setup();
+    mockApi(routes({ '/custom-adapters': list([adapter()]), '/custom-adapters/acmejobs': detail() }));
+    renderApp('/custom-adapters');
+    await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveAttribute('data-expanded', 'false');
+    // two columns: the settings in the first, the script in the second (one column on a narrow screen)
+    const body = within(dialog).getByLabelText('Name').closest('.grid') as HTMLElement;
+    expect(body.className).toContain('md:grid-cols-');
+    const [settings, scriptColumn] = Array.from(body.children) as HTMLElement[];
+    for (const label of ['Name', 'Handle', 'Context', 'URL target'])
+      expect(within(settings as HTMLElement).getByLabelText(label)).toBeInTheDocument();
+    expect(within(settings as HTMLElement).queryByRole('textbox', { name: 'Script' })).not.toBeInTheDocument();
+    expect(within(scriptColumn as HTMLElement).getByRole('textbox', { name: 'Script' })).toBeInTheDocument();
+    // the expand button is at the top, with the title, and the footer stays outside the scrolling body
+    const expand = within(dialog).getByRole('button', { name: 'Expand the window' });
+    expect(expand.parentElement?.textContent).toContain('Create a custom adapter');
+    expect(body.contains(within(dialog).getByRole('button', { name: 'Create' }))).toBe(false);
+    await user.click(expand);
+    expect(dialog).toHaveAttribute('data-expanded', 'true');
+    expect(dialog.className).toContain('h-[calc(100vh-2rem)]');
+    expect(dialog.className).toContain('w-[calc(100vw-2rem)]');
+    expect(within(dialog).getByRole('button', { name: 'Shrink the window' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(within(dialog).getByRole('button', { name: 'Shrink the window' }));
+    expect(dialog).toHaveAttribute('data-expanded', 'false');
+    expect(dialog.className).not.toContain('100vh-2rem');
+    // a new opening starts small even after it was left expanded
+    await user.click(within(dialog).getByRole('button', { name: 'Expand the window' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Acme jobs' }));
+    expect(await screen.findByRole('dialog')).toHaveAttribute('data-expanded', 'false');
+  });
+
   it('indents with Tab and keeps the indentation on Enter in the editor', async () => {
     const user = userEvent.setup();
     mockApi(routes({ '/custom-adapters': list([]) }));

@@ -207,6 +207,15 @@ describe('what comes back', () => {
   });
 });
 
+describe('the bare-process sandbox', () => {
+  it('refuses to run on a Node that leaves the network open to the script (older than 26)', () => {
+    expect(() => processSpawner(process.execPath, '22.23.3').start()).toThrow(/needs Node 26 \(this router runs 22\.23\.3\)/);
+    expect(() => processSpawner(process.execPath, '24.1.0').start()).toThrow(/needs Node 26/);
+    const ok = processSpawner(process.execPath, '26.10.0').start();
+    ok.kill();
+  });
+});
+
 describe('the docker sandbox', () => {
   const args = dockerSandboxArgs('node:26-bookworm-slim', 'jw-sandbox-0123456789abcdef');
 

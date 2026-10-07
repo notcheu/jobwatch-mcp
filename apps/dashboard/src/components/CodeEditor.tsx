@@ -86,7 +86,7 @@ export function CodeEditor({
         }}
         className={cn(
           TEXT,
-          'relative block size-full min-h-72 resize-y overflow-auto bg-transparent text-transparent caret-foreground outline-none selection:bg-primary/25',
+          'relative block size-full resize-none overflow-auto bg-transparent text-transparent caret-foreground outline-none selection:bg-primary/25',
         )}
       />
     </div>

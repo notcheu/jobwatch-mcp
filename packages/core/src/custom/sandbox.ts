@@ -168,9 +168,15 @@ export function reapSandboxes(
  * container: nothing caps its memory beyond the heap or its processes and CPU, and Node's permission model is the only wall between the
  * script and the host, so it is for local development only and the router says so at start. NEVER the setting of a router that is reachable.
  */
-export function processSpawner(execPath: string = process.execPath): SandboxSpawner {
+export function processSpawner(execPath: string = process.execPath, nodeVersion: string = process.versions.node): SandboxSpawner {
   return {
     start() {
+      // Node 22 and 24 have the permission model but leave the network open; Node 26 denies it. Without that wall this mode is no wall.
+      if (Number(nodeVersion.split('.')[0]) < 26)
+        throw new JobwatchError(
+          'internal',
+          `The bare-process sandbox needs Node 26 (this router runs ${nodeVersion}): older versions leave the network open to the script. Use the docker sandbox.`,
+        );
       const child = spawn(execPath, ['--permission', '--max-old-space-size=96', '--input-type=module', '-e', RUNNER_SOURCE], {
         env: {},
         stdio: ['pipe', 'pipe', 'pipe'],
