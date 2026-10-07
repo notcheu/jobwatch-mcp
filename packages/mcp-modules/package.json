@@ -15,6 +15,7 @@
     "@jobwatch/adapter-lever": "*",
     "@jobwatch/adapter-linkedin": "*",
     "@jobwatch/adapter-recruitee": "*",
+    "@jobwatch/adapter-smartrecruiters": "*",
     "@jobwatch/adapter-teamtailor": "*",
     "@jobwatch/adapter-workable": "*",
     "@jobwatch/adapter-wttj": "*",
