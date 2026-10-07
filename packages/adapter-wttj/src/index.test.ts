@@ -337,7 +337,7 @@ describe('wttj_matches (read)', () => {
     const c = context();
     await runRead(c.ctx);
     expect(c.jobs.searches).toHaveLength(1);
-    expect(c.jobs.searches[0]?.query).toBe('');
+    expect(c.jobs.searches[0]?.keywords).toEqual([]);
     expect(c.jobs.searches[0]?.found.length).toBeGreaterThan(0);
   });
 

@@ -212,10 +212,11 @@ describe('linkedin_job', () => {
 describe('linkedin_search (read)', () => {
   it('records the keywords and the ids the search listed, and which of them it returned', async () => {
     const c = context();
-    const result = await tools.search.handler(read({ keywords: 'full stack', disallowed_terms: ['frontend'] }), c.ctx);
+    const result = await tools.search.handler(read({ keywords: 'full stack OR backend', disallowed_terms: ['frontend'] }), c.ctx);
     const [search] = c.jobs.searches;
     expect(c.jobs.searches).toHaveLength(1);
-    expect(search?.query).toBe('full stack');
+    expect(search?.keywords).toEqual(['full stack', 'backend']); // the OR in one string is split before it is stored
+    expect(search?.excluded.length).toBeGreaterThan(0);
     expect(search?.found.length).toBeGreaterThan(search?.returned.length ?? 0);
     expect(search?.returned.sort()).toEqual(result.data.jobs.map((j) => j.id).sort());
   });

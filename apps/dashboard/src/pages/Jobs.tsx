@@ -10,15 +10,16 @@ import {
 import type { JobDetail, JobRow } from '@jobwatch/dashboard-api';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, ExternalLink } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { DetailPanel, Field } from '@/components/DetailPanel';
+import { KeywordBadges } from '@/components/KeywordBadges';
 import { usePlatform } from '@/components/Shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api } from '@/lib/api';
-import { ago, compact, formatSalary } from '@/lib/format';
+import { ago, compact, formatSalary, searchDetailLink } from '@/lib/format';
 import { safeHttpsUrl, useDebounced } from '@/lib/hooks';
 
 const column = createColumnHelper<JobRow>();
@@ -77,14 +78,17 @@ const columns = [
   column.accessor('foundBy', {
     header: 'Found by',
     enableSorting: false,
+    // one line per search, each keyword its own badge; the cell keeps its width and long keywords are cut with an ellipsis
     cell: (c) => (
-      <span className="flex max-w-56 flex-wrap gap-1">
+      <div className="flex w-56 max-w-56 flex-col gap-1 overflow-hidden">
         {c.getValue().length === 0 ? (
           <span className="text-muted-foreground">–</span>
         ) : (
-          c.getValue().map((keyword) => <Badge key={keyword}>{keyword}</Badge>)
+          c
+            .getValue()
+            .map((search) => <KeywordBadges key={search.keywords.join('\u0000')} keywords={search.keywords} empty="(no keywords)" />)
         )}
-      </span>
+      </div>
     ),
   }),
   column.accessor('descriptionChars', { header: 'Size', cell: (c) => <span className="tabular-nums">{compact(c.getValue())}</span> }),
@@ -118,6 +122,18 @@ export function Jobs() {
   const navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
   const get = (key: string): string => search.get(key) ?? '';
+  // the search a job was found by is its keyword list: one `found_by` per keyword in the URL, `react | vue` in the box
+  const foundByText = search.get('no_keywords') === '1' ? '(no keywords)' : search.getAll('found_by').join(' | ');
+  const setFoundBy = (text: string): void => {
+    const next = new URLSearchParams(search);
+    next.delete('found_by');
+    next.delete('no_keywords');
+    next.delete('page');
+    for (const keyword of text.split(/\s+OR\s+|\s*\|\s*/).map((part) => part.trim()))
+      if (keyword !== '' && keyword !== '(no keywords)') next.append('found_by', keyword);
+    if (text.trim() === '(no keywords)') next.set('no_keywords', '1');
+    setSearch(next, { replace: true });
+  };
   const [text, setText] = useState(get('q'));
   const q = useDebounced(text);
   const page = Math.max(1, Number(get('page')) || 1);
@@ -147,7 +163,8 @@ export function Jobs() {
     q: get('q'),
     source,
     board: get('board'),
-    found_by: get('found_by'),
+    found_by: search.getAll('found_by'),
+    no_keywords: search.get('no_keywords') ?? undefined,
     from: get('from'),
     to: get('to'),
     dateField: get('dateField') || undefined,
@@ -208,13 +225,13 @@ export function Jobs() {
             onKeyDown={(event) => event.key === 'Enter' && update({ board: event.currentTarget.value.trim() })}
           />
           <Input
-            aria-label="Found by keyword"
-            placeholder="Found by keyword"
+            aria-label="Found by keywords"
+            placeholder="Found by keywords (react | vue)"
             className="w-44"
-            defaultValue={get('found_by')}
-            key={get('found_by')}
-            onBlur={(event) => update({ found_by: event.target.value.trim() })}
-            onKeyDown={(event) => event.key === 'Enter' && update({ found_by: event.currentTarget.value.trim() })}
+            defaultValue={foundByText}
+            key={foundByText}
+            onBlur={(event) => setFoundBy(event.target.value)}
+            onKeyDown={(event) => event.key === 'Enter' && setFoundBy(event.currentTarget.value)}
           />
           <select
             aria-label="Date to filter on"
@@ -398,12 +415,21 @@ function JobBody({ job }: { job: JobDetail }) {
         {job.salary !== null && <Field label="Salary (yearly)">{formatSalary(job.salary)}</Field>}
       </div>
       {job.foundBy.length > 0 && (
-        <Field label="Found by">
-          <span className="flex flex-wrap gap-1">
-            {job.foundBy.map((keyword) => (
-              <Badge key={keyword}>{keyword}</Badge>
+        <Field label={job.foundBy.length === 1 ? 'Found by this search' : 'Found by these searches'}>
+          <ul className="space-y-1.5">
+            {job.foundBy.map((search) => (
+              <li key={search.keywords.join('\u0000')} className="flex items-center justify-between gap-2">
+                <KeywordBadges keywords={search.keywords} />
+                <Link
+                  to={searchDetailLink(job.source, search.keywords)}
+                  className="shrink-0 text-xs text-primary hover:underline"
+                  aria-label={`Open the search ${search.keywords.length === 0 ? 'without keywords' : search.keywords.join(', ')}`}
+                >
+                  Open the search
+                </Link>
+              </li>
             ))}
-          </span>
+          </ul>
         </Field>
       )}
       {(job.hints.remote.length > 0 || job.hints.years.length > 0 || job.hints.salary !== null) && (

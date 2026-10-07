@@ -1,4 +1,4 @@
-import { JobwatchError, defineHttpTool, describeJob, detailFields, termMatcher, z } from '@jobwatch/sdk';
+import { ANY_SEPARATOR, JobwatchError, defineHttpTool, describeJob, detailFields, keywordsSchema, termMatcher, z } from '@jobwatch/sdk';
 import type { Clock, Store } from '../store/store';
 
 const MAX_PAGE = 200;
@@ -41,12 +41,11 @@ const input = z
       .describe(
         'Keywords to check against each job, one per entry (a phrase counts as one): whole words, case-insensitive, in the title and the stored description. Each job then lists the terms it contains, and `stats.terms` counts them over the whole window.',
       ),
-    found_by: z
-      .string()
-      .trim()
-      .max(200)
+    found_by: keywordsSchema(ANY_SEPARATOR, { allowEmpty: true })
       .optional()
-      .describe('Only jobs that a search with exactly these keywords listed (case-insensitive), from the history of searches.'),
+      .describe(
+        'Only jobs that a search with exactly these keywords listed (a list; any order, case-insensitive), from the history of searches. One string with OR or a pipe between the keywords is split into the list.',
+      ),
     only_matching: z
       .boolean()
       .default(false)
@@ -80,8 +79,8 @@ const jobSchema = z.object({
   description: z.string().describe('With detail=full. Empty otherwise.'),
   description_truncated: z.boolean(),
   found_by: z
-    .array(z.string())
-    .describe('Keywords of the searches that listed this job (the history of searches). Empty when none is recorded.'),
+    .array(z.array(z.string()))
+    .describe('The searches that listed this job (the history of searches), each as its list of keywords. Empty when none is recorded.'),
   title_terms: z.array(z.string()).describe('Terms found in the title.'),
   description_terms: z.array(z.string()).describe('Terms found in the stored description.'),
 });
@@ -148,7 +147,7 @@ export function createStoredJobsTool(store: Store, clock: Clock) {
         until,
         sources: args.sources,
         boards: args.boards,
-        ...(args.found_by === undefined || args.found_by === '' ? {} : { search: args.found_by }),
+        ...(args.found_by === undefined || args.found_by.length === 0 ? {} : { search: args.found_by }),
         limit: MAX_SCAN,
         withDescription: matchers.length > 0,
       });
@@ -189,13 +188,16 @@ export function createStoredJobsTool(store: Store, clock: Clock) {
       const jobs: z.infer<typeof jobSchema>[] = [];
       const encoder = new TextEncoder();
       let bytes = 0;
-      const foundBy = new Map<string, string[]>();
+      const foundBy = new Map<string, string[][]>();
       for (const platform of new Set(page.map((entry) => entry.row.platform)))
         for (const [id, queries] of store.foundBy(
           platform,
           page.filter((entry) => entry.row.platform === platform).map((entry) => entry.row.id),
         ))
-          foundBy.set(`${platform}\u0000${id}`, queries);
+          foundBy.set(
+            `${platform}\u0000${id}`,
+            queries.filter((keywords) => keywords.length > 0),
+          );
       for (const { row, titleTerms, descriptionTerms } of page) {
         // the description is only read from SQLite for the jobs that are listed, unless the terms already needed it
         const text =

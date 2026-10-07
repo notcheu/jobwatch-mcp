@@ -4,7 +4,8 @@ import type { SearchLayout } from './layouts/layout';
 import { PAGE_SIZE, classifyPage, extractHints, jobUrl, parseCard, type Card, type Hints, type PostedWithin } from './parse';
 
 export interface SearchArgs {
-  keywords: string;
+  /** Any of them matches: the search text is the list joined with LinkedIn's `OR`. */
+  keywords: readonly string[];
   geo: string;
   posted_within: PostedWithin;
   remote_only: boolean;

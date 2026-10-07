@@ -50,7 +50,8 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
 /**
  * Each entry upgrades the schema by one version (`PRAGMA user_version`). Never edit a released migration: add a new one.
  * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
- * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`).
+ * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`),
+ * 9 the keyword list of a search and the jobs it excluded.
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -166,6 +167,15 @@ const MIGRATIONS: readonly string[] = [
   ) WITHOUT ROWID;
   CREATE INDEX platform_memory_updated ON platform_memory (updated_at);
   `,
+  // 9: a search's keywords are a LIST (any of them matches). `keywords` is that list as JSON, in the order it was given; `keywords_key` is
+  // the same list lower-cased and sorted, so two orderings of the same keywords are one search. `search_hits.excluded` marks the jobs the
+  // search dropped because of a disallowed term or a salary floor. The old `query` text is split into the list by the backfill.
+  `
+  ALTER TABLE search_runs ADD COLUMN keywords     TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE search_runs ADD COLUMN keywords_key TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE search_hits ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key);
+  `,
 ];
 
 /** Days of per-tool daily totals kept (docs/plans/17-dashboard.md, D8). */
@@ -216,6 +226,7 @@ export class Store {
       db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;');
       const before = Store.migrate(db);
       if (before < 7) Store.backfillSalaries(db);
+      if (before > 0 && before < 9) Store.backfillSearchKeywords(db);
       if (path !== ':memory:') chmodSync(path, 0o600);
     } catch (cause) {
       db.close();
@@ -239,6 +250,26 @@ export class Store {
     db.exec('BEGIN');
     try {
       for (const values of found) update.run(...values);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  /**
+   * Split the `query` text of the searches recorded before migration 9 into the keyword list: on a LinkedIn `OR` and on a pipe, the two
+   * ways the old text joined several keywords. One pass, once.
+   */
+  private static backfillSearchKeywords(db: DatabaseSync): void {
+    const update = db.prepare('UPDATE search_runs SET keywords = ?, keywords_key = ? WHERE id = ?');
+    const rows = db.prepare("SELECT id, query FROM search_runs WHERE query <> ''").all() as Rows[];
+    db.exec('BEGIN');
+    try {
+      for (const row of rows) {
+        const list = normalizeKeywords(String(row['query']).split(/\s+OR\s+|\s*\|\s*/));
+        update.run(JSON.stringify(list), keywordsKey(list), Number(row['id']));
+      }
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -534,9 +565,9 @@ export class Store {
     }
     if (filter.search !== undefined) {
       where.push(
-        'EXISTS (SELECT 1 FROM search_hits h JOIN search_runs r ON r.id = h.run_id WHERE h.job_id = jobs.id AND r.platform = jobs.platform AND r.query = ?)',
+        'EXISTS (SELECT 1 FROM search_hits h JOIN search_runs r ON r.id = h.run_id WHERE h.job_id = jobs.id AND r.platform = jobs.platform AND r.keywords_key = ?)',
       );
-      params.push(filter.search);
+      params.push(keywordsKey(normalizeKeywords(filter.search)));
     }
     if (filter.boards.length > 0) {
       where.push(`board IN (${filter.boards.map(() => '?').join(', ')})`);
@@ -577,37 +608,44 @@ export class Store {
   // ------------------------------------------------------------------------------------------------------ searches
 
   /**
-   * Remember one search: its keywords (`query`, trimmed and capped; reported in lower case; empty = no keyword, as for a whole-board listing) and the ids it
-   * listed. `found` and `returned` are the real counts; at most MAX_SEARCH_HITS ids are kept, the returned ones first.
+   * Remember one search: its keyword list (trimmed, lower-cased, capped; empty = no keyword, as for a whole-board listing) and the ids it
+   * listed. `found` and `returned` are the real counts; at most MAX_SEARCH_HITS ids are kept, the returned ones first, then the excluded.
    */
   recordSearch(platform: string, search: SearchRecord, now: number): void {
-    const query = search.query.replace(/\s+/g, ' ').trim().slice(0, MAX_QUERY_CHARS);
+    const keywords = normalizeKeywords(search.keywords);
     const returned = new Set(search.returned);
+    const excluded = new Set(search.excluded);
     const found = [...new Set(search.found)];
-    const kept = [...found.filter((id) => returned.has(id)), ...found.filter((id) => !returned.has(id))].slice(0, MAX_SEARCH_HITS);
+    const kept = [
+      ...found.filter((id) => returned.has(id)),
+      ...found.filter((id) => !returned.has(id) && excluded.has(id)),
+      ...found.filter((id) => !returned.has(id) && !excluded.has(id)),
+    ].slice(0, MAX_SEARCH_HITS);
     this.transaction(() => {
       const run = this.db
-        .prepare('INSERT INTO search_runs (ts, platform, query, found, returned) VALUES (?, ?, ?, ?, ?)')
-        .run(now, platform, query, found.length, returned.size);
-      const insert = this.db.prepare('INSERT OR IGNORE INTO search_hits (run_id, job_id, returned) VALUES (?, ?, ?)');
-      for (const id of kept) if (JOB_ID.test(id)) insert.run(Number(run.lastInsertRowid), id, returned.has(id) ? 1 : 0);
+        .prepare('INSERT INTO search_runs (ts, platform, query, keywords, keywords_key, found, returned) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(now, platform, keywords.join(' | '), JSON.stringify(keywords), keywordsKey(keywords), found.length, returned.size);
+      const insert = this.db.prepare('INSERT OR IGNORE INTO search_hits (run_id, job_id, returned, excluded) VALUES (?, ?, ?, ?)');
+      for (const id of kept)
+        if (JOB_ID.test(id)) insert.run(Number(run.lastInsertRowid), id, returned.has(id) ? 1 : 0, excluded.has(id) ? 1 : 0);
     });
   }
 
-  /** Per platform and keyword, over [since, until): how often it ran and how many distinct jobs it listed, returned and found first. */
+  /** Per platform and keyword list, over [since, until): how often it ran and how many distinct jobs it listed, returned, excluded and found first. */
   searchStats(filter: { since: number; until: number; platform?: string; limit: number }): SearchStat[] {
     const rows = this.db
       .prepare(
-        `SELECT r.platform AS platform, lower(r.query) AS query, count(DISTINCT r.id) AS runs, max(r.ts) AS last_run,
+        `SELECT r.platform AS platform, r.keywords_key AS keywords_key, count(DISTINCT r.id) AS runs, min(r.ts) AS first_run, max(r.ts) AS last_run,
                 count(DISTINCT h.job_id) AS jobs_found,
                 count(DISTINCT CASE WHEN h.returned = 1 THEN h.job_id END) AS jobs_returned,
+                count(DISTINCT CASE WHEN h.excluded = 1 THEN h.job_id END) AS jobs_excluded,
                 count(DISTINCT CASE WHEN j.first_seen >= ? THEN h.job_id END) AS jobs_new
          FROM search_runs r
          LEFT JOIN search_hits h ON h.run_id = r.id
          LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
          WHERE r.ts >= ? AND r.ts < ? ${filter.platform === undefined ? '' : 'AND r.platform = ?'}
-         GROUP BY r.platform, lower(r.query)
-         ORDER BY jobs_found DESC, runs DESC, r.platform, lower(r.query)
+         GROUP BY r.platform, r.keywords_key
+         ORDER BY jobs_found DESC, runs DESC, r.platform, r.keywords_key
          LIMIT ?`,
       )
       .all(
@@ -615,27 +653,95 @@ export class Store {
       ) as Rows[];
     return rows.map((row) => ({
       platform: String(row['platform']),
-      query: String(row['query']),
+      keywords: parseKeywords(row['keywords_key']),
       runs: Number(row['runs']),
+      firstRun: Number(row['first_run']),
       lastRun: Number(row['last_run']),
       jobsFound: Number(row['jobs_found']),
       jobsReturned: Number(row['jobs_returned']),
+      jobsExcluded: Number(row['jobs_excluded']),
       jobsNew: Number(row['jobs_new']),
     }));
   }
 
-  /** For each of these jobs, the distinct keywords of the searches that listed it (empty keywords left out). */
-  foundBy(platform: string, ids: readonly string[]): Map<string, string[]> {
-    const out = new Map<string, string[]>();
+  /**
+   * For each of these jobs, the searches that listed it, as keyword lists (lower case, sorted; an empty list is a search with no
+   * keyword, such as a whole company board or the WTTJ matches). Within the window of kept history.
+   */
+  foundBy(platform: string, ids: readonly string[]): Map<string, string[][]> {
+    const out = new Map<string, string[][]>();
     const stmt = this.db.prepare(
-      `SELECT DISTINCT lower(r.query) AS query FROM search_hits h JOIN search_runs r ON r.id = h.run_id
-       WHERE r.platform = ? AND h.job_id = ? AND r.query <> '' ORDER BY lower(r.query)`,
+      `SELECT DISTINCT r.keywords_key AS keywords_key FROM search_hits h JOIN search_runs r ON r.id = h.run_id
+       WHERE r.platform = ? AND h.job_id = ? ORDER BY r.keywords_key`,
     );
     for (const id of new Set(ids)) {
-      const queries = (stmt.all(platform, id) as Rows[]).map((row) => String(row['query']));
-      if (queries.length > 0) out.set(id, queries);
+      const searches = (stmt.all(platform, id) as Rows[]).map((row) => parseKeywords(row['keywords_key']));
+      if (searches.length > 0) out.set(id, searches);
     }
     return out;
+  }
+
+  /**
+   * One search (a platform and a keyword list, any order or case): when it ran, what it listed, and the jobs, those it returned and
+   * those it dropped first. `window` narrows the runs counted (default: all the history that is kept).
+   */
+  searchDetail(
+    platform: string,
+    keywords: readonly string[],
+    options: { limit: number; since?: number; until?: number },
+  ): SearchDetail | null {
+    const key = keywordsKey(normalizeKeywords(keywords));
+    const since = options.since ?? 0;
+    const until = options.until ?? Number.MAX_SAFE_INTEGER;
+    const summary = this.db
+      .prepare(
+        `SELECT count(DISTINCT r.id) AS runs, min(r.ts) AS first_run, max(r.ts) AS last_run,
+                count(DISTINCT h.job_id) AS jobs_found,
+                count(DISTINCT CASE WHEN h.returned = 1 THEN h.job_id END) AS jobs_returned,
+                count(DISTINCT CASE WHEN h.excluded = 1 THEN h.job_id END) AS jobs_excluded,
+                count(DISTINCT CASE WHEN j.first_seen >= ? THEN h.job_id END) AS jobs_new
+         FROM search_runs r
+         LEFT JOIN search_hits h ON h.run_id = r.id
+         LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
+         WHERE r.platform = ? AND r.keywords_key = ? AND r.ts >= ? AND r.ts < ?`,
+      )
+      .get(since, platform, key, since, until) as Rows | undefined;
+    if (summary === undefined || Number(summary['runs']) === 0) return null;
+    const rows = this.db
+      .prepare(
+        `SELECT h.job_id AS id, max(h.returned) AS returned, max(h.excluded) AS excluded, count(DISTINCT r.id) AS seen,
+                j.title AS title, j.company AS company, j.location AS location, j.url AS url, j.last_seen AS last_seen
+         FROM search_runs r
+         JOIN search_hits h ON h.run_id = r.id
+         LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
+         WHERE r.platform = ? AND r.keywords_key = ? AND r.ts >= ? AND r.ts < ?
+         GROUP BY h.job_id
+         ORDER BY max(h.returned) DESC, max(h.excluded) DESC, max(j.last_seen) DESC, h.job_id
+         LIMIT ?`,
+      )
+      .all(platform, key, since, until, options.limit) as Rows[];
+    const text = (value: unknown): string | null => (value === null || value === undefined ? null : String(value));
+    return {
+      platform,
+      keywords: parseKeywords(key),
+      runs: Number(summary['runs']),
+      firstRun: Number(summary['first_run']),
+      lastRun: Number(summary['last_run']),
+      jobsFound: Number(summary['jobs_found']),
+      jobsReturned: Number(summary['jobs_returned']),
+      jobsExcluded: Number(summary['jobs_excluded']),
+      jobsNew: Number(summary['jobs_new']),
+      jobs: rows.map((row) => ({
+        id: String(row['id']),
+        title: text(row['title']),
+        company: text(row['company']),
+        location: text(row['location']),
+        url: text(row['url']),
+        lastSeen: row['last_seen'] === null || row['last_seen'] === undefined ? null : Number(row['last_seen']),
+        outcome: Number(row['returned']) === 1 ? 'returned' : Number(row['excluded']) === 1 ? 'excluded' : 'other',
+        timesListed: Number(row['seen']),
+      })),
+    };
   }
 
   /**
@@ -710,19 +816,71 @@ export const MAX_MEMORY_ENTRIES = 1000;
 const MAX_SEARCH_HITS = 1000;
 
 export interface SearchRecord {
-  query: string;
+  keywords: readonly string[];
   found: readonly string[];
   returned: readonly string[];
+  /** Dropped because of a disallowed term or a salary floor. */
+  excluded: readonly string[];
 }
 
 export interface SearchStat {
   platform: string;
-  query: string;
+  /** Lower case, sorted. Empty for a search without keyword. */
+  keywords: string[];
   runs: number;
+  firstRun: number;
   lastRun: number;
   jobsFound: number;
   jobsReturned: number;
+  /** Jobs the search dropped because of a disallowed term or a salary floor. */
+  jobsExcluded: number;
   jobsNew: number;
+}
+
+export interface SearchDetailJob {
+  id: string;
+  /** Null when the job text was evicted but the search still lists it. */
+  title: string | null;
+  company: string | null;
+  location: string | null;
+  url: string | null;
+  lastSeen: number | null;
+  /** `returned` handed back to the caller, `excluded` dropped by a disallowed term or salary floor, `other` listed but not returned (a cap, only_new, a filter). */
+  outcome: 'returned' | 'excluded' | 'other';
+  timesListed: number;
+}
+
+export interface SearchDetail extends SearchStat {
+  jobs: SearchDetailJob[];
+}
+
+/** Most keywords kept for one search. */
+const MAX_SEARCH_KEYWORDS = 20;
+
+/** The keywords of a search as stored: trimmed, single-spaced, lower case, capped, no empty entry and no duplicate. The order is kept. */
+export function normalizeKeywords(keywords: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const keyword of keywords) {
+    const clean = keyword.replace(/\s+/g, ' ').trim().toLowerCase().slice(0, MAX_QUERY_CHARS);
+    if (clean === '' || seen.has(clean)) continue;
+    seen.add(clean);
+    out.push(clean);
+    if (out.length >= MAX_SEARCH_KEYWORDS) break;
+  }
+  return out;
+}
+
+/** What makes two keyword lists one search: the same keywords in any order. */
+export const keywordsKey = (keywords: readonly string[]): string => JSON.stringify([...keywords].sort());
+
+function parseKeywords(value: unknown): string[] {
+  try {
+    const parsed: unknown = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 export interface NewJobRow {
@@ -765,8 +923,8 @@ export interface JobListFilter {
   dir?: 'asc' | 'desc';
   /** Rows to skip, for paging. */
   offset?: number;
-  /** Only jobs a search with exactly these keywords (case-insensitive) listed. */
-  search?: string;
+  /** Only jobs a search with exactly these keywords (any order, case-insensitive) listed. An empty list is the searches with no keyword. */
+  search?: readonly string[];
   /** Most rows returned; `total` still counts them all. */
   limit: number;
   withDescription: boolean;

@@ -37,6 +37,7 @@ export type {
   NewJob,
   StoredJob,
   JobStore,
+  SearchRecord,
   HttpAdapterContext,
   BrowserAdapterContext,
   SessionState,
@@ -69,6 +70,17 @@ export type { Rule, Violation } from './validate';
 export { buildCatalog, catalogFileName, stableStringify } from './catalog';
 export type { CatalogEntry } from './catalog';
 
+export {
+  ANY_SEPARATOR,
+  MAX_KEYWORDS,
+  MAX_KEYWORD_CHARS,
+  OR_SEPARATOR,
+  PIPE_SEPARATOR,
+  joinKeywords,
+  keywordsSchema,
+  splitKeywords,
+} from './keywords';
+export type { KeywordSeparator } from './keywords';
 export { describeParams, sampleInput } from './docs';
 export type { ParamDoc } from './docs';
 export { inputJsonSchema, outputJsonSchema, findInputSchemaProblems } from './schema';

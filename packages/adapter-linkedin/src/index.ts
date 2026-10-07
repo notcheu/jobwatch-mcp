@@ -1,9 +1,11 @@
 import {
+  OR_SEPARATOR,
   SDK_API_VERSION,
   defineAdapter,
   defineBrowserTool,
   describeJob,
   detailFields,
+  keywordsSchema,
   matchedTerms,
   returnedIds,
   salaryFilterFields,
@@ -92,7 +94,9 @@ const excludedSchema = z.object({
 
 const searchInput = z
   .object({
-    keywords: z.string().trim().min(1).max(200).describe('Search keywords, e.g. "full stack engineer".'),
+    keywords: keywordsSchema(OR_SEPARATOR).describe(
+      'What to search for: a list of keywords (any of them matches, never all), e.g. ["full stack engineer", "backend engineer"]. One string with LinkedIn\'s upper-case OR between keywords ("full stack engineer OR backend engineer") is split into the list.',
+    ),
     geo: geo.describe(
       'Where to search: a place name LinkedIn understands ("Berlin, Germany", "Austin, Texas", "Remote"), or a numeric LinkedIn geoId. Omit it to use the operator\'s default location (LINKEDIN_DEFAULT_LOCATION).',
     ),
@@ -315,8 +319,9 @@ export function createLinkedinTools(layout: SearchLayout) {
     examples: [
       {
         title: 'Jobs posted in the last day',
-        prompt: 'Search LinkedIn for <job title> jobs in <place> posted in the last 24 hours and show me the ones worth reading.',
-        input: { keywords: '<job title>', geo: '<place>', posted_within: 'last_24_hours' },
+        prompt:
+          'Search LinkedIn for <job title> or <other job title> jobs in <place> posted in the last 24 hours and show me the ones worth reading.',
+        input: { keywords: ['<job title>', '<other job title>'], geo: '<place>', posted_within: 'last_24_hours' },
       },
       {
         title: 'Remote roles, without a term',
@@ -341,13 +346,14 @@ export function createLinkedinTools(layout: SearchLayout) {
         deadline,
       });
       await ctx.jobs.recordSearch({
-        query: args.keywords,
+        keywords: args.keywords,
         found: found.cards.map((card) => card.id),
         returned: returnedIds(
           found.cards.map((card) => card.id),
           outcome,
           args.max_jobs === 0,
         ),
+        excluded: outcome.excluded.map((entry) => entry.id),
       });
       const warnings = [...found.warnings, ...outcome.failed.map((f) => `job ${f.id}: ${f.status}`)];
       if (outcome.remaining.length > 0)

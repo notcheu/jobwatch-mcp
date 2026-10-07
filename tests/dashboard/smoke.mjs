@@ -108,7 +108,7 @@ try {
   const calls = JSON.parse((await send(dashPort, '/dashboard/api/v1/calls')).text);
   check(
     'the call made above is in the history',
-    calls.calls.some((c) => c.tool === 'teamtailor_jobs' && c.keywords === 'smoke-keyword'),
+    calls.calls.some((c) => c.tool === 'teamtailor_jobs' && c.keywords?.join() === 'smoke-keyword'),
   );
   check('the list carries no parameters', !JSON.stringify(calls).includes('"params"'));
   const detail = JSON.parse(

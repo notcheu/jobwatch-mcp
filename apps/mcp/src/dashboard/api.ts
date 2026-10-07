@@ -6,6 +6,7 @@ import {
   jobDetailSchema,
   jobsPageSchema,
   overviewSchema,
+  searchDetailSchema,
   searchesSchema,
   settingsSchema,
   toolsSchema,
@@ -16,6 +17,7 @@ import {
   type JobDetail,
   type JobsPage,
   type Overview,
+  type SearchDetailInfo,
   type Searches,
   type Settings,
   type Tools,
@@ -25,6 +27,7 @@ import { describeInstalledModules } from '@jobwatch/mcp-modules';
 import {
   JOB_SORT_COLUMNS,
   effectiveRate,
+  searchHealth,
   type CallEntry,
   type CallLog,
   type Budgets,
@@ -35,6 +38,7 @@ import {
   type StoredSalary,
   type Registry,
   type RuntimeManager,
+  type SearchStat,
   type Store,
 } from '@jobwatch/core';
 import { buildCatalog, describeParams, extractHints, sampleInput, summarizeJob } from '@jobwatch/sdk';
@@ -123,6 +127,13 @@ export function getCall(data: DashboardData, id: number): CallDetail | undefined
 
 // ----------------------------------------------------------------------------------------------------------- jobs
 
+/** The keyword list a jobs query asks for, or undefined when it does not filter by search. An empty list is the searches with no keyword. */
+function searchFilter(q: { found_by?: string | string[] | undefined; no_keywords?: '1' | undefined }): string[] | undefined {
+  if (q.no_keywords === '1') return [];
+  const list = (typeof q.found_by === 'string' ? [q.found_by] : (q.found_by ?? [])).filter((keyword) => keyword !== '');
+  return list.length === 0 ? undefined : list;
+}
+
 const jobsQuery = z.object({
   q: z.string().trim().max(120).optional(),
   source: z
@@ -131,7 +142,10 @@ const jobsQuery = z.object({
     .regex(/^[a-z][a-z0-9-]*$/)
     .optional(),
   board: z.string().max(120).optional(),
-  found_by: z.string().trim().max(200).optional(),
+  /** Repeated: one entry per keyword of the search (`found_by=react&found_by=vue`). */
+  found_by: z.union([z.string().trim().max(100), z.array(z.string().trim().max(100)).max(20)]).optional(),
+  /** The searches that had no keyword (a whole company board, the WTTJ matches). */
+  no_keywords: z.enum(['1']).optional(),
   from: z.string().max(32).optional(),
   to: z.string().max(32).optional(),
   dateField: z.enum(['first_seen', 'last_seen', 'fetched_at']).default('first_seen'),
@@ -165,14 +179,14 @@ export function listJobs(data: DashboardData, query: unknown): JobsPage {
     sources: q.source === undefined ? [] : [q.source],
     boards: q.board === undefined || q.board === '' ? [] : [q.board],
     ...(q.q === undefined || q.q === '' ? {} : { q: q.q }),
-    ...(q.found_by === undefined || q.found_by === '' ? {} : { search: q.found_by }),
+    ...(searchFilter(q) === undefined ? {} : { search: searchFilter(q) as string[] }),
     ...(q.sort === undefined ? {} : { sort: q.sort }),
     dir: q.dir,
     offset: (q.page - 1) * q.pageSize,
     limit: q.pageSize,
     withDescription: false,
   });
-  const foundBy = new Map<string, string[]>();
+  const foundBy = new Map<string, string[][]>();
   for (const platform of new Set(rows.map((row) => row.platform)))
     for (const [id, queries] of data.store.foundBy(
       platform,
@@ -193,7 +207,7 @@ export function listJobs(data: DashboardData, query: unknown): JobsPage {
       lastSeen: iso(row.lastSeen),
       descriptionChars: row.descriptionChars,
       salary: salaryOf(row.salary),
-      foundBy: foundBy.get(`${row.platform}\u0000${row.id}`) ?? [],
+      foundBy: (foundBy.get(`${row.platform}\u0000${row.id}`) ?? []).map((keywords) => ({ keywords })),
     })),
     total,
     page: q.page,
@@ -220,7 +234,7 @@ export function getJob(data: DashboardData, source: string, id: string): JobDeta
     lastSeen: iso(row.lastSeen),
     descriptionChars: row.description.length,
     salary: salaryOf(row.salary),
-    foundBy: data.store.foundBy(source, [id]).get(id) ?? [],
+    foundBy: (data.store.foundBy(source, [id]).get(id) ?? []).map((keywords) => ({ keywords })),
     description: row.description,
     summary: summary.summary,
     summaryKind: summary.kind,
@@ -241,21 +255,53 @@ const searchesQuery = z.object({
     .optional(),
 });
 
+const searchDetailQuery = z.object({
+  since: z.string().max(32).optional(),
+  until: z.string().max(32).optional(),
+  keywords: z.union([z.string().trim().max(100), z.array(z.string().trim().max(100)).max(20)]).optional(),
+});
+
+const toSearchRow = (stat: SearchStat) => ({
+  source: stat.platform,
+  keywords: stat.keywords,
+  runs: stat.runs,
+  firstRun: iso(stat.firstRun),
+  lastRun: iso(stat.lastRun),
+  jobsFound: stat.jobsFound,
+  jobsReturned: stat.jobsReturned,
+  jobsExcluded: stat.jobsExcluded,
+  jobsNew: stat.jobsNew,
+  health: searchHealth(stat),
+});
+
 export function listSearches(data: DashboardData, query: unknown): Searches {
   const q = searchesQuery.parse(query);
   const until = parseDate('until', q.until, data.clock() + 1);
   const since = parseDate('since', q.since, until - 7 * DAY_MS);
   const rows = data.store.searchStats({ since, until, ...(q.source === undefined ? {} : { platform: q.source }), limit: 200 });
-  return checked(searchesSchema, {
-    searches: rows.map((row) => ({
-      source: row.platform,
-      query: row.query,
-      runs: row.runs,
-      lastRun: iso(row.lastRun),
-      jobsFound: row.jobsFound,
-      jobsReturned: row.jobsReturned,
-      jobsNew: row.jobsNew,
+  return checked(searchesSchema, { searches: rows.map(toSearchRow) });
+}
+
+/** The most jobs a search detail lists; the counts are exact whatever is listed. */
+const SEARCH_JOBS_LIMIT = 200;
+
+/** One search (a source and its keyword list), with the jobs it listed and how healthy it is. `undefined` when there is no such search. */
+export function getSearch(data: DashboardData, source: string, query: unknown): SearchDetailInfo | undefined {
+  if (!/^[a-z][a-z0-9-]*$/.test(source)) return undefined;
+  const q = searchDetailQuery.parse(query);
+  const keywords = (typeof q.keywords === 'string' ? [q.keywords] : (q.keywords ?? [])).filter((keyword) => keyword !== '');
+  const until = parseDate('until', q.until, data.clock() + 1);
+  const since = parseDate('since', q.since, until - 7 * DAY_MS);
+  const detail = data.store.searchDetail(source, keywords, { limit: SEARCH_JOBS_LIMIT + 1, since, until });
+  if (detail === null) return undefined;
+  const { jobs, ...stat } = detail;
+  return checked(searchDetailSchema, {
+    ...toSearchRow(stat),
+    jobs: jobs.slice(0, SEARCH_JOBS_LIMIT).map((job) => ({
+      ...job,
+      lastSeen: job.lastSeen === null ? null : iso(job.lastSeen),
     })),
+    jobsTruncated: jobs.length > SEARCH_JOBS_LIMIT,
   });
 }
 
@@ -374,6 +420,17 @@ export async function getDocs(data: DashboardData): Promise<Docs> {
 
 export const getSettings = (data: DashboardData): Settings => checked(settingsSchema, data.settings);
 
+/** The searches of the last 7 days in bad health, the ones that waste most first. */
+function badSearches(data: DashboardData): { count: number; items: ReturnType<typeof toSearchRow>[] } {
+  const now = data.clock();
+  const bad = data.store
+    .searchStats({ since: now - 7 * DAY_MS, until: now + 1, limit: 200 })
+    .map(toSearchRow)
+    .filter((row) => row.health.status === 'bad')
+    .sort((a, b) => b.health.discardedShare - a.health.discardedShare || b.runs - a.runs);
+  return { count: bad.length, items: bad.slice(0, 5) };
+}
+
 export function getOverview(data: DashboardData): Overview {
   const calls = data.callLog.all();
   const done = calls.filter((call) => call.state === 'done');
@@ -393,6 +450,7 @@ export function getOverview(data: DashboardData): Overview {
     storedJobs: data.store.countJobs(),
     runtimeState: runtime?.current?.state ?? 'cold',
     enabledAdapters: data.registry().enabled.length,
+    badSearches: badSearches(data),
   });
 }
 

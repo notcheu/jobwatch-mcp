@@ -1,8 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router';
+import { KeywordBadges } from '@/components/KeywordBadges';
 import { StatCard } from '@/components/StatCard';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/lib/api';
-import { compact } from '@/lib/format';
+import { compact, searchDetailLink } from '@/lib/format';
+import { HealthBadge } from '@/pages/Searches';
 
 export function Overview() {
   const overview = useQuery({ queryKey: ['overview'], queryFn: api.overview, refetchInterval: 5000 });
@@ -48,6 +52,46 @@ export function Overview() {
           </CardContent>
         </Card>
       </div>
+      <Card aria-label="Searches in bad health">
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle>Searches in bad health (7 days)</CardTitle>
+          <Link to="/searches" className="text-xs text-primary hover:underline">
+            All searches
+          </Link>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {o.badSearches.count === 0 ? (
+            <p className="text-muted-foreground">Every search brought jobs in and kept most of them.</p>
+          ) : (
+            <>
+              <ul className="divide-y">
+                {o.badSearches.items.map((search) => (
+                  <li key={`${search.source}|${search.keywords.join('\u0000')}`}>
+                    <Link
+                      to={searchDetailLink(search.source, search.keywords)}
+                      className="flex items-center justify-between gap-2 py-1.5 hover:bg-accent/50"
+                    >
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <KeywordBadges keywords={search.keywords} />
+                        <Badge variant="secondary">{search.source}</Badge>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {search.jobsExcluded} of {search.jobsFound} discarded
+                        </span>
+                        <HealthBadge health={search.health} />
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {o.badSearches.count > o.badSearches.items.length && (
+                <p className="text-xs text-muted-foreground">and {o.badSearches.count - o.badSearches.items.length} more</p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard
           title="Tokens returned to Claude"

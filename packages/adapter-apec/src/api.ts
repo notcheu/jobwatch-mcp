@@ -9,10 +9,17 @@ export const MAX_SEARCH_PAGES = 5;
 /** How many search pages a request for `max_results` results loads at most (the results may end sooner). */
 export const searchPagesFor = (maxResults: number): number => Math.max(1, Math.min(MAX_SEARCH_PAGES, Math.ceil(maxResults / PAGE_SIZE)));
 
+/**
+ * Apec's search takes ONE phrase (`motsCles`) and does not offer an OR, so a list of keywords is searched one keyword at a time and the
+ * results are merged: that is the only way to get "any of them". Each keyword costs its own search pages, hence the small cap.
+ */
+export const MAX_APEC_KEYWORDS = 5;
+
 export const offerUrl = (id: string): string => `https://www.apec.fr/candidat/recherche-emploi.html/emploi/detail-offre/${id}`;
 
 export interface SearchArgs {
-  keywords: string;
+  /** Any of them matches: each is searched on its own and the results are merged (Apec has no OR). */
+  keywords: readonly string[];
   departments: string[];
   cdi_only: boolean;
   min_salary_k: number | null;
@@ -88,10 +95,11 @@ async function call(
   return answer;
 }
 
-/** Search Apec, newest first, and return up to `max_results` cards (newer than the date range when one is asked). */
-export async function searchOffers(
+/** One keyword's search: newest first, up to `max_results` cards (newer than the date range when one is asked). */
+async function searchKeyword(
   ctx: BrowserAdapterContext,
   args: SearchArgs,
+  keyword: string,
   now = Date.now(),
 ): Promise<{ cards: ApecCard[]; total: number; pages: number; warnings: string[] }> {
   const cutoff =
@@ -106,7 +114,7 @@ export async function searchOffers(
   for (let index = 0; pages < MAX_SEARCH_PAGES && cards.length < wanted; index += PAGE_SIZE) {
     if (pages > 0) await ctx.pace('page');
     const body = {
-      motsCles: args.keywords,
+      motsCles: keyword,
       lieux: args.departments,
       ...(args.cdi_only ? { typesContrat: ['101888'] } : {}),
       ...(args.min_salary_k === null ? {} : { salaireMinimum: String(args.min_salary_k), salaireMaximum: '500' }),
@@ -144,6 +152,34 @@ export async function searchOffers(
   }
   if (cards.length === 0 && total > 0 && cutoff === null) warnings.push('Apec reports results but none could be read.');
   return { cards: cards.slice(0, wanted), total, pages, warnings };
+}
+
+/**
+ * Search Apec for a list of keywords (any of them), newest first: up to `max_results` cards, one search per keyword, an offer found by
+ * several keywords listed once. `total` is the sum of what each keyword reports, so an offer found twice counts twice there.
+ */
+export async function searchOffers(
+  ctx: BrowserAdapterContext,
+  args: SearchArgs,
+  now = Date.now(),
+): Promise<{ cards: ApecCard[]; total: number; pages: number; warnings: string[] }> {
+  const wanted = Math.min(args.max_results, MAX_SEARCH_PAGES * PAGE_SIZE);
+  const seen = new Map<string, ApecCard>();
+  const warnings: string[] = [];
+  let total = 0;
+  let pages = 0;
+  for (const keyword of args.keywords) {
+    const found = await searchKeyword(ctx, args, keyword, now);
+    total += found.total;
+    pages += found.pages;
+    for (const warning of found.warnings) if (!warnings.includes(warning)) warnings.push(warning);
+    for (const card of found.cards) if (!seen.has(card.id)) seen.set(card.id, card);
+  }
+  // newest first across the keywords; an offer with no date goes last
+  const cards = [...seen.values()].sort((a, b) => Date.parse(b.posted_at ?? '') - Date.parse(a.posted_at ?? '') || 0);
+  const dated = cards.filter((card) => card.posted_at !== null);
+  const undated = cards.filter((card) => card.posted_at === null);
+  return { cards: [...dated, ...undated].slice(0, wanted), total, pages, warnings };
 }
 
 /** Read one offer's full text from its public JSON, from the page. */

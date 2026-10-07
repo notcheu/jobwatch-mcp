@@ -54,6 +54,8 @@ export {
   type ControlRequest,
   type ControlResponse,
 } from './control';
+export { HEALTH_MAX_DISCARDED_SHARE, HEALTH_MIN_FOUND, HEALTH_MIN_RUNS_EMPTY, searchHealth } from './dashboard/searchHealth';
+export type { HealthIssue, SearchHealth } from './dashboard/searchHealth';
 export { CallLog, keywordsOf, type CallEntry, type CallQuery } from './dashboard/callLog';
 export { DEFAULT_CHARS_PER_TOKEN, estimateTokens, jobTextChars } from './dashboard/tokens';
 export type { BrowserConnection, ConnectBrowser } from './browser/session';
@@ -88,6 +90,8 @@ export {
   Store,
   StoreError,
   USAGE_RETENTION_MS,
+  keywordsKey,
+  normalizeKeywords,
 } from './store/store';
 export type {
   BreakerReason,
@@ -98,6 +102,9 @@ export type {
   DailyUsageRow,
   NewJobRow,
   StoredJobRow,
+  SearchDetail,
+  SearchDetailJob,
+  SearchStat,
   StoredSalary,
   UsageEvent,
 } from './store/store';

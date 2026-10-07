@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NOW, me, mockApi, renderApp, tools } from './test-utils';
+import { NOW, me, mockApi, renderApp, searchRow, tools } from './test-utils';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -61,6 +61,7 @@ const overview = {
   storedJobs: 321,
   runtimeState: 'cold',
   enabledAdapters: 2,
+  badSearches: { count: 0, items: [] },
 };
 const adapters = {
   adapters: [
@@ -112,9 +113,9 @@ const adapters = {
 };
 const searches = {
   searches: [
-    { source: 'linkedin', query: 'react engineer', runs: 4, lastRun: NOW, jobsFound: 80, jobsReturned: 30, jobsNew: 20 },
-    { source: 'linkedin', query: 'vue', runs: 3, lastRun: NOW, jobsFound: 10, jobsReturned: 0, jobsNew: 0 },
-    { source: 'wttj', query: '', runs: 1, lastRun: NOW, jobsFound: 12, jobsReturned: 12, jobsNew: 12 },
+    searchRow(),
+    searchRow({ keywords: ['vue'], runs: 3, jobsFound: 10, jobsReturned: 0, jobsNew: 0, jobsExcluded: 0 }),
+    searchRow({ source: 'wttj', keywords: [], runs: 1, jobsFound: 12, jobsReturned: 12, jobsNew: 12, jobsExcluded: 0 }),
   ],
 };
 const common = { '/me': me, '/tools': adapters, '/overview': overview, '/searches': searches };
@@ -213,7 +214,7 @@ describe('analytics', () => {
   });
 
   it('points at the keywords that bring new jobs and at the ones that found nothing new', async () => {
-    mockApi({ ...common, '/usage': usage(), '/jobs': { jobs: [], total: 0, page: 1, pageSize: 25 } });
+    mockApi({ ...common, '/usage': usage(), '/searches/linkedin': { ...searchRow(), jobs: [], jobsTruncated: false } });
     renderApp('/analytics');
     const best = await screen.findByLabelText('Best keywords');
     expect(within(best).getByText('20 new of 80')).toBeInTheDocument();
@@ -222,7 +223,7 @@ describe('analytics', () => {
     expect(within(stale).getByText(/3 runs/)).toBeInTheDocument();
     expect(within(stale).getByText('vue', { exact: false })).toBeInTheDocument();
     await userEvent.setup().click(within(best).getByRole('button', { name: /react engineer/ }));
-    expect(await screen.findByLabelText('Found by keyword')).toHaveValue('react engineer');
+    expect(await screen.findByRole('complementary', { name: 'linkedin: react engineer' })).toBeInTheDocument(); // the search, with its health
   });
 
   it('keeps every number marked as an estimate', async () => {

@@ -47,7 +47,8 @@ export const callRowSchema = z
     responseBytes: z.number(),
     estimatedTokens: z.number(),
     warnings: z.number(),
-    keywords: z.string().nullable(),
+    /** The keywords of a search call, one entry each; null when the call is not a search. */
+    keywords: z.array(z.string()).nullable(),
   })
   .strict();
 export type CallRow = z.infer<typeof callRowSchema>;
@@ -88,7 +89,8 @@ export const jobRowSchema = z
     lastSeen: iso,
     descriptionChars: z.number(),
     salary: salarySchema.nullable(),
-    foundBy: z.array(z.string()),
+    /** The searches that listed the job, each as its keyword list (empty list: a search without keywords). */
+    foundBy: z.array(z.object({ keywords: z.array(z.string()) }).strict()),
   })
   .strict();
 export type JobRow = z.infer<typeof jobRowSchema>;
@@ -115,18 +117,58 @@ export type JobDetail = z.infer<typeof jobDetailSchema>;
 
 // ------------------------------------------------------------------------------------------------------ searches
 
+/** How well a search does: `bad` says why (no result at all, or most of what it lists is dropped by disallowed terms or the salary floor). */
+export const searchHealthSchema = z
+  .object({
+    status: z.enum(['good', 'bad']),
+    issues: z.array(z.enum(['no_results', 'mostly_discarded'])),
+    /** Jobs dropped by disallowed terms or the salary floor, as a share of the jobs listed (0 to 1). */
+    discardedShare: z.number(),
+  })
+  .strict();
+export type SearchHealthInfo = z.infer<typeof searchHealthSchema>;
+
 export const searchRowSchema = z
   .object({
     source: z.string(),
-    query: z.string(),
+    /** The keywords of the search, lower case and sorted (any of them matches); empty for a search without keywords. */
+    keywords: z.array(z.string()),
     runs: z.number(),
+    firstRun: iso,
     lastRun: iso,
     jobsFound: z.number(),
     jobsReturned: z.number(),
+    /** Dropped because of a disallowed term or a salary floor. */
+    jobsExcluded: z.number(),
     jobsNew: z.number(),
+    health: searchHealthSchema,
   })
   .strict();
 export type SearchRow = z.infer<typeof searchRowSchema>;
+
+export const searchJobSchema = z
+  .object({
+    id: z.string(),
+    title: z.string().nullable(),
+    company: z.string().nullable(),
+    location: z.string().nullable(),
+    url: z.string().nullable(),
+    lastSeen: iso.nullable(),
+    /** returned: handed back to Claude. excluded: dropped by a disallowed term or the salary floor. other: listed but not returned (a limit, only_new, a filter). */
+    outcome: z.enum(['returned', 'excluded', 'other']),
+    timesListed: z.number(),
+  })
+  .strict();
+export type SearchJob = z.infer<typeof searchJobSchema>;
+
+export const searchDetailSchema = searchRowSchema
+  .extend({
+    jobs: z.array(searchJobSchema),
+    /** True when the list holds only the first jobs of a longer one. */
+    jobsTruncated: z.boolean(),
+  })
+  .strict();
+export type SearchDetailInfo = z.infer<typeof searchDetailSchema>;
 export const searchesSchema = z.object({ searches: z.array(searchRowSchema) }).strict();
 export type Searches = z.infer<typeof searchesSchema>;
 
@@ -286,6 +328,8 @@ export const overviewSchema = z
     storedJobs: z.number(),
     runtimeState: z.string(),
     enabledAdapters: z.number(),
+    /** Searches of the last 7 days in bad health: how many, and the worst ones first. */
+    badSearches: z.object({ count: z.number(), items: z.array(searchRowSchema) }).strict(),
   })
   .strict();
 export type Overview = z.infer<typeof overviewSchema>;

@@ -40,10 +40,10 @@ How did each search keyword do this week? Runs, jobs listed, returned and new, p
 { "since": "2026-10-05", "until": "2026-10-12", "source": "linkedin" }
 ```
 
-The jobs one keyword listed (and, on every job, the keywords that listed it in `found_by`):
+The jobs one search listed (and, on every job, the searches that listed it in `found_by`, each as its list of keywords). A search is its list of keywords, in any order and case:
 
 ```json
-{ "since": "2026-10-05", "found_by": "react", "detail": "none" }
+{ "since": "2026-10-05", "found_by": ["react", "vue"], "detail": "none" }
 ```
 
 The text of chosen stored jobs, batched (up to 25). `part` is `full`, `summary`, `outline` or one section (`role`, `requirements`, `nice_to_have`, `offer`, `about`, `process`, `legal`):

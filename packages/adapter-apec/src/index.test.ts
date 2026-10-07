@@ -308,12 +308,46 @@ describe('apec_job', () => {
   });
 });
 
+describe('apec_search with several keywords', () => {
+  const sent = (calls: Behaviour['calls']): string[] =>
+    (calls ?? []).filter((x) => x.kind === 'search').map((x) => String((x.arg as { body: { motsCles: string } }).body.motsCles));
+
+  it('searches each keyword on its own (Apec has no OR), once each, and lists an offer found twice once', async () => {
+    const calls: Behaviour['calls'] = [];
+    const result = await runSearch(context({ calls }).ctx, { keywords: ['react', 'vue'] });
+    expect(sent(calls)).toEqual(['react', 'vue']);
+    const ids = out(result).cards.map((card) => card.id);
+    expect(new Set(ids).size).toBe(ids.length); // the same four offers came back for both keywords
+    expect(out(result)).toMatchObject({ scanned: ids.length, pages_loaded: 2 });
+  });
+
+  it('splits one string with a pipe into the list, and keeps a single keyword as it was', async () => {
+    const calls: Behaviour['calls'] = [];
+    await runSearch(context({ calls }).ctx, { keywords: 'react | vue |  react' });
+    expect(sent(calls)).toEqual(['react', 'vue']); // split, trimmed, no duplicate
+    const one: Behaviour['calls'] = [];
+    await runSearch(context({ calls: one }).ctx, { keywords: 'développeur react' });
+    expect(sent(one)).toEqual(['développeur react']); // a phrase without the separator is one keyword
+  });
+
+  it('records the list, in the order given, and reserves the search pages of every keyword', () => {
+    const args = search.input.parse({ keywords: ['a', 'b', 'c'], max_results: 40 });
+    expect(args.keywords).toEqual(['a', 'b', 'c']);
+    expect(search.limits.estimate?.(args)).toBe(1 + 2 * 3 + 40); // the page, 2 pages for each of 3 keywords, and the offers it may read
+  });
+
+  it('refuses more than five keywords: each is a search of its own', () => {
+    expect(search.input.safeParse({ keywords: ['a', 'b', 'c', 'd', 'e'] }).success).toBe(true);
+    expect(search.input.safeParse({ keywords: ['a', 'b', 'c', 'd', 'e', 'f'] }).success).toBe(false);
+  });
+});
+
 describe('apec_search (read)', () => {
   it('records the keywords and the offers the search listed', async () => {
     const c = context();
     await runRead(c.ctx, { keywords: 'react engineer' });
     expect(c.jobs.searches).toHaveLength(1);
-    expect(c.jobs.searches[0]?.query).toBe('react engineer');
+    expect(c.jobs.searches[0]?.keywords).toEqual(['react engineer']);
     expect(c.jobs.searches[0]?.found.length).toBeGreaterThan(0);
   });
 

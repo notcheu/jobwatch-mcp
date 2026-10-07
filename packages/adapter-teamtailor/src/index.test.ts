@@ -138,18 +138,40 @@ describe('resolving a board', () => {
   });
 });
 
+describe('title_any as keywords', () => {
+  it('records as found the postings that matched the keywords, and as excluded the ones a disallowed term dropped from them', async () => {
+    const c = context();
+    await run(c.ctx, { title_any: ['engineer'], disallowed_terms: ['java'] });
+    const [search] = c.jobs.searches;
+    // the board lists more postings than match "engineer": only the matching ones were found by this search
+    expect(search?.found.length).toBeGreaterThan(0);
+    expect(search?.found.length).toBeLessThan(Object.keys(acme.items).length);
+    expect(search?.excluded.length).toBeGreaterThan(0);
+    for (const id of search?.excluded ?? []) expect(search?.found).toContain(id); // what was dropped was first matched
+    for (const id of search?.returned ?? []) expect(search?.excluded).not.toContain(id);
+  });
+
+  it('is a list, any of them matching, and a string with a pipe is split into it before it is stored', async () => {
+    const c = context();
+    await run(c.ctx, { title_any: 'front | react |  FRONT' });
+    expect(c.jobs.searches[0]?.keywords).toEqual(['front', 'react']);
+    expect(tool.input.parse({ boards: ['acme'], title_any: ['front | back', 'react'] }).title_any).toEqual(['front', 'back', 'react']);
+    expect(tool.input.parse({ boards: ['acme'] }).title_any).toEqual([]);
+  });
+});
+
 describe('teamtailor_jobs', () => {
   it('records the title words as the search and every posting of the board as listed', async () => {
     const c = context();
     const result = await run(c.ctx, { title_any: ['front', 'react'] });
     const [search] = c.jobs.searches;
     expect(c.jobs.searches).toHaveLength(1);
-    expect(search?.query).toBe('front | react');
+    expect(search?.keywords).toEqual(['front', 'react']);
     expect(search?.found.length).toBeGreaterThanOrEqual(search?.returned.length ?? 0);
     expect([...(search?.returned ?? [])].sort()).toEqual(result.data.jobs.map((j) => j.id).sort());
     const none = context();
     await run(none.ctx, {});
-    expect(none.jobs.searches[0]?.query).toBe('');
+    expect(none.jobs.searches[0]?.keywords).toEqual([]);
   });
 
   it('reads a feed, stores every job whose title passes, and reports the board', async () => {

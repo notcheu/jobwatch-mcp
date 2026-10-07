@@ -5,13 +5,14 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { useNavigate } from 'react-router';
 import { StatCard } from '@/components/StatCard';
 import { usePlatform } from '@/components/Shell';
+import { KeywordBadges } from '@/components/KeywordBadges';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api } from '@/lib/api';
-import { ago, bytes, compact, duration } from '@/lib/format';
+import { ago, bytes, compact, duration, searchDetailLink } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 type Scope = 'session' | 'lifetime' | 'historical';
@@ -457,12 +458,11 @@ function SearchEffectiveness({ platform }: { platform: string | undefined }) {
     queryKey: ['searches', platform, 7],
     queryFn: () => api.searches({ since, ...(platform === undefined ? {} : { source: platform }) }),
   });
-  const rows = (searches.data?.searches ?? []).filter((row) => row.query !== '');
+  const rows = (searches.data?.searches ?? []).filter((row) => row.keywords.length > 0);
   if (rows.length === 0) return null;
   const best = [...rows].sort((a, b) => b.jobsNew - a.jobsNew).slice(0, 5);
   const stale = rows.filter((row) => row.jobsNew === 0 && row.runs >= 2);
-  const open = (source: string, query: string): void =>
-    void navigate({ pathname: '/jobs', search: `?found_by=${encodeURIComponent(query)}&tool=${encodeURIComponent(source)}` });
+  const open = (source: string, keywords: readonly string[]): void => void navigate(searchDetailLink(source, keywords));
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card aria-label="Best keywords">
@@ -472,12 +472,13 @@ function SearchEffectiveness({ platform }: { platform: string | undefined }) {
         <CardContent className="space-y-1">
           {best.map((row) => (
             <button
-              key={`${row.source}|${row.query}`}
+              key={`${row.source}|${row.keywords.join('\u0000')}`}
               className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left text-sm hover:bg-accent"
-              onClick={() => open(row.source, row.query)}
+              onClick={() => open(row.source, row.keywords)}
             >
-              <span className="truncate">
-                {row.query} <Badge variant="secondary">{row.source}</Badge>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <KeywordBadges keywords={row.keywords} />
+                <Badge variant="secondary">{row.source}</Badge>
               </span>
               <span className="shrink-0 tabular-nums text-muted-foreground">
                 {row.jobsNew} new of {row.jobsFound}
@@ -495,9 +496,10 @@ function SearchEffectiveness({ platform }: { platform: string | undefined }) {
             <p className="text-muted-foreground">Every keyword brought something new.</p>
           ) : (
             stale.map((row) => (
-              <div key={`${row.source}|${row.query}`} className="flex items-center justify-between gap-2">
-                <span className="truncate">
-                  {row.query} <Badge variant="secondary">{row.source}</Badge>
+              <div key={`${row.source}|${row.keywords.join('\u0000')}`} className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <KeywordBadges keywords={row.keywords} />
+                  <Badge variant="secondary">{row.source}</Badge>
                 </span>
                 <span className="shrink-0 text-muted-foreground">
                   {row.runs} runs · last {ago(row.lastRun)}

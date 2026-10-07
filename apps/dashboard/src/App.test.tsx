@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api, navigation } from '@/lib/api';
-import { NOW, callRow, me, mockApi, renderApp, tools } from './test-utils';
+import { NOW, badSearchRow, callRow, me, mockApi, renderApp, tools } from './test-utils';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -16,6 +16,7 @@ const overview = {
   storedJobs: 321,
   runtimeState: 'idle_grace',
   enabledAdapters: 3,
+  badSearches: { count: 0, items: [] },
 };
 
 describe('the shell', () => {
@@ -66,6 +67,47 @@ describe('overview', () => {
     expect(screen.getByText('idle_grace')).toBeInTheDocument();
     expect(screen.getByText('2 h 1 min')).toBeInTheDocument();
   });
+
+  it('has a card for the searches in bad health, and says so when there are none', async () => {
+    mockApi({ '/me': me, '/tools': tools, '/overview': overview });
+    renderApp('/');
+    const card = await screen.findByLabelText('Searches in bad health');
+    expect(within(card).getByText('Every search brought jobs in and kept most of them.')).toBeInTheDocument();
+  });
+
+  it('lists the searches in bad health with a link to each one, and how many more there are', async () => {
+    const bad = badSearchRow();
+    mockApi({
+      '/me': me,
+      '/tools': tools,
+      '/overview': {
+        ...overview,
+        badSearches: {
+          count: 3,
+          items: [
+            bad,
+            badSearchRow({
+              source: 'apec',
+              keywords: ['ghost', 'spectre'],
+              jobsFound: 0,
+              health: { status: 'bad', issues: ['no_results'], discardedShare: 0 },
+            }),
+          ],
+        },
+      },
+    });
+    renderApp('/');
+    const card = await screen.findByLabelText('Searches in bad health');
+    expect(within(card).getByText('intern')).toBeInTheDocument();
+    expect(within(card).getByText('90% discarded')).toBeInTheDocument();
+    expect(within(card).getByText('9 of 10 discarded')).toBeInTheDocument();
+    expect(within(card).getByText('no results')).toBeInTheDocument();
+    expect(within(card).getByText('ghost')).toBeInTheDocument(); // one badge per keyword
+    expect(within(card).getByText('spectre')).toBeInTheDocument();
+    expect(within(card).getByText('and 1 more')).toBeInTheDocument();
+    const link = within(card).getByRole('link', { name: /intern/ });
+    expect(new URL(link.getAttribute('href') ?? '', 'http://x').pathname).toBe('/searches/linkedin');
+  });
 });
 
 /** The element at a position, or a failure that names it (no `!`). */
@@ -85,7 +127,7 @@ describe('runs', () => {
   const calls = {
     calls: [
       callRow({ id: 3, state: 'running', code: null, durationMs: null, tool: 'apec_search', platform: 'apec', keywords: null }),
-      callRow({ id: 2, code: 'rate_limited', tool: 'linkedin_search', keywords: 'vue' }),
+      callRow({ id: 2, code: 'rate_limited', tool: 'linkedin_search', keywords: ['vue'] }),
       callRow({ id: 1 }),
     ],
     total: 3,
@@ -169,12 +211,12 @@ describe('runs', () => {
     mockApi({
       '/me': me,
       '/tools': tools,
-      '/calls': { calls: [callRow({ id: 1, keywords: hostile })], total: 1, next: null },
+      '/calls': { calls: [callRow({ id: 1, keywords: [hostile] })], total: 1, next: null },
       '/calls/1': {
-        ...callRow({ id: 1, keywords: hostile }),
+        ...callRow({ id: 1, keywords: [hostile] }),
         adapter: 'linkedin',
         argsHash: null,
-        params: { keywords: hostile },
+        params: { keywords: [hostile] },
         paramsTruncated: false,
         paramsDropped: false,
         jobText: null,

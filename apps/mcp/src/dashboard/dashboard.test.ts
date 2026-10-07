@@ -129,7 +129,11 @@ function seededStore(): Store {
   store.putJob('linkedin', job('1000001', 'Frontend Engineer'), NOW - 3 * DAY);
   store.putJob('linkedin', job('1000002', 'Backend Engineer'), NOW - 2 * DAY);
   store.putJob('teamtailor', job('2000001', 'VP Engineering', 'bsport'), NOW - DAY);
-  store.recordSearch('linkedin', { query: 'react', found: ['1000001', '1000002'], returned: ['1000001'] }, NOW - 3 * DAY);
+  store.recordSearch(
+    'linkedin',
+    { keywords: ['react'], found: ['1000001', '1000002'], returned: ['1000001'], excluded: [] },
+    NOW - 3 * DAY,
+  );
   return store;
 }
 
@@ -277,10 +281,10 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(page.calls.map((c: any) => c.requestId)).toEqual(['live', 'r3']);
     expect(page.next).not.toBeNull();
     expect(JSON.stringify(page)).not.toContain('skip_ids');
-    expect(page.calls[1]).toMatchObject({ keywords: 'vue', code: 'rate_limited', estimatedTokens: 570 });
+    expect(page.calls[1]).toMatchObject({ keywords: ['vue'], code: 'rate_limited', estimatedTokens: 570 });
     const filtered = await json(await t.call('/dashboard/api/v1/calls?tool=teamtailor_jobs'));
     expect(filtered.calls.map((c: any) => c.requestId)).toEqual(['r2']);
-    expect(filtered.calls[0].keywords).toBe('vp');
+    expect(filtered.calls[0].keywords).toEqual(['vp']);
     const running = await json(await t.call('/dashboard/api/v1/calls?code=running'));
     expect(running.calls.map((c: any) => c.requestId)).toEqual(['live']);
   });
@@ -302,10 +306,12 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(all.total).toBe(3);
     expect(all.jobs.map((j: any) => j.id)).toEqual(['2000001', '1000002', '1000001']);
     expect(JSON.stringify(all)).not.toContain('What you');
-    expect(all.jobs.find((j: any) => j.id === '1000001').foundBy).toEqual(['react']);
+    expect(all.jobs.find((j: any) => j.id === '1000001').foundBy).toEqual([{ keywords: ['react'] }]);
     expect((await json(await t.call('/dashboard/api/v1/jobs?source=teamtailor'))).jobs.map((j: any) => j.id)).toEqual(['2000001']);
     expect((await json(await t.call('/dashboard/api/v1/jobs?q=backend'))).jobs.map((j: any) => j.id)).toEqual(['1000002']);
     expect((await json(await t.call('/dashboard/api/v1/jobs?found_by=REACT'))).total).toBe(2);
+    expect((await json(await t.call('/dashboard/api/v1/jobs?found_by=react&found_by=vue'))).total).toBe(0); // the whole list is the search
+    expect((await json(await t.call('/dashboard/api/v1/jobs?no_keywords=1'))).total).toBe(0);
     expect((await json(await t.call('/dashboard/api/v1/jobs?sort=title&dir=asc'))).jobs.map((j: any) => j.title)).toEqual([
       'Backend Engineer',
       'Frontend Engineer',
@@ -317,6 +323,51 @@ describe('the API in local development mode (no sign-in)', () => {
     expect((await t.call('/dashboard/api/v1/jobs?sort=password')).status).toBe(400);
   });
 
+  it('gives one search with its health, its counts and its jobs, and a 404 for a search that did not run', async () => {
+    const t = await build();
+    t.deps.store.recordSearch(
+      'linkedin',
+      {
+        keywords: ['staff', 'principal'],
+        found: ['1000001', '1000002', '9000001', '9000002', '9000003', '9000004'],
+        returned: ['1000001'],
+        excluded: ['1000002', '9000001', '9000002', '9000003', '9000004'],
+      },
+      NOW - DAY,
+    );
+    const detail = await json(await t.call('/dashboard/api/v1/searches/linkedin?keywords=Principal&keywords=staff&since=2026-10-01'));
+    expect(detail).toMatchObject({
+      source: 'linkedin',
+      keywords: ['principal', 'staff'],
+      runs: 1,
+      jobsFound: 6,
+      jobsReturned: 1,
+      jobsExcluded: 5,
+      health: { status: 'bad', issues: ['mostly_discarded'] },
+      jobsTruncated: false,
+    });
+    expect(detail.jobs[0]).toMatchObject({ id: '1000001', outcome: 'returned', title: 'Frontend Engineer' });
+    expect(detail.jobs.find((j: any) => j.id === '1000002')).toMatchObject({ outcome: 'excluded', title: 'Backend Engineer' });
+    expect(detail.jobs.find((j: any) => j.id === '9000001')).toMatchObject({ outcome: 'excluded', title: null, url: null }); // text evicted
+    expect((await t.call('/dashboard/api/v1/searches/linkedin?keywords=nothing')).status).toBe(404);
+    expect((await t.call('/dashboard/api/v1/searches/Bad%20Source?keywords=x')).status).toBe(404);
+  });
+
+  it('puts the searches in bad health on the overview: nothing found at all, or most of it discarded', async () => {
+    const t = await build();
+    expect((await json(await t.call('/dashboard/api/v1/overview'))).badSearches).toEqual({ count: 0, items: [] });
+    const found = Array.from({ length: 6 }, (_unused, i) => `5${i}`);
+    t.deps.store.recordSearch('linkedin', { keywords: ['intern'], found, returned: [], excluded: found }, NOW - DAY);
+    t.deps.store.recordSearch('apec', { keywords: ['ghost'], found: [], returned: [], excluded: [] }, NOW - 2 * DAY);
+    t.deps.store.recordSearch('apec', { keywords: ['ghost'], found: [], returned: [], excluded: [] }, NOW - DAY);
+    const { badSearches } = await json(await t.call('/dashboard/api/v1/overview'));
+    expect(badSearches.count).toBe(2);
+    expect(badSearches.items.map((row: any) => [row.keywords, row.health.issues])).toEqual([
+      [['intern'], ['mostly_discarded']],
+      [['ghost'], ['no_results']],
+    ]);
+  });
+
   it('gives one job in full, with sections and hints, and a 404 otherwise', async () => {
     const t = await build();
     const job = await json(await t.call('/dashboard/api/v1/jobs/linkedin/1000001'));
@@ -324,7 +375,7 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(job.outline.length).toBeGreaterThan(0);
     expect(job.hints).toMatchObject({ years: [5] });
     expect(job.hints.stack).toBeUndefined(); // no technology list is built in
-    expect(job.foundBy).toEqual(['react']);
+    expect(job.foundBy).toEqual([{ keywords: ['react'] }]);
     expect((await t.call('/dashboard/api/v1/jobs/linkedin/9999999')).status).toBe(404);
     expect((await t.call('/dashboard/api/v1/jobs/Bad%20Source/1')).status).toBe(404);
   });
@@ -335,12 +386,15 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(searches.searches).toEqual([
       {
         source: 'linkedin',
-        query: 'react',
+        keywords: ['react'],
         runs: 1,
+        firstRun: new Date(NOW - 3 * DAY).toISOString(),
         lastRun: new Date(NOW - 3 * DAY).toISOString(),
         jobsFound: 2,
         jobsReturned: 1,
+        jobsExcluded: 0,
         jobsNew: 2,
+        health: { status: 'good', issues: [], discardedShare: 0 },
       },
     ]);
     const tools = await json(await t.call('/dashboard/api/v1/tools'));

@@ -1,3 +1,4 @@
+import { ANY_SEPARATOR, splitKeywords } from '@jobwatch/sdk';
 import type { CallDetail, CallStart, ToolOutcome } from '../call';
 
 /** One call as the dashboard shows it. Lives in memory only and is gone when the router restarts. */
@@ -19,8 +20,8 @@ export interface CallEntry {
   responseBytes: number;
   estimatedTokens: number;
   warnings: number;
-  /** The search keywords, when the tool is a search (the `keywords` argument, or the `title_any` words joined with " | "). */
-  keywords: string | null;
+  /** The search keywords as a list, when the tool is a search (the `keywords` or `title_any` argument; a string with OR or a pipe is split). */
+  keywords: string[] | null;
   /** The validated arguments of the call (docs/plans/17-dashboard.md, D9). Only the detail view returns them. */
   params: Record<string, unknown> | null;
   paramsTruncated: boolean;
@@ -39,14 +40,16 @@ export interface CallQuery {
 }
 
 /** The search keywords of a call from its parameters, or null. */
-export function keywordsOf(params: Record<string, unknown> | null): string | null {
+export function keywordsOf(params: Record<string, unknown> | null): string[] | null {
   if (params === null) return null;
-  const keywords = params['keywords'];
-  if (typeof keywords === 'string' && keywords.trim() !== '') return keywords.trim().slice(0, 200);
-  const words = params['title_any'];
-  if (Array.isArray(words) && words.length > 0) {
-    const joined = words.filter((word): word is string => typeof word === 'string').join(' | ');
-    return joined === '' ? null : joined.slice(0, 200);
+  for (const name of ['keywords', 'title_any']) {
+    const value = params[name];
+    const entries =
+      typeof value === 'string' ? [value] : Array.isArray(value) ? value.filter((word): word is string => typeof word === 'string') : [];
+    const list = splitKeywords(entries, ANY_SEPARATOR)
+      .map((keyword) => keyword.slice(0, 100))
+      .slice(0, 20);
+    if (list.length > 0) return list;
   }
   return null;
 }

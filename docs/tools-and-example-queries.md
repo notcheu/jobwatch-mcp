@@ -2,6 +2,8 @@
 
 Every example is the argument object Claude sends to the tool. The text of a job is returned as a short `summary` by default; ask for `detail: "full"` only when you need the whole description, or read chosen jobs later with `stored_job_texts`.
 
+**Keywords are a list, and any of them matches (OR, never AND).** `keywords` (LinkedIn, Apec) and `title_any` (the company-board tools) take a list, or one string with the platform's separator between the keywords (an upper-case `OR` for LinkedIn, a pipe `|` for Apec and the company boards): `"react OR vue"` and `["react", "vue"]` are the same search. Duplicates are dropped, and the list is what the dashboard shows, one badge per keyword. Apec has no OR of its own, so each of its keywords is a search of its own, merged (at most 5).
+
 **Arguments shared by the search and board tools.** `max_results` is the most results examined and returned. `detail` is `summary`, `full` or `none`, and `description_max_chars` caps the text. `disallowed_terms` drops jobs whose title (and, with `disallowed_scope: "title_then_description"`, whose description) contains one of the words. `min_salary` with `salary_currency` (an ISO code) drops jobs whose text states a yearly salary below the floor in that currency; jobs that state none, or in another currency, are kept (`LinkedIn`, `WTTJ` and the company-board tools). `posted_within` is `last_24_hours`, `past_week`, `past_month` or `any`. A call that ends with a non-empty `remaining_ids` is continued by calling it again with the same arguments.
 
 <details>
@@ -11,7 +13,7 @@ Search the last 24 hours in Paris and read the jobs that are new and acceptable:
 
 ```json
 {
-  "keywords": "senior frontend engineer",
+  "keywords": ["senior frontend engineer"],
   "geo": "Paris, France",
   "posted_within": "last_24_hours",
   "max_results": 50,
@@ -23,13 +25,13 @@ Search the last 24 hours in Paris and read the jobs that are new and acceptable:
 List the result cards only (no job page is opened, so it is cheap); cards come back in `cards` with a `known` flag:
 
 ```json
-{ "keywords": "staff engineer", "geo": "France", "remote_only": true, "max_results": 50, "max_jobs": 0 }
+{ "keywords": ["staff engineer"], "geo": "France", "remote_only": true, "max_results": 50, "max_jobs": 0 }
 ```
 
 Skip jobs you already reported, and keep the full text:
 
 ```json
-{ "keywords": "typescript", "skip_ids": ["4000000001", "4000000002"], "detail": "full", "description_max_chars": 6000 }
+{ "keywords": ["typescript"], "skip_ids": ["4000000001", "4000000002"], "detail": "full", "description_max_chars": 6000 }
 ```
 
 Find the geoId of a place, and remember a name for it (`linkedin_locations`, from the `linkedin-geo` utility):
@@ -62,7 +64,7 @@ Read specific jobs by id (up to 25; stored ones come from the database with no v
 
 ```json
 {
-  "keywords": "développeur react",
+  "keywords": ["développeur react"],
   "departments": ["75", "92"],
   "cdi_only": true,
   "min_salary_k": 55,
@@ -74,7 +76,7 @@ Read specific jobs by id (up to 25; stored ones come from the database with no v
 Cards only:
 
 ```json
-{ "keywords": "lead developer", "max_jobs": 0, "max_results": 60 }
+{ "keywords": ["lead developer"], "max_jobs": 0, "max_results": 60 }
 ```
 
 Read offers by number:

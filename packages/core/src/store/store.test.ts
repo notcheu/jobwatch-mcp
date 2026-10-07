@@ -276,15 +276,15 @@ describe('jobs', () => {
     store.putJob('ashby', job('4000000001'), 1000);
     store.putJob('ashby', job('4000000002'), 1000);
     store.putJob('lever', job('4000000001'), 1000);
-    store.recordSearch('ashby', { query: 'dev', found: ['4000000001', '4000000002'], returned: ['4000000001'] }, 1000);
-    store.recordSearch('lever', { query: 'dev', found: ['4000000001'], returned: ['4000000001'] }, 1000);
+    store.recordSearch('ashby', { keywords: ['dev'], found: ['4000000001', '4000000002'], returned: ['4000000001'], excluded: [] }, 1000);
+    store.recordSearch('lever', { keywords: ['dev'], found: ['4000000001'], returned: ['4000000001'], excluded: [] }, 1000);
     store.addUsage('ashby', 1000, 1);
     expect(store.clearPlatform('ashby')).toEqual({ jobs: 2, searches: 1 });
     expect(store.countJobs('ashby')).toBe(0);
     expect(store.countJobs('lever')).toBe(1);
     expect(store.searchStats({ since: 0, until: 2000, limit: 10 }).map((row) => row.platform)).toEqual(['lever']);
     expect(store.foundBy('ashby', ['4000000001']).size).toBe(0);
-    expect(store.foundBy('lever', ['4000000001']).get('4000000001')).toEqual(['dev']);
+    expect(store.foundBy('lever', ['4000000001']).get('4000000001')).toEqual([['dev']]);
     expect(store.usageSince('ashby', 0)).toHaveLength(1); // a budget is not job data
     expect(store.clearPlatform('ashby')).toEqual({ jobs: 0, searches: 0 });
     store.close();
@@ -415,41 +415,61 @@ describe('search history', () => {
   afterEach(() => store.close());
 
   it('counts, per keyword, the runs and the distinct jobs listed, returned and first stored in the window', () => {
-    store.recordSearch('linkedin', { query: 'React  Engineer', found: ['a1', 'a2', 'a3'], returned: ['a1', 'a2'] }, T0);
-    store.recordSearch('linkedin', { query: 'react engineer', found: ['a1', 'a4'], returned: ['a1'] }, T0 + DAY);
-    store.recordSearch('linkedin', { query: 'vue', found: ['a9'], returned: [] }, T0 + DAY);
+    store.recordSearch('linkedin', { keywords: ['React Engineer'], found: ['a1', 'a2', 'a3'], returned: ['a1', 'a2'], excluded: [] }, T0);
+    store.recordSearch('linkedin', { keywords: ['react engineer'], found: ['a1', 'a4'], returned: ['a1'], excluded: [] }, T0 + DAY);
+    store.recordSearch('linkedin', { keywords: ['vue'], found: ['a9'], returned: [], excluded: [] }, T0 + DAY);
     const stats = store.searchStats({ since: T0, until: T0 + 3 * DAY, limit: 10 });
     expect(stats).toEqual([
-      { platform: 'linkedin', query: 'react engineer', runs: 2, lastRun: T0 + DAY, jobsFound: 4, jobsReturned: 2, jobsNew: 2 },
-      { platform: 'linkedin', query: 'vue', runs: 1, lastRun: T0 + DAY, jobsFound: 1, jobsReturned: 0, jobsNew: 0 },
+      {
+        platform: 'linkedin',
+        keywords: ['react engineer'],
+        runs: 2,
+        firstRun: T0,
+        lastRun: T0 + DAY,
+        jobsFound: 4,
+        jobsReturned: 2,
+        jobsExcluded: 0,
+        jobsNew: 2,
+      },
+      {
+        platform: 'linkedin',
+        keywords: ['vue'],
+        runs: 1,
+        firstRun: T0 + DAY,
+        lastRun: T0 + DAY,
+        jobsFound: 1,
+        jobsReturned: 0,
+        jobsExcluded: 0,
+        jobsNew: 0,
+      },
     ]);
   });
 
   it('leaves runs outside the window and other platforms out, and a new job is one first stored inside the window', () => {
-    store.recordSearch('linkedin', { query: 'x', found: ['a1'], returned: ['a1'] }, T0 - DAY);
-    store.recordSearch('apec', { query: 'x', found: ['a1'], returned: ['a1'] }, T0);
+    store.recordSearch('linkedin', { keywords: ['x'], found: ['a1'], returned: ['a1'], excluded: [] }, T0 - DAY);
+    store.recordSearch('apec', { keywords: ['x'], found: ['a1'], returned: ['a1'], excluded: [] }, T0);
     expect(store.searchStats({ since: T0, until: T0 + DAY, limit: 10 }).map((s) => s.platform)).toEqual(['apec']);
     expect(store.searchStats({ since: T0, until: T0 + DAY, platform: 'linkedin', limit: 10 })).toEqual([]);
-    store.recordSearch('linkedin', { query: 'x', found: ['a2'], returned: ['a2'] }, T0 + 2 * DAY);
+    store.recordSearch('linkedin', { keywords: ['x'], found: ['a2'], returned: ['a2'], excluded: [] }, T0 + 2 * DAY);
     expect(store.searchStats({ since: T0 + 2 * DAY, until: T0 + 3 * DAY, limit: 10 })[0]?.jobsNew).toBe(0); // a2 was first stored a day earlier
   });
 
   it('keeps at most 1000 ids per run, the returned ones first', () => {
     const ids = Array.from({ length: 1500 }, (_, i) => `j${i}`);
-    store.recordSearch('teamtailor', { query: '', found: ids, returned: ['j1400'] }, T0);
+    store.recordSearch('teamtailor', { keywords: [], found: ids, returned: ['j1400'], excluded: [] }, T0);
     const [stat] = store.searchStats({ since: T0, until: T0 + DAY, limit: 5 });
     expect(stat).toMatchObject({ runs: 1, jobsFound: 1000, jobsReturned: 1 });
-    expect(store.foundBy('teamtailor', ['j1400'])).toEqual(new Map()); // empty keywords are not reported
+    expect(store.foundBy('teamtailor', ['j1400'])).toEqual(new Map([['j1400', [[]]]])); // a search without keywords is a search too
   });
 
   it('says which keywords listed a job, and lists the jobs of a keyword', () => {
-    store.recordSearch('linkedin', { query: 'react', found: ['a1', 'a2'], returned: ['a1'] }, T0);
-    store.recordSearch('linkedin', { query: 'REACT', found: ['a1'], returned: ['a1'] }, T0 + DAY);
-    store.recordSearch('linkedin', { query: 'vue', found: ['a1'], returned: [] }, T0 + DAY);
+    store.recordSearch('linkedin', { keywords: ['react'], found: ['a1', 'a2'], returned: ['a1'], excluded: [] }, T0);
+    store.recordSearch('linkedin', { keywords: ['REACT'], found: ['a1'], returned: ['a1'], excluded: [] }, T0 + DAY);
+    store.recordSearch('linkedin', { keywords: ['vue'], found: ['a1'], returned: [], excluded: [] }, T0 + DAY);
     expect(store.foundBy('linkedin', ['a1', 'a2', 'zz'])).toEqual(
       new Map([
-        ['a1', ['react', 'vue']],
-        ['a2', ['react']],
+        ['a1', [['react'], ['vue']]],
+        ['a2', [['react']]],
       ]),
     );
     const listed = store.listJobs({
@@ -458,7 +478,7 @@ describe('search history', () => {
       until: T0 + 10 * DAY,
       sources: [],
       boards: [],
-      search: 'Vue',
+      search: ['Vue'],
       limit: 10,
       withDescription: false,
     });
@@ -491,10 +511,10 @@ describe('search history', () => {
 
   it('is evicted with the jobs after the retention', () => {
     const short = Store.open(':memory:', { jobRetentionDays: 1 });
-    short.recordSearch('linkedin', { query: 'old', found: ['a1'], returned: ['a1'] }, T0);
-    short.recordSearch('linkedin', { query: 'new', found: ['a1'], returned: ['a1'] }, T0 + 5 * DAY);
+    short.recordSearch('linkedin', { keywords: ['old'], found: ['a1'], returned: ['a1'], excluded: [] }, T0);
+    short.recordSearch('linkedin', { keywords: ['new'], found: ['a1'], returned: ['a1'], excluded: [] }, T0 + 5 * DAY);
     short.prune(T0 + 5 * DAY + 1000);
-    expect(short.searchStats({ since: 0, until: T0 + 10 * DAY, limit: 10 }).map((s) => s.query)).toEqual(['new']);
+    expect(short.searchStats({ since: 0, until: T0 + 10 * DAY, limit: 10 }).map((s) => s.keywords)).toEqual([['new']]);
     short.close();
   });
 });
@@ -640,7 +660,7 @@ describe('salary columns', () => {
       const raw = new DatabaseSync(path);
       // put the file back as a version 6 database: no salary columns, no adapter memory
       raw.exec(
-        'DROP TABLE platform_memory; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
+        'DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -694,5 +714,112 @@ describe('adapter memory', () => {
     expect(keys).toHaveLength(MAX_MEMORY_ENTRIES);
     expect(keys[0]).toBe('k:0005');
     expect(store.getMemory('k:0000')).toBeNull();
+  });
+});
+
+describe('searches as keyword lists', () => {
+  const T0 = Date.UTC(2026, 9, 1, 12);
+  const DAY = 86_400_000;
+  let store: Store;
+  const job = (id: string, title: string): NewJobRow => ({
+    id,
+    title,
+    company: 'Acme',
+    location: 'Remote',
+    url: `https://x.test/${id}`,
+    description: 'D',
+  });
+  beforeEach(() => {
+    store = Store.open(':memory:');
+    for (const [id, title] of [
+      ['a1', 'React dev'],
+      ['a2', 'Vue dev'],
+      ['a3', 'Intern'],
+    ] as const)
+      store.putJob('linkedin', job(id, title), T0);
+  });
+  afterEach(() => store.close());
+
+  it('keeps the list in the order it was given and counts two orderings or casings of it as one search', () => {
+    store.recordSearch('linkedin', { keywords: ['Vue', 'React'], found: ['a1'], returned: ['a1'], excluded: [] }, T0);
+    store.recordSearch('linkedin', { keywords: ['react', ' vue ', 'REACT'], found: ['a2'], returned: ['a2'], excluded: [] }, T0 + DAY);
+    const stats = store.searchStats({ since: T0, until: T0 + 3 * DAY, limit: 10 });
+    expect(stats).toHaveLength(1);
+    expect(stats[0]).toMatchObject({ keywords: ['react', 'vue'], runs: 2, jobsFound: 2 });
+    expect(store.foundBy('linkedin', ['a1']).get('a1')).toEqual([['react', 'vue']]);
+  });
+
+  it('counts the jobs a search excluded apart from the ones it returned', () => {
+    store.recordSearch('linkedin', { keywords: ['dev'], found: ['a1', 'a2', 'a3'], returned: ['a1'], excluded: ['a3'] }, T0);
+    expect(store.searchStats({ since: T0, until: T0 + DAY, limit: 10 })[0]).toMatchObject({
+      jobsFound: 3,
+      jobsReturned: 1,
+      jobsExcluded: 1,
+    });
+  });
+
+  it('gives the detail of one search: the counts and its jobs, returned first, then discarded, then the others', () => {
+    store.recordSearch('linkedin', { keywords: ['dev'], found: ['a3', 'a2', 'a1'], returned: ['a1'], excluded: ['a3'] }, T0);
+    const detail = store.searchDetail('linkedin', ['DEV'], { limit: 10 });
+    expect(detail).toMatchObject({ keywords: ['dev'], runs: 1, jobsFound: 3, jobsReturned: 1, jobsExcluded: 1 });
+    expect(detail?.jobs.map((entry) => [entry.id, entry.outcome, entry.title])).toEqual([
+      ['a1', 'returned', 'React dev'],
+      ['a3', 'excluded', 'Intern'],
+      ['a2', 'other', 'Vue dev'],
+    ]);
+    expect(store.searchDetail('linkedin', ['dev'], { limit: 2 })?.jobs).toHaveLength(2);
+    expect(store.searchDetail('linkedin', ['nothing'], { limit: 10 })).toBeNull();
+    expect(store.searchDetail('apec', ['dev'], { limit: 10 })).toBeNull();
+    expect(store.searchDetail('linkedin', ['dev'], { limit: 10, since: T0 + DAY })).toBeNull(); // outside the window
+  });
+
+  it('keeps a job in the list after its text was evicted, with no title', () => {
+    store.recordSearch('linkedin', { keywords: ['dev'], found: ['gone1'], returned: [], excluded: [] }, T0);
+    expect(store.searchDetail('linkedin', ['dev'], { limit: 10 })?.jobs).toEqual([
+      { id: 'gone1', title: null, company: null, location: null, url: null, lastSeen: null, outcome: 'other', timesListed: 1 },
+    ]);
+  });
+
+  it('is a search of its own without keywords, and filters the jobs by the exact list', () => {
+    store.recordSearch('linkedin', { keywords: [], found: ['a1'], returned: ['a1'], excluded: [] }, T0);
+    store.recordSearch('linkedin', { keywords: ['react', 'vue'], found: ['a2', 'a3'], returned: ['a2'], excluded: ['a3'] }, T0);
+    const ids = (search: string[]) =>
+      store
+        .listJobs({ field: 'first_seen', since: 0, until: T0 + DAY, sources: [], boards: [], search, limit: 10, withDescription: false })
+        .rows.map((row) => row.id)
+        .sort();
+    expect(ids([])).toEqual(['a1']);
+    expect(ids(['Vue', 'react'])).toEqual(['a2', 'a3']); // any order, any case
+    expect(ids(['react'])).toEqual([]); // not a part of the list: the whole list is the search
+  });
+
+  it('splits the old query text of the searches stored before keyword lists, on OR and on a pipe, once', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'jw-keywords-'));
+    try {
+      const path = join(dir, 'old.sqlite');
+      const first = Store.open(path);
+      first.recordSearch('linkedin', { keywords: ['x'], found: ['a1'], returned: [], excluded: [] }, T0);
+      first.close();
+      const raw = new DatabaseSync(path);
+      raw.exec(`DELETE FROM search_runs; DELETE FROM search_hits;
+        INSERT INTO search_runs (id, ts, platform, query, found, returned) VALUES (1, ${T0}, 'linkedin', 'React OR Vue', 1, 0), (2, ${T0}, 'teamtailor', 'go | rust', 1, 0), (3, ${T0}, 'linkedin', 'director or manager', 1, 0), (4, ${T0}, 'wttj', '', 1, 0);`);
+      raw.exec(
+        'DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
+      );
+      raw.close();
+      const upgraded = Store.open(path);
+      const stats = upgraded.searchStats({ since: 0, until: T0 + DAY, limit: 10 });
+      expect(stats.map((row) => [row.platform, row.keywords]).sort()).toEqual(
+        [
+          ['linkedin', ['director or manager']], // a lower-case "or" is a word of the title, not the operator
+          ['linkedin', ['react', 'vue']],
+          ['teamtailor', ['go', 'rust']],
+          ['wttj', []],
+        ].sort(),
+      );
+      upgraded.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

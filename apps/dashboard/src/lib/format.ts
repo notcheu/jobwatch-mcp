@@ -46,3 +46,21 @@ export function formatSalary(salary: { min: number; max: number; currency: strin
   const fixed = salary.min === salary.max ? money(salary.max) : `${money(salary.min)} – ${money(salary.max)}`;
   return salary.variable === null ? fixed : `${fixed} + ${money(salary.variable)} variable`;
 }
+
+/** The jobs a search listed: `/jobs` filtered by the keywords of the search and its source, or by "no keyword" when it has none. */
+export function jobsOfSearch(source: string, keywords: readonly string[]): { pathname: string; search: string } {
+  const params = new URLSearchParams();
+  if (keywords.length === 0) params.set('no_keywords', '1');
+  for (const keyword of keywords) params.append('found_by', keyword);
+  params.set('tool', source);
+  return { pathname: '/jobs', search: `?${params.toString()}` };
+}
+
+/** The detail of a search (its health and its jobs), opened over the Searches page. `days` keeps the window the list was showing. */
+export function searchDetailLink(source: string, keywords: readonly string[], days?: number): { pathname: string; search: string } {
+  const params = new URLSearchParams();
+  for (const keyword of keywords) params.append('k', keyword);
+  if (days !== undefined) params.set('days', String(days));
+  const text = params.toString();
+  return { pathname: `/searches/${encodeURIComponent(source)}`, search: text === '' ? '' : `?${text}` };
+}
