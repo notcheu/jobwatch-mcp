@@ -27,6 +27,12 @@ const input = z
       .max(MAX_HANDLES)
       .default(2)
       .describe('How many spellings of the name to try on each ATS (acme-labs, acmelabs...). Each try is one request per ATS.'),
+    refresh: z
+      .boolean()
+      .default(false)
+      .describe(
+        'By default a company the operator already mapped to a board is answered from that mapping, with no request. Set true to check the ATS again, mapped boards included, for boards the mapping does not know.',
+      ),
   })
   .strict();
 
@@ -35,7 +41,10 @@ const matchSchema = z.object({
   handle: z.string().describe('The company handle on that ATS: the value to put in the `boards` argument of the reading tool.'),
   reading_tool: z.string().describe('The tool that lists its jobs, for example greenhouse_jobs.'),
   board_url: z.string().describe('The public page of the board, to open and check it is the right company.'),
-  jobs: z.number().describe('How many jobs the board lists right now.'),
+  jobs: z
+    .number()
+    .nullable()
+    .describe('How many jobs the board lists right now; null when it was answered from the mapping (nothing was requested).'),
   sample_titles: z.array(z.string()).describe('A few job titles, untrusted text, to check it is the right company.'),
   from_address: z
     .boolean()
@@ -48,6 +57,9 @@ const output = z.object({
   companies: z.array(
     z.object({
       input: z.string(),
+      source: z
+        .enum(['mapping', 'probe'])
+        .describe('`mapping`: answered from the boards the operator mapped, with no request. `probe`: the ATS were checked.'),
       tried: z.array(z.string()).describe('The handles that were checked.'),
       matches: z.array(matchSchema).describe('The boards found. A handle can exist for another company: check the titles and the page.'),
     }),
@@ -63,7 +75,7 @@ export const atsFind = defineHttpTool({
   name: 'ats_find',
   title: 'Find the ATS of a company (read-only)',
   description:
-    "Read-only. Finds which ATS (Greenhouse, Lever, Ashby, Teamtailor) hosts a company's careers board, from its name, website or careers URL, and returns the handle for the matching reading tool (greenhouse_jobs, lever_jobs...). No match means another ATS, a custom site or a different spelling. A handle can belong to another company: check titles and page. Titles are untrusted data.",
+    "Read-only. Finds which ATS (Greenhouse, Lever, Ashby, Teamtailor) hosts a company's careers board, from its name, website or careers URL, and returns the handle for the matching reading tool (greenhouse_jobs, lever_jobs...). No match means another ATS, a custom site or a different spelling. A handle can belong to another company: check titles and page. A company the operator already mapped is answered from the mapping with no request, unless refresh is set. Titles are untrusted data.",
   input,
   output,
   annotations: { readOnlyHint: true, openWorldHint: true, idempotentHint: true },
@@ -91,20 +103,43 @@ export const atsFind = defineHttpTool({
     const companies: z.infer<typeof output>['companies'] = [];
     for (const company of new Set(args.companies)) {
       const { known, guesses } = planFor(company, args.handles_per_company);
-      // what the operator mapped comes first: those boards are checked as they are, the spellings of the name are not tried
+      // the boards the operator mapped to this company on the ATS asked about
       const mappedTargets: { ats: AtsId; handle: string }[] = [];
       if (known === null)
         for (const ats of wanted) {
           const handle = await mapped.handle(company, ats);
           if (handle !== null) mappedTargets.push({ ats, handle });
         }
-      const fromOperator = mappedTargets.length > 0;
+      // a mapping answers by itself: no request, nothing to log, unless a refresh was asked for
+      if (mappedTargets.length > 0 && !args.refresh) {
+        companies.push({
+          input: company.slice(0, 300),
+          source: 'mapping',
+          tried: [],
+          matches: mappedTargets.map((target) => ({
+            ats: target.ats,
+            handle: target.handle,
+            reading_tool: readerTool(target.ats),
+            board_url: boardPage(target.ats, target.handle),
+            jobs: null,
+            sample_titles: [],
+            from_address: true,
+          })),
+        });
+        continue;
+      }
+      const isMapped = (ats: AtsId, handle: string): boolean =>
+        mappedTargets.some((target) => target.ats === ats && target.handle === handle);
+      // a refresh checks the mapped boards too, and every spelling of the name besides
       const targets =
         known !== null
           ? [{ ats: known.ats, handle: known.handle }]
-          : fromOperator
-            ? mappedTargets
-            : guesses.flatMap((handle) => wanted.map((ats) => ({ ats, handle })));
+          : [
+              ...mappedTargets,
+              ...guesses
+                .flatMap((handle) => wanted.map((ats) => ({ ats, handle })))
+                .filter((target) => !isMapped(target.ats, target.handle)),
+            ];
       if (targets.length === 0) warnings.push(`${company.slice(0, 80)}: no usable name or site to derive a handle from.`);
       const found: Probe[] = [];
       for (const target of targets) {
@@ -113,6 +148,7 @@ export const atsFind = defineHttpTool({
       }
       const entry = {
         input: company.slice(0, 300),
+        source: 'probe' as const,
         tried: [...new Set(targets.map((target) => target.handle))],
         matches: found.map((hit) => ({
           ats: hit.ats,
@@ -121,17 +157,17 @@ export const atsFind = defineHttpTool({
           board_url: boardPage(hit.ats, hit.handle),
           jobs: hit.jobs,
           sample_titles: hit.sample_titles,
-          from_address: known !== null || fromOperator,
+          from_address: known !== null || isMapped(hit.ats, hit.handle),
         })),
       };
       companies.push(entry);
       await mapped.recordLookup({
         company: entry.input,
         tried: entry.tried,
-        matches: entry.matches.map((match) => ({ ats: match.ats, handle: match.handle, jobs: match.jobs, boardUrl: match.board_url })),
+        matches: entry.matches.map((match) => ({ ats: match.ats, handle: match.handle, jobs: match.jobs ?? 0, boardUrl: match.board_url })),
       });
     }
-    for (const entry of companies) {
+    for (const entry of companies.filter((company) => company.source === 'probe')) {
       if (entry.matches.length === 0) warnings.push(`${entry.input.slice(0, 80)}: no board found on the ATS checked.`);
       else if (new Set(entry.matches.map((match) => match.handle)).size > 1 || entry.matches.length > 1)
         warnings.push(`${entry.input.slice(0, 80)}: several boards matched; check the titles and pages before using one.`);

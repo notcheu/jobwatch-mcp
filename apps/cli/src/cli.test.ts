@@ -606,6 +606,7 @@ describe('ats-find', () => {
     companies: [
       {
         input: 'Doctolib',
+        source: 'probe',
         tried: ['doctolib'],
         matches: [
           {
@@ -618,7 +619,22 @@ describe('ats-find', () => {
           },
         ],
       },
-      { input: 'Ghost', tried: ['ghost'], matches: [] },
+      { input: 'Ghost', source: 'probe', tried: ['ghost'], matches: [] },
+      {
+        input: 'Swile',
+        source: 'mapping',
+        tried: [],
+        matches: [
+          {
+            ats: 'lever',
+            handle: 'swile',
+            reading_tool: 'lever_jobs',
+            board_url: 'https://jobs.lever.co/swile',
+            jobs: null,
+            sample_titles: [],
+          },
+        ],
+      },
     ],
     warnings: ['Ghost: no board found on the ATS checked.'],
   };
@@ -637,13 +653,17 @@ describe('ats-find', () => {
 
   it('looks the companies up through the router and lists each board with its jobs', async () => {
     await withRouter(async (seen) => {
-      expect(await cli(['ats-find', 'Doctolib', 'Ghost', '--ats', 'greenhouse,lever', '--handles', '3'])).toBe(0);
-      expect(seen).toEqual([{ command: 'ats.find', companies: ['Doctolib', 'Ghost'], ats: ['greenhouse', 'lever'], handles: 3 }]);
+      expect(await cli(['ats-find', 'Doctolib', 'Ghost', '--ats', 'greenhouse,lever', '--handles', '3', '--refresh'])).toBe(0);
+      expect(seen).toEqual([
+        { command: 'ats.find', companies: ['Doctolib', 'Ghost'], ats: ['greenhouse', 'lever'], handles: 3, refresh: true },
+      ]);
     });
     expect(out).toContain('Doctolib   (tried: doctolib)');
     expect(out).toContain('greenhouse  doctolib');
     expect(out).toContain('153 jobs  https://boards.greenhouse.io/doctolib');
     expect(out).toContain('no board found on the ATS checked');
+    expect(out).toContain('Swile   (from the mapping, nothing requested)');
+    expect(out).toMatch(/lever\s+swile\s+-\s+jobs/);
     expect(out).toContain('note: Ghost: no board found');
   });
 

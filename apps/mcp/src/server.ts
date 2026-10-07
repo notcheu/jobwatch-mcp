@@ -532,6 +532,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
                   companies: Array.isArray(request['companies']) ? request['companies'].map(String) : [],
                   ...(Array.isArray(request['ats']) ? { ats: request['ats'].map(String) } : {}),
                   ...(typeof request['handles'] === 'number' ? { handles_per_company: request['handles'] } : {}),
+                  ...(request['refresh'] === true ? { refresh: true } : {}),
                 },
                 'jobwatch utilities enable ats-discovery',
               ),

@@ -72,20 +72,42 @@ describe('ats_find', () => {
     expect(onlyLever.data.companies[0]?.matches.map((m) => m.ats)).toEqual(['lever']);
   });
 
-  it('logs each lookup, and checks the board the operator mapped before guessing any spelling', async () => {
-    const t = make(GREENHOUSE, { url: /api\.lever\.co\/v0\/postings\/acme-eu/, body: [{ text: 'Data Scientist' }] });
-    const first = await atsFind.handler(atsFind.input.parse({ companies: ['Acme'] }), t.ctx);
-    expect(first.data.companies[0]?.tried).toEqual(['acme']);
+  it('logs each lookup that checked the ATS', async () => {
+    const t = make(GREENHOUSE, LEVER);
+    const result = await atsFind.handler(atsFind.input.parse({ companies: ['Acme'] }), t.ctx);
+    expect(result.data.companies[0]).toMatchObject({ source: 'probe', tried: ['acme'] });
     expect(t.companies.lookups).toHaveLength(1);
     expect(t.companies.lookups[0]).toMatchObject({
       company: 'Acme',
-      matches: [{ ats: 'greenhouse', handle: 'acme', jobs: 2, boardUrl: 'https://boards.greenhouse.io/acme' }],
+      matches: [{ ats: 'greenhouse', handle: 'acme', jobs: 2, boardUrl: 'https://boards.greenhouse.io/acme' }, { ats: 'lever' }],
     });
+  });
 
+  it('answers a mapped company from the mapping with no request and no log, unless a refresh is asked for', async () => {
+    const t = make(GREENHOUSE, { url: /api\.lever\.co\/v0\/postings\/acme-eu/, body: [{ text: 'Data Scientist' }] });
     t.companies.set('Acme', 'lever', 'acme-eu');
-    const second = await atsFind.handler(atsFind.input.parse({ companies: ['acme'] }), t.ctx);
-    expect(second.data.companies[0]?.tried).toEqual(['acme-eu']);
-    expect(second.data.companies[0]?.matches.map((m) => [m.ats, m.handle, m.from_address])).toEqual([['lever', 'acme-eu', true]]);
+
+    const answered = await atsFind.handler(atsFind.input.parse({ companies: ['acme'] }), t.ctx);
+    expect(t.spent()).toBe(0);
+    expect(t.companies.lookups).toEqual([]);
+    expect(answered.data.companies[0]).toMatchObject({ source: 'mapping', tried: [] });
+    expect(answered.data.companies[0]?.matches.map((m) => [m.ats, m.handle, m.jobs, m.from_address])).toEqual([
+      ['lever', 'acme-eu', null, true],
+    ]);
+    expect(answered.warnings).toEqual([]);
+
+    // asking only for an ATS the company is not mapped on is a normal discovery
+    const other = await atsFind.handler(atsFind.input.parse({ companies: ['acme'], ats: ['greenhouse'] }), t.ctx);
+    expect(other.data.companies[0]).toMatchObject({ source: 'probe', tried: ['acme'] });
+
+    // a refresh checks the mapped board and the spellings of the name, and logs it
+    const refreshed = await atsFind.handler(atsFind.input.parse({ companies: ['acme'], refresh: true }), t.ctx);
+    expect(refreshed.data.companies[0]).toMatchObject({ source: 'probe', tried: ['acme-eu', 'acme'] });
+    expect(refreshed.data.companies[0]?.matches.map((m) => [m.ats, m.handle, m.jobs, m.from_address])).toEqual([
+      ['lever', 'acme-eu', 1, true],
+      ['greenhouse', 'acme', 2, false],
+    ]);
+    expect(t.companies.lookups).toHaveLength(2);
   });
 
   it('estimates one request per handle and ATS', () => {
