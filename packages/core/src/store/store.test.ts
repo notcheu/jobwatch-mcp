@@ -765,7 +765,7 @@ describe('salary columns', () => {
       const raw = new DatabaseSync(path);
       // put the file back as a version 6 database: no salary columns, no adapter memory
       raw.exec(
-        'ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
+        'DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -776,6 +776,64 @@ describe('salary columns', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('ATS discovery', () => {
+  let store: Store;
+  beforeEach(() => {
+    store = Store.open(':memory:');
+  });
+  afterEach(() => store.close());
+
+  const match = { ats: 'greenhouse', handle: 'acme', jobs: 3, boardUrl: 'https://boards.greenhouse.io/acme' };
+
+  it('logs the lookups, newest first, and drops them with the call log', () => {
+    store.recordLookup({ company: 'Acme', tried: ['acme'], matches: [match] }, 1000);
+    store.recordLookup({ company: 'Ghost', tried: ['ghost'], matches: [] }, 2000);
+    const { rows, total } = store.listLookups(10, 0);
+    expect(total).toBe(2);
+    expect(rows.map((row) => [row.company, row.ts, row.matches.length])).toEqual([
+      ['Ghost', 2000, 0],
+      ['Acme', 1000, 1],
+    ]);
+    expect(rows[1]?.matches[0]).toEqual(match);
+    expect(store.listLookups(1, 1).rows.map((row) => row.company)).toEqual(['Acme']);
+    store.prune(2000 + 31 * 24 * 3600 * 1000);
+    expect(store.listLookups(10, 0).total).toBe(0);
+  });
+
+  it('maps a company to one board per ATS, matching the name by its slug', () => {
+    expect(store.addCompanyBoard({ company: 'Société Générale', ats: 'greenhouse', handle: 'sg' }, 1000)).toMatchObject({ handle: 'sg' });
+    expect(store.findCompanyBoard('societe-generale', 'greenhouse')).toBe('sg');
+    expect(store.findCompanyBoard('SOCIÉTÉ GÉNÉRALE', 'greenhouse')).toBe('sg');
+    expect(store.findCompanyBoard('Société Générale', 'lever')).toBeNull();
+    expect(store.findCompanyBoard('!!!', 'greenhouse')).toBeNull();
+    // already mapped on that ATS: nothing changes
+    expect(store.addCompanyBoard({ company: 'societe generale', ats: 'greenhouse', handle: 'other' }, 2000)).toBeNull();
+    expect(store.findCompanyBoard('Société Générale', 'greenhouse')).toBe('sg');
+    expect(store.addCompanyBoard({ company: 'Société Générale', ats: 'lever', handle: 'sg-lever' }, 2000)).not.toBeNull();
+  });
+
+  it('refuses a name, an ATS or a handle that is not valid', () => {
+    expect(() => store.addCompanyBoard({ company: '  ', ats: 'lever', handle: 'a' }, 1)).toThrow(/name/);
+    expect(() => store.addCompanyBoard({ company: 'A', ats: 'Lever!', handle: 'a' }, 1)).toThrow(/ATS/);
+    expect(() => store.addCompanyBoard({ company: 'A', ats: 'lever', handle: '../x' }, 1)).toThrow(/handle/);
+  });
+
+  it('lists the mappings A to Z, searches by company or board, and forgets one', () => {
+    store.addCompanyBoard({ company: 'Zeta', ats: 'lever', handle: 'zeta' }, 1);
+    const acme = store.addCompanyBoard({ company: 'acme', ats: 'greenhouse', handle: 'acme-labs' }, 2);
+    store.addCompanyBoard({ company: 'Beta', ats: 'ashby', handle: 'b_eta' }, 3);
+    const list = (q?: string, ats?: string) =>
+      store.listCompanyBoards({ ...(q === undefined ? {} : { q }), ...(ats === undefined ? {} : { ats }), limit: 10, offset: 0 });
+    expect(list().rows.map((row) => row.company)).toEqual(['acme', 'Beta', 'Zeta']);
+    expect(list('LABS').rows.map((row) => row.company)).toEqual(['acme']);
+    expect(list('b_').rows.map((row) => row.company)).toEqual(['Beta']); // `_` is not a wildcard
+    expect(list(undefined, 'lever').total).toBe(1);
+    expect(store.deleteCompanyBoard(acme?.id ?? 0)).toBe(true);
+    expect(store.deleteCompanyBoard(acme?.id ?? 0)).toBe(false);
+    expect(list().total).toBe(2);
   });
 });
 
@@ -963,7 +1021,7 @@ describe('searches as keyword lists', () => {
       raw.exec(`DELETE FROM search_runs; DELETE FROM search_hits;
         INSERT INTO search_runs (id, ts, platform, query, found, returned) VALUES (1, ${T0}, 'linkedin', 'React OR Vue', 1, 0), (2, ${T0}, 'teamtailor', 'go | rust', 1, 0), (3, ${T0}, 'linkedin', 'director or manager', 1, 0), (4, ${T0}, 'wttj', '', 1, 0);`);
       raw.exec(
-        'ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
+        'DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -1134,7 +1192,7 @@ describe('searches as keyword lists', () => {
         first.close();
         const raw = new DatabaseSync(path);
         raw.exec(
-          'ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); PRAGMA user_version = 9;',
+          'DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); PRAGMA user_version = 9;',
         );
         raw.close();
         const upgraded = Store.open(path);

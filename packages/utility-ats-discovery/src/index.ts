@@ -37,7 +37,11 @@ const matchSchema = z.object({
   board_url: z.string().describe('The public page of the board, to open and check it is the right company.'),
   jobs: z.number().describe('How many jobs the board lists right now.'),
   sample_titles: z.array(z.string()).describe('A few job titles, untrusted text, to check it is the right company.'),
-  from_address: z.boolean().describe('True when the input was the address of that board, so there is no doubt it is the one.'),
+  from_address: z
+    .boolean()
+    .describe(
+      'True when the input was the address of that board, or the operator mapped the company to it, so there is no doubt it is the one.',
+    ),
 });
 
 const output = z.object({
@@ -81,21 +85,33 @@ export const atsFind = defineHttpTool({
       input: { companies: ['<company>'] },
     },
   ],
-  handler: async (args, { http }) => {
+  handler: async (args, { http, companies: mapped }) => {
     const warnings: string[] = [];
     const wanted: readonly AtsId[] = args.ats ?? ATS_IDS;
     const companies: z.infer<typeof output>['companies'] = [];
     for (const company of new Set(args.companies)) {
       const { known, guesses } = planFor(company, args.handles_per_company);
+      // what the operator mapped comes first: those boards are checked as they are, the spellings of the name are not tried
+      const mappedTargets: { ats: AtsId; handle: string }[] = [];
+      if (known === null)
+        for (const ats of wanted) {
+          const handle = await mapped.handle(company, ats);
+          if (handle !== null) mappedTargets.push({ ats, handle });
+        }
+      const fromOperator = mappedTargets.length > 0;
       const targets =
-        known !== null ? [{ ats: known.ats, handle: known.handle }] : guesses.flatMap((handle) => wanted.map((ats) => ({ ats, handle })));
+        known !== null
+          ? [{ ats: known.ats, handle: known.handle }]
+          : fromOperator
+            ? mappedTargets
+            : guesses.flatMap((handle) => wanted.map((ats) => ({ ats, handle })));
       if (targets.length === 0) warnings.push(`${company.slice(0, 80)}: no usable name or site to derive a handle from.`);
       const found: Probe[] = [];
       for (const target of targets) {
         const hit = await probe(http, target.ats, target.handle);
         if (hit !== null) found.push(hit);
       }
-      companies.push({
+      const entry = {
         input: company.slice(0, 300),
         tried: [...new Set(targets.map((target) => target.handle))],
         matches: found.map((hit) => ({
@@ -105,8 +121,14 @@ export const atsFind = defineHttpTool({
           board_url: boardPage(hit.ats, hit.handle),
           jobs: hit.jobs,
           sample_titles: hit.sample_titles,
-          from_address: known !== null,
+          from_address: known !== null || fromOperator,
         })),
+      };
+      companies.push(entry);
+      await mapped.recordLookup({
+        company: entry.input,
+        tried: entry.tried,
+        matches: entry.matches.map((match) => ({ ats: match.ats, handle: match.handle, jobs: match.jobs, boardUrl: match.board_url })),
       });
     }
     for (const entry of companies) {

@@ -33,7 +33,7 @@ export type {
   ToolOutcome,
 } from './call';
 export { createMetrics } from './metrics';
-export { createContextProvider, createJobStore, createPlatformMemory } from './contexts';
+export { createCompanyBoards, createContextProvider, createJobStore, createPlatformMemory } from './contexts';
 export type { ContextProviderDeps } from './contexts';
 export { createHttpClient } from './http/client';
 export type { HttpClientOptions } from './http/client';
@@ -95,9 +95,11 @@ export {
   normalizeTerms,
 } from './store/store';
 export type {
+  AtsLookup,
   BreakerReason,
   BreakerRow,
   CallRecord,
+  CompanyBoard,
   Clock,
   DailyUsageDelta,
   DailyUsageRow,

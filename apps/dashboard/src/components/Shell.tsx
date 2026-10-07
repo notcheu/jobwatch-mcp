@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, BarChart3, BookOpen, Briefcase, LogOut, Moon, Search, Settings, Sun, Wrench, Zap } from 'lucide-react';
+import { Activity, BarChart3, BookOpen, Briefcase, LogOut, Moon, Search, Settings, Sun, Telescope, Wrench, Zap } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ const SECTIONS = [
   { to: '/runs', label: 'Runs', icon: Zap, end: false, tabs: true },
   { to: '/jobs', label: 'Jobs', icon: Briefcase, end: false, tabs: true },
   { to: '/searches', label: 'Searches', icon: Search, end: false, tabs: true },
+  { to: '/ats-discovery', label: 'ATS discovery', icon: Telescope, end: false, tabs: false },
   { to: '/tools', label: 'Tools & status', icon: Wrench, end: false, tabs: false },
   { to: '/docs', label: 'Docs', icon: BookOpen, end: false, tabs: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false, tabs: false },
@@ -32,7 +33,10 @@ export function Shell() {
   const me = useQuery({ queryKey: ['me'], queryFn: api.me, refetchInterval: 30_000 });
   const tools = useQuery({ queryKey: ['tools'], queryFn: api.tools, refetchInterval: 15_000 });
   const section = SECTIONS.find((s) => (s.end ? location.pathname === s.to : location.pathname.startsWith(s.to)));
-  const platforms = (tools.data?.adapters ?? []).filter((adapter) => adapter.enabled).map((adapter) => adapter.platform);
+  // a utility fetches no jobs: it has no tab on the pages that list jobs and searches
+  const platforms = (tools.data?.adapters ?? [])
+    .filter((adapter) => adapter.enabled && adapter.role === 'adapter')
+    .map((adapter) => adapter.platform);
   const unique = [...new Set(platforms)];
 
   return (

@@ -1,4 +1,7 @@
 import {
+  atsLookupsSchema,
+  companyBoardSchema,
+  companyBoardsSchema,
   callDetailSchema,
   callRowSchema,
   docsSchema,
@@ -11,6 +14,9 @@ import {
   settingsSchema,
   toolsSchema,
   usageSchemaResponse,
+  type AtsLookups,
+  type CompanyBoard,
+  type CompanyBoards,
   type CallDetail,
   type Docs,
   type CallsPage,
@@ -29,6 +35,7 @@ import {
   effectiveRate,
   searchHealth,
   type CallEntry,
+  type CompanyBoard as CompanyBoardRow,
   type CallLog,
   type Budgets,
   type CircuitBreaker,
@@ -338,6 +345,54 @@ export function getSearch(data: DashboardData, source: string, query: unknown): 
     })),
     jobsTruncated: jobs.length > SEARCH_JOBS_LIMIT,
   });
+}
+
+// ---------------------------------------------------------------------------------------------------------- ATS discovery
+
+const pageQuery = {
+  page: z.coerce.number().int().min(1).max(100_000).default(1),
+  pageSize: z.coerce.number().int().min(10).max(100).default(25),
+};
+const lookupsQuery = z.object(pageQuery);
+const companyBoardsQuery = z.object({
+  q: z.string().trim().max(120).optional(),
+  ats: z
+    .string()
+    .max(32)
+    .regex(/^[a-z][a-z0-9-]*$/)
+    .optional(),
+  ...pageQuery,
+});
+
+export const toCompanyBoard = (row: CompanyBoardRow): CompanyBoard =>
+  checked(companyBoardSchema, { id: row.id, company: row.company, ats: row.ats, handle: row.handle, createdAt: iso(row.createdAt) });
+
+/** The past company lookups, newest first; each board found says whether its company is already mapped on that ATS. */
+export function listAtsLookups(data: DashboardData, query: unknown): AtsLookups {
+  const q = lookupsQuery.parse(query);
+  const { rows, total } = data.store.listLookups(q.pageSize, (q.page - 1) * q.pageSize);
+  return checked(atsLookupsSchema, {
+    total,
+    items: rows.map((row) => ({
+      id: row.id,
+      at: iso(row.ts),
+      company: row.company,
+      tried: row.tried,
+      matches: row.matches.map((match) => ({ ...match, mapped: data.store.findCompanyBoard(row.company, match.ats) !== null })),
+    })),
+  });
+}
+
+/** The companies mapped to a board, A to Z. */
+export function listCompanyBoards(data: DashboardData, query: unknown): CompanyBoards {
+  const q = companyBoardsQuery.parse(query);
+  const { rows, total } = data.store.listCompanyBoards({
+    ...(q.q === undefined || q.q === '' ? {} : { q: q.q }),
+    ...(q.ats === undefined ? {} : { ats: q.ats }),
+    limit: q.pageSize,
+    offset: (q.page - 1) * q.pageSize,
+  });
+  return checked(companyBoardsSchema, { total, items: rows.map(toCompanyBoard) });
 }
 
 // ---------------------------------------------------------------------------------------------------------- tools

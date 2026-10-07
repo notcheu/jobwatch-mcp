@@ -348,6 +348,38 @@ export type DataCleared = z.infer<typeof dataClearedSchema>;
 export const restartSchema = z.object({ restarting: z.boolean() }).strict();
 export type Restart = z.infer<typeof restartSchema>;
 
+// ------------------------------------------------------------------------------------------------------ ATS discovery
+
+/** The ATS a company can be mapped to: the ones the company-board tools read. */
+export const ATS_IDS = ['greenhouse', 'lever', 'ashby', 'teamtailor'] as const;
+export const atsSchema = z.enum(ATS_IDS);
+export type Ats = z.infer<typeof atsSchema>;
+
+/** A company lookup (`ats_find`): what was tried and the boards found. `mapped`: the company already has a board on that ATS. */
+export const atsLookupSchema = z
+  .object({
+    id: z.number(),
+    at: z.string(),
+    company: z.string(),
+    tried: z.array(z.string()),
+    matches: z.array(
+      z.object({ ats: z.string(), handle: z.string(), jobs: z.number(), boardUrl: z.string(), mapped: z.boolean() }).strict(),
+    ),
+  })
+  .strict();
+export type AtsLookup = z.infer<typeof atsLookupSchema>;
+export const atsLookupsSchema = z.object({ items: z.array(atsLookupSchema), total: z.number() }).strict();
+export type AtsLookups = z.infer<typeof atsLookupsSchema>;
+
+/** A company the operator mapped to its board on an ATS. */
+export const companyBoardSchema = z
+  .object({ id: z.number(), company: z.string(), ats: z.string(), handle: z.string(), createdAt: z.string() })
+  .strict();
+export type CompanyBoard = z.infer<typeof companyBoardSchema>;
+export const companyBoardsSchema = z.object({ items: z.array(companyBoardSchema), total: z.number() }).strict();
+export type CompanyBoards = z.infer<typeof companyBoardsSchema>;
+export const companyBoardRemovedSchema = z.object({ id: z.number() }).strict();
+
 // ------------------------------------------------------------------------------------------------------ overview and usage
 
 export const overviewSchema = z

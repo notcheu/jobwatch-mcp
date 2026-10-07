@@ -22,6 +22,8 @@ async function setup(over: Partial<Changes> = {}) {
     setAdapter: vi.fn(async () => ({ enabledAdapters: ['apec'], addedTools: ['apec_search', 'apec_job'], removedTools: [] })),
     clearData: vi.fn(async () => ({ jobs: 12, searches: 3 })),
     setBudget: vi.fn(async () => budget),
+    addCompanyBoard: vi.fn((entry) => ({ id: 7, ...entry, createdAt: '2026-10-07T10:00:00.000Z' })),
+    removeCompanyBoard: vi.fn(() => true),
     running: vi.fn(() => 0),
     restart: vi.fn(),
     ...over,
@@ -175,6 +177,47 @@ describe('the budget of an adapter', () => {
         body: { error: code, message: `because ${code}` },
       });
     }
+  });
+});
+
+describe('map a company to a board', () => {
+  it('adds the mapping, answers with it, and logs who did it', async () => {
+    const t = await setup();
+    const answer = await t.send('POST', '/company-boards', { company: ' Société Générale ', ats: 'greenhouse', handle: 'sg' });
+    expect(answer).toEqual({
+      status: 201,
+      body: { id: 7, company: 'Société Générale', ats: 'greenhouse', handle: 'sg', createdAt: '2026-10-07T10:00:00.000Z' },
+    });
+    expect(t.changes.addCompanyBoard).toHaveBeenCalledWith({ company: 'Société Générale', ats: 'greenhouse', handle: 'sg' });
+    expect(t.entries.find((e) => e.msg === 'dashboard_company_board_added')).toMatchObject({ actor: 'me@example.com', ats: 'greenhouse' });
+  });
+
+  it('shows the refusal of the router, and refuses an unknown ATS, a bad handle or an extra key before it gets there', async () => {
+    const taken = await setup({
+      addCompanyBoard: () => {
+        throw new ChangeRefused(409, 'exists', 'Acme already has a lever board.');
+      },
+    });
+    expect((await taken.send('POST', '/company-boards', { company: 'Acme', ats: 'lever', handle: 'acme' })).status).toBe(409);
+    const t = await setup();
+    for (const body of [
+      { company: 'Acme', ats: 'workday', handle: 'acme' },
+      { company: 'Acme', ats: 'lever', handle: '../etc' },
+      { company: 'Acme', ats: 'teamtailor', handle: 'Acme' },
+      { company: '', ats: 'lever', handle: 'acme' },
+      { company: 'Acme', ats: 'lever', handle: 'acme', extra: 1 },
+    ])
+      expect((await t.send('POST', '/company-boards', body)).status).toBe(400);
+    expect(t.changes.addCompanyBoard).not.toHaveBeenCalled();
+  });
+
+  it('removes a mapping, and says when there is none', async () => {
+    const t = await setup();
+    expect(await t.send('DELETE', '/company-boards/7')).toEqual({ status: 200, body: { id: 7 } });
+    expect(t.changes.removeCompanyBoard).toHaveBeenCalledWith(7);
+    const none = await setup({ removeCompanyBoard: () => false });
+    expect((await none.send('DELETE', '/company-boards/7')).status).toBe(404);
+    expect((await t.send('DELETE', '/company-boards/abc')).status).toBe(400);
   });
 });
 

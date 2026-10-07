@@ -174,10 +174,31 @@ export interface PlatformMemory {
   list(prefix: string): Promise<{ key: string; value: string; updatedAt: string }[]>;
 }
 
+/** One board a company-lookup found: the handle on that ATS and how many jobs it listed. */
+export interface CompanyBoardMatch {
+  ats: string;
+  handle: string;
+  jobs: number;
+  /** The public page of the board (https). */
+  boardUrl: string;
+}
+
+/**
+ * Which ATS board belongs to which company, as the operator confirmed it on the dashboard (docs/plans/17-dashboard.md, ATS discovery).
+ * Shared by every ATS adapter: a company name given as a board is looked up here first, then checked by the adapter as usual.
+ */
+export interface CompanyBoards {
+  /** The handle mapped to this company on this ATS (`greenhouse`, `lever`...), or null. Names match by their slug (`Société Générale` = `societe-generale`). */
+  handle(company: string, ats: string): Promise<string | null>;
+  /** Keep what a company lookup found, for the log of the dashboard's ATS discovery page. Only the discovery utility calls it. */
+  recordLookup(lookup: { company: string; tried: readonly string[]; matches: readonly CompanyBoardMatch[] }): Promise<void>;
+}
+
 export interface BaseContext {
   http: HttpClient;
   jobs: JobStore;
   memory: PlatformMemory;
+  companies: CompanyBoards;
   log: Logger;
   /** Human-like delay from the platform's pacing policy. */
   pace(kind: PaceKind): Promise<void>;

@@ -1,10 +1,14 @@
 import {
+  ATS_IDS,
   adapterToggleSchema,
+  companyBoardRemovedSchema,
+  companyBoardSchema,
   budgetUpdatedSchema,
   dataClearedSchema,
   restartSchema,
   type AdapterToggle,
   type Budget,
+  type CompanyBoard,
   type DataCleared,
 } from '@jobwatch/dashboard-api';
 import { BUDGET_MAX, BUDGET_MIN, type EngineLogger } from '@jobwatch/core';
@@ -24,7 +28,7 @@ export class ChangeRefused extends Error {
   }
 }
 
-/** The only four things the dashboard can change. None touches a third-party platform. */
+/** The only things the dashboard can change. None touches a third-party platform. */
 export interface Changes {
   /** Turn an adapter on or off and reload the registry (hot reload). */
   setAdapter(id: string, enabled: boolean): Promise<Omit<AdapterToggle, 'id' | 'enabled' | 'reconnectNeeded'>>;
@@ -32,6 +36,10 @@ export interface Changes {
   clearData(id: string): Promise<Omit<DataCleared, 'id'>>;
   /** Save the request budget of an adapter or utility (the windows not set by the environment). Applies to the next call. */
   setBudget(id: string, change: { hourly?: number; daily?: number }): Promise<Budget>;
+  /** Map a company to its board on an ATS. Refused (409) when the company already has a board on that ATS. */
+  addCompanyBoard(entry: { company: string; ats: string; handle: string }): CompanyBoard;
+  /** Forget a mapping. False when there was none. */
+  removeCompanyBoard(id: number): boolean;
   /** Number of calls still running. */
   running(): number;
   /** Stop the router process so the container's restart policy brings it back. */
@@ -45,6 +53,21 @@ const budgetBody = z
   .object({ hourly: budgetAmount.optional(), daily: budgetAmount.optional() })
   .strict()
   .refine((body) => body.hourly !== undefined || body.daily !== undefined, { message: 'send hourly, daily or both' });
+const companyBoardBody = z
+  .object({
+    company: z.string().trim().min(1).max(120),
+    ats: z.enum(ATS_IDS),
+    // a Teamtailor handle is a subdomain: lower case only
+    handle: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,59}$/),
+  })
+  .strict()
+  .refine((body) => body.ats !== 'teamtailor' || body.handle === body.handle.toLowerCase(), {
+    message: 'a Teamtailor handle is lower case',
+    path: ['handle'],
+  });
 const restartBody = z.object({ force: z.boolean().default(false) }).strict();
 
 /**
@@ -94,6 +117,29 @@ export function registerWrites(router: Router, changes: Changes, logger: EngineL
       res.json(checked(dataClearedSchema, { id, ...result }));
     } catch (error) {
       if (error instanceof ChangeRefused) return refuse(res, error);
+      next(error);
+    }
+  });
+
+  router.post('/company-boards', (req, res, next) => {
+    try {
+      const entry = companyBoardBody.parse(req.body);
+      const board = changes.addCompanyBoard(entry);
+      logger.info({ actor: actor(res), company: board.company, ats: board.ats, handle: board.handle }, 'dashboard_company_board_added');
+      res.status(201).json(checked(companyBoardSchema, board));
+    } catch (error) {
+      if (error instanceof ChangeRefused) return refuse(res, error);
+      next(error);
+    }
+  });
+
+  router.delete('/company-boards/:id', (req, res, next) => {
+    try {
+      const id = z.coerce.number().int().min(1).parse(req.params['id']);
+      if (!changes.removeCompanyBoard(id)) return refuse(res, new ChangeRefused(404, 'not_found', 'That mapping no longer exists.'));
+      logger.info({ actor: actor(res), id }, 'dashboard_company_board_removed');
+      res.json(checked(companyBoardRemovedSchema, { id }));
+    } catch (error) {
       next(error);
     }
   });

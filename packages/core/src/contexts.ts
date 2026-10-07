@@ -4,6 +4,7 @@ import {
   type BaseContext,
   type BrowserAdapterContext,
   type BrowserSession,
+  type CompanyBoards,
   type HttpClient,
   type JobStore,
   type PlatformMemory,
@@ -74,6 +75,14 @@ export function createPlatformMemory(store: Store, clock: () => number = Date.no
   };
 }
 
+/** The company-to-board map and the discovery log over the store (`ctx.companies`). */
+export function createCompanyBoards(store: Store, clock: () => number = Date.now): CompanyBoards {
+  return {
+    handle: async (company, ats) => store.findCompanyBoard(company, ats),
+    recordLookup: async (lookup) => store.recordLookup(lookup, clock()),
+  };
+}
+
 /**
  * Builds the `AdapterContext` of one call. HTTP adapters get an allowlisted `HttpClient`. Browser adapters additionally get
  * the leased single-tab `BrowserSession`; the lease is released (tab parked, connection dropped, runtime handed back) when the
@@ -132,6 +141,7 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
         },
         jobs: createJobStore(jobStore, adapter.platform, deps.clock),
         memory: createPlatformMemory(jobStore, deps.clock),
+        companies: createCompanyBoards(jobStore, deps.clock),
         log: createAdapterLogger(deps.logger, adapter.id),
         pace: pacerFor(adapter),
       };

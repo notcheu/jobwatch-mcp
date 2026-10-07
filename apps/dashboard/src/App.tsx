@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Route, Routes } from 'react-router';
 import { Shell } from '@/components/Shell';
 import { Analytics } from '@/pages/Analytics';
+import { AtsDiscovery } from '@/pages/AtsDiscovery';
 import { Docs } from '@/pages/Docs';
 import { Jobs } from '@/pages/Jobs';
 import { Overview } from '@/pages/Overview';
@@ -23,6 +24,7 @@ export function AppRoutes() {
         <Route path="jobs/:source/:id" element={<Jobs />} />
         <Route path="searches" element={<Searches />} />
         <Route path="searches/:source" element={<Searches />} />
+        <Route path="ats-discovery" element={<AtsDiscovery />} />
         <Route path="tools" element={<Tools />} />
         <Route path="docs" element={<Docs />} />
         <Route path="settings" element={<Settings />} />

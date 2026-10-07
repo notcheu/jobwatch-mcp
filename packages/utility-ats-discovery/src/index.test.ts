@@ -72,6 +72,22 @@ describe('ats_find', () => {
     expect(onlyLever.data.companies[0]?.matches.map((m) => m.ats)).toEqual(['lever']);
   });
 
+  it('logs each lookup, and checks the board the operator mapped before guessing any spelling', async () => {
+    const t = make(GREENHOUSE, { url: /api\.lever\.co\/v0\/postings\/acme-eu/, body: [{ text: 'Data Scientist' }] });
+    const first = await atsFind.handler(atsFind.input.parse({ companies: ['Acme'] }), t.ctx);
+    expect(first.data.companies[0]?.tried).toEqual(['acme']);
+    expect(t.companies.lookups).toHaveLength(1);
+    expect(t.companies.lookups[0]).toMatchObject({
+      company: 'Acme',
+      matches: [{ ats: 'greenhouse', handle: 'acme', jobs: 2, boardUrl: 'https://boards.greenhouse.io/acme' }],
+    });
+
+    t.companies.set('Acme', 'lever', 'acme-eu');
+    const second = await atsFind.handler(atsFind.input.parse({ companies: ['acme'] }), t.ctx);
+    expect(second.data.companies[0]?.tried).toEqual(['acme-eu']);
+    expect(second.data.companies[0]?.matches.map((m) => [m.ats, m.handle, m.from_address])).toEqual([['lever', 'acme-eu', true]]);
+  });
+
   it('estimates one request per handle and ATS', () => {
     const estimate = atsFind.limits.estimate;
     expect(estimate?.(atsFind.input.parse({ companies: ['Acme Labs', 'https://jobs.lever.co/x'], handles_per_company: 2 }))).toBe(

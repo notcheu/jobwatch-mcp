@@ -324,6 +324,30 @@ describe('the API in local development mode (no sign-in)', () => {
     expect((await t.call('/dashboard/api/v1/jobs?sort=password')).status).toBe(400);
   });
 
+  it('lists the company lookups with what is already mapped, and the mappings with a search by company or board', async () => {
+    const t = await build();
+    const match = { ats: 'greenhouse', handle: 'acme', jobs: 4, boardUrl: 'https://boards.greenhouse.io/acme' };
+    t.deps.store.recordLookup({ company: 'Acme', tried: ['acme'], matches: [match, { ...match, ats: 'lever' }] }, NOW - DAY);
+    t.deps.store.addCompanyBoard({ company: 'acme', ats: 'lever', handle: 'acme' }, NOW);
+    t.deps.store.addCompanyBoard({ company: 'Zeta', ats: 'ashby', handle: 'zeta-hq' }, NOW);
+    const lookups = await json(await t.call('/dashboard/api/v1/ats-lookups'));
+    expect(lookups.total).toBe(1);
+    expect(lookups.items[0]).toMatchObject({ company: 'Acme', tried: ['acme'] });
+    expect(lookups.items[0].matches.map((m: any) => [m.ats, m.mapped])).toEqual([
+      ['greenhouse', false],
+      ['lever', true],
+    ]);
+    const boards = await json(await t.call('/dashboard/api/v1/company-boards'));
+    expect(boards.items.map((b: any) => [b.company, b.ats, b.handle])).toEqual([
+      ['acme', 'lever', 'acme'],
+      ['Zeta', 'ashby', 'zeta-hq'],
+    ]);
+    expect(Object.keys(boards.items[0]).sort()).toEqual(['ats', 'company', 'createdAt', 'handle', 'id']);
+    expect((await json(await t.call('/dashboard/api/v1/company-boards?q=HQ'))).items.map((b: any) => b.company)).toEqual(['Zeta']);
+    expect((await json(await t.call('/dashboard/api/v1/company-boards?ats=lever'))).total).toBe(1);
+    expect((await t.call('/dashboard/api/v1/company-boards?ats=Bad!')).status).toBe(400);
+  });
+
   it('gives one search with its health, its counts and its jobs, and a 404 for a search that did not run', async () => {
     const t = await build();
     t.deps.store.recordSearch(

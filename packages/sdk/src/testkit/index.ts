@@ -6,6 +6,7 @@ export {
   FakeBrowserSession,
   FakeHttpClient,
   FakeJobStore,
+  FakeCompanyBoards,
   FakePlatformMemory,
   createBrowserTestContext,
   createHttpTestContext,

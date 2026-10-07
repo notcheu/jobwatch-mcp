@@ -50,6 +50,7 @@ import {
 import { budgetDefaults, installedModules } from '@jobwatch/mcp-modules';
 import { roleOf, type McpModule } from '@jobwatch/sdk';
 import { createApp, type AppDeps } from './app';
+import { toCompanyBoard } from './dashboard/api';
 import { DashboardManager } from './dashboard/manager';
 import { ChangeRefused, registerWrites } from './dashboard/writes';
 import { createMetricsServer } from './metrics-server';
@@ -484,6 +485,13 @@ export async function start(options: StartOptions): Promise<RunningServer> {
               const { jobs, searches } = await clearAdapterData(id);
               return { jobs, searches };
             },
+            addCompanyBoard: (entry) => {
+              const board = store.addCompanyBoard(entry, clock());
+              if (board === null)
+                throw new ChangeRefused(409, 'exists', `${entry.company} already has a ${entry.ats} board. Remove it first to change it.`);
+              return toCompanyBoard(board);
+            },
+            removeCompanyBoard: (id) => store.deleteCompanyBoard(id),
             running: () => callLog.all().filter((call) => call.state === 'running').length,
             restart: () => void process.kill(process.pid, 'SIGTERM'),
           },

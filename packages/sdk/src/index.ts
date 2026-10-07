@@ -29,6 +29,8 @@ export type {
   BrowserSession,
   BrowserTab,
   PlatformMemory,
+  CompanyBoards,
+  CompanyBoardMatch,
   HttpRequestOptions,
   HttpResponse,
   HttpClient,

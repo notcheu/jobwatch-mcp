@@ -16,6 +16,8 @@ import {
   getUsage,
   listCalls,
   listJobs,
+  listAtsLookups,
+  listCompanyBoards,
   listSearches,
   type DashboardData,
 } from './api';
@@ -281,6 +283,14 @@ export function createDashboardApp(deps: DashboardDeps): Express {
       if (search === undefined) return void sendError(res, 404, 'not_found', 'No such search in this window.');
       return search;
     }),
+  );
+  api.get(
+    '/ats-lookups',
+    wrap((req) => listAtsLookups(deps, req.query)),
+  );
+  api.get(
+    '/company-boards',
+    wrap((req) => listCompanyBoards(deps, req.query)),
   );
   api.get(
     '/tools',

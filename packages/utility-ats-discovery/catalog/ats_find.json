@@ -94,7 +94,7 @@
                     "type": "string"
                   },
                   "from_address": {
-                    "description": "True when the input was the address of that board, so there is no doubt it is the one.",
+                    "description": "True when the input was the address of that board, or the operator mapped the company to it, so there is no doubt it is the one.",
                     "type": "boolean"
                   },
                   "handle": {

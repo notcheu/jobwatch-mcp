@@ -1,5 +1,9 @@
 import {
   API_PREFIX,
+  atsLookupsSchema,
+  companyBoardRemovedSchema,
+  companyBoardSchema,
+  companyBoardsSchema,
   adapterToggleSchema,
   budgetUpdatedSchema,
   dataClearedSchema,
@@ -17,6 +21,9 @@ import {
   toolsSchema,
   usageSchemaResponse,
   type AdapterToggle,
+  type AtsLookups,
+  type CompanyBoard,
+  type CompanyBoards,
   type BudgetUpdated,
   type DataCleared,
   type Docs,
@@ -107,6 +114,14 @@ export const api = {
     source: string,
     params: { keywords: readonly string[]; disallowed: readonly string[]; since?: string; until?: string },
   ): Promise<SearchDetailInfo> => request(searchDetailSchema, `/searches/${encodeURIComponent(source)}${query(params)}`),
+  atsLookups: (params: { page?: number; pageSize?: number }): Promise<AtsLookups> =>
+    request(atsLookupsSchema, `/ats-lookups${query(params)}`),
+  companyBoards: (params: { q?: string; ats?: string; page?: number; pageSize?: number }): Promise<CompanyBoards> =>
+    request(companyBoardsSchema, `/company-boards${query(params)}`),
+  addCompanyBoard: (entry: { company: string; ats: string; handle: string }): Promise<CompanyBoard> =>
+    request(companyBoardSchema, '/company-boards', { method: 'POST', body: JSON.stringify(entry) }),
+  removeCompanyBoard: (id: number): Promise<{ id: number }> =>
+    request(companyBoardRemovedSchema, `/company-boards/${id}`, { method: 'DELETE' }),
   docs: (): Promise<Docs> => request(docsSchema, '/docs'),
   tools: (): Promise<Tools> => request(toolsSchema, '/tools'),
   settings: (): Promise<Settings> => request(settingsSchema, '/settings'),
