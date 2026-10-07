@@ -219,6 +219,7 @@ describe('linkedin_search (read)', () => {
     expect(search?.disallowed).toEqual(['frontend']); // the terms are part of the search
     expect(search?.excluded.length).toBeGreaterThan(0);
     expect(search?.excluded[0]).toMatchObject({ reason: 'title', term: 'frontend' }); // and which term dropped the job
+    expect(search?.excluded[0]?.title).toMatch(/frontend/i); // with its title, which is not stored for a job dropped by its title
     expect(search?.found.length).toBeGreaterThan(search?.returned.length ?? 0);
     expect(search?.returned.sort()).toEqual(result.data.jobs.map((j) => j.id).sort());
   });

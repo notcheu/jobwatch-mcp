@@ -240,6 +240,7 @@ describe('searches', () => {
       {
         id: '1000001',
         title: 'Senior Frontend Engineer',
+        stored: true,
         company: 'Acme',
         location: 'Paris',
         url: null,
@@ -251,6 +252,7 @@ describe('searches', () => {
       {
         id: '1000002',
         title: 'Intern',
+        stored: false, // dropped by its title: its page was never read, so the title is the one kept with the hit
         company: 'Beta',
         location: null,
         url: null,
@@ -262,11 +264,24 @@ describe('searches', () => {
       {
         id: '1000003',
         title: null,
+        stored: false,
         company: null,
         location: null,
         url: null,
         lastSeen: null,
         outcome: 'other',
+        excludedBy: null,
+        timesListed: 1,
+      },
+      {
+        id: '1000004',
+        title: null,
+        stored: false,
+        company: null,
+        location: null,
+        url: null,
+        lastSeen: null,
+        outcome: 'excluded',
         excludedBy: null,
         timesListed: 1,
       },
@@ -317,10 +332,15 @@ describe('searches', () => {
     expect(health).toHaveTextContent('Matched70');
     expect(health).toHaveTextContent('Discarded10');
     const list = within(panel).getByRole('list', { name: 'Jobs of this search' });
-    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(list).getAllByRole('listitem')).toHaveLength(4);
     expect(within(list).getByText('returned')).toBeInTheDocument();
-    expect(within(list).getByText('discarded')).toBeInTheDocument();
-    expect(within(list).getByText('Job no longer stored')).toBeInTheDocument();
+    expect(within(list).getAllByText('discarded')).toHaveLength(2);
+    expect(within(list).getByText('Job no longer stored')).toBeInTheDocument(); // an evicted job
+    expect(within(list).getByText('Title not recorded')).toBeInTheDocument(); // dropped by a search from before titles were kept
+    // a job dropped by its title was never stored: its recorded title shows as text, with no link to a page that does not exist
+    expect(within(list).getByText('Intern')).toBeInTheDocument();
+    expect(within(list).queryByRole('link', { name: 'Intern' })).not.toBeInTheDocument();
+    expect(within(list).getByTitle(/Dropped before its page was read, so its text was never stored/)).toBeInTheDocument();
     expect(within(list).getByRole('link', { name: 'Senior Frontend Engineer' })).toHaveAttribute('href', '/jobs/linkedin/1000001');
     const asked = seen.find((url) => url.startsWith('/dashboard/api/v1/searches/linkedin')) ?? '';
     const asking = new URLSearchParams(asked.split('?')[1]);

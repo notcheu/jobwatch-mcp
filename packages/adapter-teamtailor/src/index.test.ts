@@ -151,6 +151,7 @@ describe('title_any as keywords', () => {
     for (const entry of search?.excluded ?? []) {
       expect(search?.found).toContain(entry.id); // what was dropped was first matched
       expect(entry).toMatchObject({ reason: 'title', term: 'java' }); // and the record says which term dropped it, and where
+      expect(entry.title).toMatch(/java/i); // and keeps the title: a job dropped by its title is never stored, so this is the only copy
     }
     const droppedIds = (search?.excluded ?? []).map((entry) => entry.id);
     for (const id of search?.returned ?? []) expect(droppedIds).not.toContain(id);

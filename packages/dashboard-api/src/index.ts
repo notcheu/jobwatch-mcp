@@ -177,7 +177,10 @@ export type SearchRow = z.infer<typeof searchRowSchema>;
 export const searchJobSchema = z
   .object({
     id: z.string(),
+    /** The stored job's title, else the one recorded when the search dropped it; null when neither exists. */
     title: z.string().nullable(),
+    /** False when the job's text is not in the database (dropped before its page was read, or evicted): there is no job page to open. */
+    stored: z.boolean(),
     company: z.string().nullable(),
     location: z.string().nullable(),
     url: z.string().nullable(),

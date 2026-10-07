@@ -121,6 +121,8 @@ export interface StoredJob extends NewJob {
 /** One job a search dropped, and why: the disallowed term that matched (for `salary`, the salary the job states). */
 export interface SearchExclusion {
   id: string;
+  /** The job's title, kept with the hit: a job dropped by its title is never stored, so this is the only place its title survives. */
+  title: string | null;
   reason: 'title' | 'description' | 'salary';
   term: string;
 }

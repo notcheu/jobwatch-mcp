@@ -236,12 +236,23 @@ function SearchBody({ search, days }: { search: SearchDetailInfo; days: number }
 
 function JobItem({ source, job }: { source: string; job: SearchJob }) {
   const outcome = OUTCOME[job.outcome];
-  const label = job.title ?? 'Job no longer stored';
+  // A job opens only when its text is stored. A job the search dropped by its title was never stored (its page is not read, to save
+  // budget), but the title was kept with the hit, so it is shown as plain text; "no longer stored" is only for one that was removed.
+  const label = job.title ?? (job.outcome === 'excluded' ? 'Title not recorded' : job.stored ? 'Untitled job' : 'Job no longer stored');
+  const why =
+    job.outcome === 'excluded'
+      ? 'Dropped before its page was read, so its text was never stored.'
+      : 'Its text was removed after the retention period.';
   return (
     <li className="flex items-start justify-between gap-2 p-2 text-sm">
       <div className="min-w-0">
-        {job.title === null ? (
-          <span className="text-muted-foreground">{label}</span>
+        {!job.stored ? (
+          <span
+            className={job.title === null ? 'text-muted-foreground' : 'block truncate font-medium'}
+            title={job.title === null ? undefined : `${label}. ${why}`}
+          >
+            {label}
+          </span>
         ) : (
           <Link
             to={`/jobs/${encodeURIComponent(source)}/${encodeURIComponent(job.id)}`}

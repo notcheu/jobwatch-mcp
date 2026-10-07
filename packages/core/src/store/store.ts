@@ -52,7 +52,8 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
  * Each entry upgrades the schema by one version (`PRAGMA user_version`). Never edit a released migration: add a new one.
  * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
  * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`),
- * 9 the keyword list of a search and the jobs it excluded, 10 its disallowed terms and the term that dropped each job.
+ * 9 the keyword list of a search and the jobs it excluded, 10 its disallowed terms and the term that dropped each job,
+ * 11 the title of a dropped job.
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -186,6 +187,10 @@ const MIGRATIONS: readonly string[] = [
   ALTER TABLE search_hits ADD COLUMN excluded_term   TEXT;
   DROP INDEX search_runs_platform_keywords;
   CREATE INDEX search_runs_search ON search_runs (platform, keywords_key, disallowed_key);
+  `,
+  // 11: the title of a job a search dropped. A job dropped by its title is never stored, so without this its hit would have no title.
+  `
+  ALTER TABLE search_hits ADD COLUMN excluded_title TEXT;
   `,
 ];
 
@@ -654,7 +659,7 @@ export class Store {
           returned.size,
         );
       const insert = this.db.prepare(
-        'INSERT OR IGNORE INTO search_hits (run_id, job_id, returned, excluded, excluded_reason, excluded_term) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT OR IGNORE INTO search_hits (run_id, job_id, returned, excluded, excluded_reason, excluded_term, excluded_title) VALUES (?, ?, ?, ?, ?, ?, ?)',
       );
       for (const id of kept) {
         if (!JOB_ID.test(id)) continue;
@@ -666,6 +671,7 @@ export class Store {
           why === undefined ? 0 : 1,
           why?.reason ?? null,
           why === undefined ? null : why.term.slice(0, MAX_TERM_CHARS),
+          why?.title === undefined || why.title === null ? null : why.title.slice(0, 300),
         );
       }
     });
@@ -772,8 +778,8 @@ export class Store {
     const rows = this.db
       .prepare(
         `SELECT h.job_id AS id, max(h.returned) AS returned, max(h.excluded) AS excluded, count(DISTINCT r.id) AS seen,
-                max(h.excluded_reason) AS excluded_reason, max(h.excluded_term) AS excluded_term,
-                j.title AS title, j.company AS company, j.location AS location, j.url AS url, j.last_seen AS last_seen
+                max(h.excluded_reason) AS excluded_reason, max(h.excluded_term) AS excluded_term, max(h.excluded_title) AS excluded_title,
+                j.id AS stored_id, j.title AS stored_title, j.company AS company, j.location AS location, j.url AS url, j.last_seen AS last_seen
          FROM search_runs r
          JOIN search_hits h ON h.run_id = r.id
          LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
@@ -791,7 +797,9 @@ export class Store {
         const dropped = !returned && Number(row['excluded']) === 1;
         return {
           id: String(row['id']),
-          title: text(row['title']),
+          // the stored job's title, else the one kept with the hit when the search dropped it
+          title: text(row['stored_title']) ?? text(row['excluded_title']),
+          stored: row['stored_id'] !== null && row['stored_id'] !== undefined,
           company: text(row['company']),
           location: text(row['location']),
           url: text(row['url']),
@@ -933,8 +941,10 @@ export interface SearchStat extends SearchRef {
 
 export interface SearchDetailJob {
   id: string;
-  /** Null when the job text was evicted but the search still lists it. */
+  /** The stored job's title, else the one recorded when the search dropped it; null when neither exists (the job was evicted, or the search is older than titles). */
   title: string | null;
+  /** False when the job's text is not in the database: it was dropped by its title before its page was read, or it was evicted. */
+  stored: boolean;
   company: string | null;
   location: string | null;
   url: string | null;

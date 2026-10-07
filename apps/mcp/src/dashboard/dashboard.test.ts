@@ -333,11 +333,11 @@ describe('the API in local development mode (no sign-in)', () => {
         found: ['1000001', '1000002', '9000001', '9000002', '9000003', '9000004'],
         returned: ['1000001'],
         excluded: [
-          { id: '1000002', reason: 'title', term: 'backend' },
-          { id: '9000001', reason: 'description', term: 'Backend' },
-          { id: '9000002', reason: 'title', term: 'x' },
-          { id: '9000003', reason: 'title', term: 'x' },
-          { id: '9000004', reason: 'title', term: 'x' },
+          { id: '1000002', title: 'T', reason: 'title', term: 'backend' },
+          { id: '9000001', title: 'Backend', reason: 'description', term: 'Backend' },
+          { id: '9000002', title: 'T', reason: 'title', term: 'x' },
+          { id: '9000003', title: 'T', reason: 'title', term: 'x' },
+          { id: '9000004', title: 'T', reason: 'title', term: 'x' },
         ],
       },
       NOW - DAY,
@@ -366,11 +366,13 @@ describe('the API in local development mode (no sign-in)', () => {
     });
     expect(detail.jobs.find((j: any) => j.id === '9000001')).toMatchObject({
       outcome: 'excluded',
-      title: null,
-      url: null, // text evicted
+      title: 'Backend',
+      stored: false,
+      url: null, // never stored: it was dropped before its page was read, so the title is the one kept with the hit
       excludedBy: { reason: 'description', term: 'Backend' },
     });
     expect(detail.jobs[0].excludedBy).toBeNull(); // a returned job was not dropped
+    expect(detail.jobs[0]).toMatchObject({ stored: true, title: 'Frontend Engineer' }); // a stored job is a job page that opens
     // the same keywords without these terms is another search, and did not run
     expect((await t.call('/dashboard/api/v1/searches/linkedin?keywords=principal&keywords=staff')).status).toBe(404);
     expect((await t.call('/dashboard/api/v1/searches/linkedin?keywords=nothing')).status).toBe(404);
@@ -386,7 +388,7 @@ describe('the API in local development mode (no sign-in)', () => {
         disallowed: ['backend'],
         found: ['1000001', '1000002'],
         returned: ['1000001'],
-        excluded: [{ id: '1000002', reason: 'title', term: 'backend' }],
+        excluded: [{ id: '1000002', title: 'T', reason: 'title', term: 'backend' }],
       },
       NOW - DAY,
     );
@@ -413,7 +415,7 @@ describe('the API in local development mode (no sign-in)', () => {
         disallowed: ['unpaid'],
         found,
         returned: [],
-        excluded: found.map((id) => ({ id, reason: 'title' as const, term: 'unpaid' })),
+        excluded: found.map((id) => ({ id, title: `Unpaid job ${id}`, reason: 'title' as const, term: 'unpaid' })),
       },
       NOW - DAY,
     );

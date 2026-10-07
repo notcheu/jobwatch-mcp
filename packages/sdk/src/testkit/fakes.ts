@@ -51,7 +51,7 @@ export class FakeJobStore implements JobStore {
     disallowed: string[];
     found: string[];
     returned: string[];
-    excluded: { id: string; reason: string; term: string }[];
+    excluded: { id: string; title: string | null; reason: string; term: string }[];
   }[] = [];
   constructor(
     private readonly clock: () => Date = () => new Date(),

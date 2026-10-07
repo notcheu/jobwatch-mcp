@@ -680,7 +680,7 @@ describe('salary columns', () => {
       const raw = new DatabaseSync(path);
       // put the file back as a version 6 database: no salary columns, no adapter memory
       raw.exec(
-        'DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
+        'ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -781,7 +781,7 @@ describe('searches as keyword lists', () => {
         disallowed: [],
         found: ['a1', 'a2', 'a3'],
         returned: ['a1'],
-        excluded: [{ id: 'a3', reason: 'title', term: 'x' }],
+        excluded: [{ id: 'a3', title: 'T', reason: 'title', term: 'x' }],
       },
       T0,
     );
@@ -800,7 +800,7 @@ describe('searches as keyword lists', () => {
         disallowed: [],
         found: ['a3', 'a2', 'a1'],
         returned: ['a1'],
-        excluded: [{ id: 'a3', reason: 'title', term: 'x' }],
+        excluded: [{ id: 'a3', title: 'T', reason: 'title', term: 'x' }],
       },
       T0,
     );
@@ -823,6 +823,7 @@ describe('searches as keyword lists', () => {
       {
         id: 'gone1',
         title: null,
+        stored: false,
         company: null,
         location: null,
         url: null,
@@ -843,7 +844,7 @@ describe('searches as keyword lists', () => {
         disallowed: [],
         found: ['a2', 'a3'],
         returned: ['a2'],
-        excluded: [{ id: 'a3', reason: 'title', term: 'x' }],
+        excluded: [{ id: 'a3', title: 'T', reason: 'title', term: 'x' }],
       },
       T0,
     );
@@ -877,7 +878,7 @@ describe('searches as keyword lists', () => {
       raw.exec(`DELETE FROM search_runs; DELETE FROM search_hits;
         INSERT INTO search_runs (id, ts, platform, query, found, returned) VALUES (1, ${T0}, 'linkedin', 'React OR Vue', 1, 0), (2, ${T0}, 'teamtailor', 'go | rust', 1, 0), (3, ${T0}, 'linkedin', 'director or manager', 1, 0), (4, ${T0}, 'wttj', '', 1, 0);`);
       raw.exec(
-        'DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
+        'ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -897,13 +898,16 @@ describe('searches as keyword lists', () => {
   });
 
   describe('with disallowed terms', () => {
-    const run = (disallowed: string[], excluded: { id: string; reason: 'title' | 'description' | 'salary'; term: string }[], at = T0) =>
-      store.recordSearch('linkedin', { keywords: ['dev'], disallowed, found: ['a1', 'a2', 'a3'], returned: ['a1'], excluded }, at);
+    const run = (
+      disallowed: string[],
+      excluded: { id: string; title: string | null; reason: 'title' | 'description' | 'salary'; term: string }[],
+      at = T0,
+    ) => store.recordSearch('linkedin', { keywords: ['dev'], disallowed, found: ['a1', 'a2', 'a3'], returned: ['a1'], excluded }, at);
 
     it('makes the same keywords with other disallowed terms another search, and the same terms in any order or case one search', () => {
       run([], []);
-      run(['Intern', 'senior'], [{ id: 'a3', reason: 'title', term: 'Intern' }]);
-      run(['SENIOR', 'intern', ' intern '], [{ id: 'a3', reason: 'title', term: 'intern' }], T0 + DAY);
+      run(['Intern', 'senior'], [{ id: 'a3', title: 'T', reason: 'title', term: 'Intern' }]);
+      run(['SENIOR', 'intern', ' intern '], [{ id: 'a3', title: 'T', reason: 'title', term: 'intern' }], T0 + DAY);
       const stats = store.searchStats({ since: T0, until: T0 + 3 * DAY, limit: 10 });
       expect(stats.map((stat) => [stat.keywords, stat.disallowed, stat.runs]).sort()).toEqual([
         [['dev'], [], 1],
@@ -912,7 +916,7 @@ describe('searches as keyword lists', () => {
     });
 
     it('keeps which term dropped each job and where it matched, and reads it back in the detail', () => {
-      run(['intern', 'senior'], [{ id: 'a3', reason: 'description', term: 'Intern' }]);
+      run(['intern', 'senior'], [{ id: 'a3', title: 'T', reason: 'description', term: 'Intern' }]);
       const detail = store.searchDetail('linkedin', ['dev'], ['Senior', 'INTERN'], { limit: 10 });
       expect(detail).toMatchObject({ disallowed: ['intern', 'senior'], jobsExcluded: 1 });
       expect(detail?.jobs.find((entry) => entry.id === 'a3')).toMatchObject({
@@ -925,8 +929,58 @@ describe('searches as keyword lists', () => {
       expect(store.searchDetail('linkedin', ['dev'], [], { limit: 10 })).toBeNull();
     });
 
+    it('keeps the title of a job the search dropped, also when the job itself was never stored, and says whether it is stored', () => {
+      store.recordSearch(
+        'linkedin',
+        {
+          keywords: ['dev'],
+          disallowed: ['intern'],
+          found: ['a1', 'a3', 'never1'],
+          returned: ['a1'],
+          // a3 is stored; never1 was dropped by its title before its page was read, so only the hit knows its title
+          excluded: [
+            { id: 'a3', title: 'Recorded with the hit', reason: 'title', term: 'intern' },
+            { id: 'never1', title: 'Intern, Data', reason: 'title', term: 'intern' },
+          ],
+        },
+        T0,
+      );
+      const jobs = store.searchDetail('linkedin', ['dev'], ['intern'], { limit: 10 })?.jobs ?? [];
+      const byId = Object.fromEntries(jobs.map((entry) => [entry.id, entry]));
+      expect(byId['never1']).toMatchObject({
+        title: 'Intern, Data',
+        stored: false,
+        outcome: 'excluded',
+        excludedBy: { reason: 'title', term: 'intern' },
+      });
+      expect(byId['a3']).toMatchObject({ title: 'Intern', stored: true }); // the stored job's own title wins over the recorded one
+      expect(byId['a1']).toMatchObject({ title: 'React dev', stored: true });
+    });
+
+    it('has no title for a dropped job recorded without one, and cuts a very long title', () => {
+      store.recordSearch(
+        'linkedin',
+        {
+          keywords: ['dev'],
+          disallowed: ['x'],
+          found: ['old1', 'long1'],
+          returned: [],
+          excluded: [
+            { id: 'old1', title: null, reason: 'title', term: 'x' },
+            { id: 'long1', title: 'L'.repeat(900), reason: 'title', term: 'x' },
+          ],
+        },
+        T0,
+      );
+      const byId = Object.fromEntries(
+        (store.searchDetail('linkedin', ['dev'], ['x'], { limit: 10 })?.jobs ?? []).map((entry) => [entry.id, entry]),
+      );
+      expect(byId['old1']).toMatchObject({ title: null, stored: false });
+      expect(byId['long1']?.title).toHaveLength(300);
+    });
+
     it('says the salary is what dropped a job, with the salary the job states', () => {
-      run([], [{ id: 'a2', reason: 'salary', term: '40000-45000 EUR' }]);
+      run([], [{ id: 'a2', title: 'T', reason: 'salary', term: '40000-45000 EUR' }]);
       expect(store.searchDetail('linkedin', ['dev'], [], { limit: 10 })?.jobs.find((entry) => entry.id === 'a2')?.excludedBy).toEqual({
         reason: 'salary',
         term: '40000-45000 EUR',
@@ -942,7 +996,7 @@ describe('searches as keyword lists', () => {
           disallowed: ['intern'],
           found: ['a1', 'a3'],
           returned: ['a3'],
-          excluded: [{ id: 'a1', reason: 'title', term: 'intern' }],
+          excluded: [{ id: 'a1', title: 'T', reason: 'title', term: 'intern' }],
         },
         T0 + 2 * DAY,
       );
@@ -965,7 +1019,7 @@ describe('searches as keyword lists', () => {
 
     it('filters the jobs by the exact search, terms included, or by the keywords whatever the terms', () => {
       run([], []);
-      run(['intern'], [{ id: 'a3', reason: 'title', term: 'intern' }], T0 + DAY);
+      run(['intern'], [{ id: 'a3', title: 'T', reason: 'title', term: 'intern' }], T0 + DAY);
       const ids = (search: { keywords: string[]; disallowed?: string[] }) =>
         store
           .listJobs({
@@ -995,7 +1049,7 @@ describe('searches as keyword lists', () => {
         first.close();
         const raw = new DatabaseSync(path);
         raw.exec(
-          'DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); PRAGMA user_version = 9;',
+          'ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); PRAGMA user_version = 9;',
         );
         raw.close();
         const upgraded = Store.open(path);
