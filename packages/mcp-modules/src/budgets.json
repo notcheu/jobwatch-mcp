@@ -31,6 +31,10 @@
     "hourly": 60,
     "daily": 300
   },
+  "personio": {
+    "hourly": 600,
+    "daily": 3000
+  },
   "recruitee": {
     "hourly": 600,
     "daily": 3000
