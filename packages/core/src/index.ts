@@ -56,7 +56,7 @@ export {
 } from './control';
 export { HEALTH_MAX_DISCARDED_SHARE, HEALTH_MIN_FOUND, HEALTH_MIN_RUNS_EMPTY, searchHealth } from './dashboard/searchHealth';
 export type { HealthIssue, SearchHealth } from './dashboard/searchHealth';
-export { CallLog, keywordsOf, type CallEntry, type CallQuery } from './dashboard/callLog';
+export { CallLog, keywordsOf, type CallEntry, type CallQuery, type RestoredCall } from './dashboard/callLog';
 export { DEFAULT_CHARS_PER_TOKEN, estimateTokens, jobTextChars } from './dashboard/tokens';
 export type { BrowserConnection, ConnectBrowser } from './browser/session';
 export { BackendError } from './runtime/backend';
@@ -81,7 +81,7 @@ export type {
 export { Semaphore } from './runtime/semaphore';
 export type { Metrics } from './metrics';
 export {
-  CALL_LOG_RETENTION_MS,
+  DEFAULT_CALL_LOG_RETENTION_DAYS,
   DEFAULT_JOB_RETENTION_DAYS,
   DAILY_USAGE_RETENTION_DAYS,
   JOB_SORT_COLUMNS,

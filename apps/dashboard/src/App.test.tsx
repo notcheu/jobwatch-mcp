@@ -249,7 +249,7 @@ describe('runs', () => {
     expect(await screen.findByText('Dropped to keep the memory bounded.')).toBeInTheDocument();
     unmount();
     renderApp('/runs/99');
-    expect(await screen.findByText('That call is no longer in memory.')).toBeInTheDocument();
+    expect(await screen.findByText(/no longer in the call log/)).toBeInTheDocument();
   });
 
   it('has an empty state that says what to do', async () => {

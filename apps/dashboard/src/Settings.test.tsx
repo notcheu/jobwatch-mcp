@@ -17,6 +17,7 @@ const settings = {
   callBuffer: 2000,
   charsPerToken: 3.5,
   jobRetentionDays: 30,
+  callLogRetentionDays: 14,
   maxTabs: 3,
   browser: { idleStopSeconds: 120, memoryHighMb: 1200, memoryMaxMb: 1500 },
   adaptersPinned: false,
@@ -31,6 +32,8 @@ describe('settings', () => {
     expect(screen.getByText('8 h')).toBeInTheDocument();
     expect(screen.getByText('10 min')).toBeInTheDocument();
     expect(screen.getByText('2000')).toBeInTheDocument();
+    expect(screen.getByText('14 days')).toBeInTheDocument(); // how long a call is kept in the call log
+    expect(screen.getByText('Calls are kept')).toBeInTheDocument();
     expect(screen.getByText('1200 / 1500 MB')).toBeInTheDocument();
     expect(screen.getByText('Google')).toBeInTheDocument();
     expect(screen.getByText('editable')).toBeInTheDocument();

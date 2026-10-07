@@ -198,6 +198,7 @@ async function build(over: Partial<DashboardDeps> = {}, authRequired = false, oi
       callBuffer: 2000,
       charsPerToken: 3.5,
       jobRetentionDays: 30,
+      callLogRetentionDays: 30,
       maxTabs: 3,
       browser: { idleStopSeconds: 120, memoryHighMb: 1200, memoryMaxMb: 1500 },
       adaptersPinned: false,
@@ -297,7 +298,7 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(detail).toMatchObject({ adapter: 'linkedin', argsHash: 'hash', jobText: { available: 8000, returned: 700 } });
     const missing = await t.call('/dashboard/api/v1/calls/9999');
     expect(missing.status).toBe(404);
-    expect(await json(missing)).toEqual({ error: 'not_found', message: 'That call is no longer in memory.' });
+    expect(await json(missing)).toEqual({ error: 'not_found', message: 'That call is no longer in the call log.' });
   });
 
   it('lists jobs without descriptions, sorted, filtered, searched and paged on the server', async () => {
@@ -875,6 +876,7 @@ describe('settings', () => {
       sessionMaxHours: 8,
       writeWindowMinutes: 10,
       callBuffer: 2000,
+      callLogRetentionDays: 30, // the log rotation, 30 days to begin with
       maxTabs: 3,
       browser: { memoryMaxMb: 1500 },
     });

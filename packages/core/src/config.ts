@@ -63,6 +63,8 @@ export interface Config {
   dbPath: string;
   /** Days a stored job posting is kept after it was last seen (read or listed on a search page); older ones are evicted (at start and every six hours). */
   jobRetentionDays: number;
+  /** Days a call is kept in the call log, parameters included, before it is deleted (the log rotation). */
+  callLogRetentionDays: number;
   /** From ADAPTERS. When defined it overrides adapters.json and the CLI refuses to edit the file. */
   adaptersFromEnv: readonly string[] | undefined;
   /** From UTILITIES. Same rule, for the utilities (tools that fetch no jobs). */
@@ -211,6 +213,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): L
       profileVolumePrefix: parsed.BROWSER_PROFILE_VOLUME_PREFIX,
       dataDir: parsed.DATA_DIR,
       jobRetentionDays: parsed.JOB_RETENTION_DAYS,
+      callLogRetentionDays: parsed.CALL_LOG_RETENTION_DAYS,
       dbPath: parsed.DB_PATH ?? `${parsed.DATA_DIR.replace(/\/+$/, '')}/jobwatch.sqlite`,
       adaptersFromEnv,
       utilitiesFromEnv,

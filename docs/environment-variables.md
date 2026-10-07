@@ -27,6 +27,7 @@ All variables are optional unless noted. An empty value counts as "not set". The
 | `DATA_DIR` | `/data`; `./.data` for `npm run dev` and `start` | Holds the SQLite database, `adapters.json` and, with `BROWSER_LOCAL_CHROME`, the browser profiles. In Compose it is `./data` next to the compose file, mounted at `/data`. |
 | `DB_PATH` | `<DATA_DIR>/jobwatch.sqlite` | The SQLite file. The schema is migrated at every boot. |
 | `JOB_RETENTION_DAYS` | `30` | Days a stored job is kept after it was last seen (1-3650). |
+| `CALL_LOG_RETENTION_DAYS` | `30` | The log rotation: days a call is kept in the call log before it is deleted, **with its parameters** (the arguments Claude sent, capped at 16 KB a call; never credentials). The call log is what the Runs page, the Overview and the Analytics show: the most recent `DASHBOARD_CALL_BUFFER` calls of it are loaded when the router starts. Lowering it deletes the older calls at the next start or hourly prune (1-3650). |
 | `LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` or `fatal`. |
 | `BROWSER_RUNTIME` | `docker` | Container runtime for the browser. Only `docker` is implemented. |
 | `TOKEN_CHARS_PER_TOKEN` | `3.5` | Characters per token, for the estimate of what a result costs Claude (1-10). |

@@ -65,7 +65,7 @@ export function Settings() {
               <Row label="A change needs a sign-in within" hint="Enabling or disabling an adapter, restarting the router">
                 {s.writeWindowMinutes} min
               </Row>
-              <Row label="Calls kept in memory" hint="With their parameters; cleared when the router restarts">
+              <Row label="Calls shown" hint="The most recent ones, with their parameters; they come back after a restart">
                 {s.callBuffer}
               </Row>
               <Row label="Characters per token" hint="How the token figures are estimated">
@@ -73,6 +73,9 @@ export function Settings() {
               </Row>
               <Row label="Stored jobs are kept" hint="After they were last seen">
                 {s.jobRetentionDays} days
+              </Row>
+              <Row label="Calls are kept" hint="The call log, with the parameters of each call, then deleted">
+                {s.callLogRetentionDays} days
               </Row>
               <Row label="Browser tabs at most">{s.maxTabs}</Row>
               <Row label="The browser stops after" hint="Without a call">

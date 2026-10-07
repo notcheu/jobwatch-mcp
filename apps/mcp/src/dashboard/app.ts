@@ -254,7 +254,7 @@ export function createDashboardApp(deps: DashboardDeps): Express {
     '/calls/:id',
     wrap((req, res) => {
       const call = getCall(deps, Number(req.params['id']));
-      if (call === undefined) return void sendError(res, 404, 'not_found', 'That call is no longer in memory.');
+      if (call === undefined) return void sendError(res, 404, 'not_found', 'That call is no longer in the call log.');
       return call;
     }),
   );

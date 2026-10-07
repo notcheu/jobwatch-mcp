@@ -113,6 +113,67 @@ describe('CallLog', () => {
   });
 });
 
+describe('CallLog.restore', () => {
+  const stored = (requestId: string, over: Record<string, unknown> = {}) => ({
+    requestId,
+    tool: 'linkedin_search',
+    adapter: 'linkedin',
+    platform: 'linkedin',
+    outcome: 'ok',
+    durationMs: 120,
+    argsHash: 'abc',
+    detail: {
+      startedAt: 1000,
+      unitsReserved: 5,
+      unitsSpent: 3,
+      responseBytes: 900,
+      estimatedTokens: 260,
+      warnings: 1,
+      params: { keywords: ['react', 'vue'], geo: 'france' },
+      paramsTruncated: false,
+      jobText: { available: 8000, returned: 700 },
+    },
+    ...over,
+  });
+
+  it('fills the buffer with finished calls, oldest first, with their parameters and the keywords read from them', () => {
+    const log = new CallLog(10);
+    log.restore([stored('r1'), stored('r2')]);
+    const calls = log.list({ limit: 10 }).calls;
+    expect(calls.map((c) => [c.id, c.requestId, c.state])).toEqual([
+      [2, 'r2', 'done'],
+      [1, 'r1', 'done'],
+    ]);
+    expect(calls[0]).toMatchObject({
+      code: 'ok',
+      durationMs: 120,
+      unitsSpent: 3,
+      estimatedTokens: 260,
+      keywords: ['react', 'vue'],
+      params: { keywords: ['react', 'vue'], geo: 'france' },
+      paramsDropped: false,
+      jobText: { available: 8000, returned: 700 },
+    });
+  });
+
+  it('keeps only the newest calls up to the capacity, and numbers the next call after the restored ones', () => {
+    const log = new CallLog(2);
+    log.restore([stored('r1'), stored('r2'), stored('r3')]);
+    expect(log.list({ limit: 10 }).calls.map((c) => c.requestId)).toEqual(['r3', 'r2']);
+    start(log, 'live');
+    expect(log.list({ limit: 10 }).calls[0]).toMatchObject({ requestId: 'live', id: 3, state: 'running' }); // only the two kept ones were numbered
+  });
+
+  it('applies the memory bound on parameters like for any call: the oldest lose theirs first', () => {
+    const log = new CallLog(10, 120);
+    const big = (requestId: string) => stored(requestId, { detail: { ...stored(requestId).detail, params: { text: 'x'.repeat(100) } } });
+    log.restore([big('r1'), big('r2'), big('r3')]);
+    const byRequest = Object.fromEntries(log.all().map((c) => [c.requestId, c]));
+    expect(byRequest['r1']).toMatchObject({ params: null, paramsDropped: true });
+    expect(byRequest['r3']?.params).not.toBeNull();
+  });
+});
+
 describe('keywordsOf', () => {
   it('reads the keywords of a search, or the title words of an ATS search joined', () => {
     expect(keywordsOf({ keywords: '  react  ' })).toEqual(['react']);

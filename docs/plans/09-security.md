@@ -48,7 +48,7 @@ Single user. Scopes: `jobwatch.read` (all read-only tools) and `jobwatch.state` 
 LinkedIn's User Agreement prohibits automated access; accounts using automation can be restricted. This project reads the operator's own search results at human-scale volume from the operator's own residential IP with the operator's own logged-in session, and never writes. That is lower risk than commercial scraping but **not zero**. Keep the budget conservative (the default of each module is in `packages/mcp-modules/src/budgets.json`; the operator can change it from the dashboard or with `LINKEDIN_BUDGET_HOURLY` and `LINKEDIN_BUDGET_DAILY`, see `docs/environment-variables.md`), stop at the first checkpoint, and make it easy to fall back to manual/extension use. Other sites: check each site's terms before enabling its adapter; prefer official feeds/APIs (ATS endpoints) where available.
 
 ## Privacy
-Do not log descriptions or cookies. Keep call logs 30 days. Never send the profile contents anywhere. Job descriptions returned to Claude are public job-post text.
+Do not log descriptions or cookies. The call log, with the parameters of each call (keywords, filters, ids; no credential), is kept `CALL_LOG_RETENTION_DAYS` (30 to begin with) in the database, then deleted. Never send the profile contents anywhere. Job descriptions returned to Claude are public job-post text.
 
 ## Incident runbook (short)
 - Suspected token leak: revoke refresh tokens at the front, rotate `FRONT_SHARED_SECRET`, re-add the connector.

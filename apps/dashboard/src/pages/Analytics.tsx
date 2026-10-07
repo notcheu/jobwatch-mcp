@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 
 type Scope = 'session' | 'lifetime' | 'historical';
 const SCOPES: { value: Scope; label: string; hint: string }[] = [
-  { value: 'session', label: 'Session', hint: 'The calls in memory, since the router started' },
+  { value: 'session', label: 'Session', hint: 'The most recent calls (also after a restart), by the hour' },
   { value: 'lifetime', label: 'Lifetime', hint: 'Daily totals kept across restarts' },
   { value: 'historical', label: 'Historical', hint: 'Daily totals for the dates you pick' },
 ];
