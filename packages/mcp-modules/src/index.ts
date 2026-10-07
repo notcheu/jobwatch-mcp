@@ -22,6 +22,7 @@ export const installedAdapters = {
   linkedin: () => import('@jobwatch/adapter-linkedin').then((m) => m.default),
   recruitee: () => import('@jobwatch/adapter-recruitee').then((m) => m.default),
   teamtailor: () => import('@jobwatch/adapter-teamtailor').then((m) => m.default),
+  workable: () => import('@jobwatch/adapter-workable').then((m) => m.default),
   wttj: () => import('@jobwatch/adapter-wttj').then((m) => m.default),
   // <adapters:end>
 } satisfies InstalledAdapterMap;
