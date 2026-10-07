@@ -128,23 +128,9 @@ export function Jobs() {
   const navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
   const get = (key: string): string => search.get(key) ?? '';
-  // the search a job was found by is its keyword list: one `found_by` per keyword in the URL, `react | vue` in the box
-  const foundByText = search.get('no_keywords') === '1' ? '(no keywords)' : search.getAll('found_by').join(' | ');
   // the disallowed terms of that search, set by the link of a search (not typed): shown as a chip that clears them
   const terms = search.get('no_disallowed') === '1' ? [] : search.getAll('disallowed');
   const hasTermsFilter = search.get('no_disallowed') === '1' || terms.length > 0;
-  const setFoundBy = (text: string): void => {
-    const next = new URLSearchParams(search);
-    next.delete('found_by');
-    next.delete('no_keywords');
-    next.delete('disallowed'); // a new set of keywords is not the same search
-    next.delete('no_disallowed');
-    next.delete('page');
-    for (const keyword of text.split(/\s+OR\s+|\s*\|\s*/).map((part) => part.trim()))
-      if (keyword !== '' && keyword !== '(no keywords)') next.append('found_by', keyword);
-    if (text.trim() === '(no keywords)') next.set('no_keywords', '1');
-    setSearch(next, { replace: true });
-  };
   const [text, setText] = useState(get('q'));
   const q = useDebounced(text);
   const page = Math.max(1, Number(get('page')) || 1);
@@ -180,7 +166,6 @@ export function Jobs() {
     no_disallowed: search.get('no_disallowed') ?? undefined,
     from: get('from'),
     to: get('to'),
-    dateField: get('dateField') || undefined,
     sort: sortName || undefined,
     dir: sortName ? get('dir') || 'desc' : undefined,
     page,
@@ -229,15 +214,6 @@ export function Jobs() {
             value={text}
             onChange={(event) => setText(event.target.value)}
           />
-          <Input
-            aria-label="Found by keywords"
-            placeholder="Found by keywords (react | vue)"
-            className="w-44"
-            defaultValue={foundByText}
-            key={foundByText}
-            onBlur={(event) => setFoundBy(event.target.value)}
-            onKeyDown={(event) => event.key === 'Enter' && setFoundBy(event.currentTarget.value)}
-          />
           {hasTermsFilter && (
             <button
               type="button"
@@ -255,16 +231,6 @@ export function Jobs() {
               {terms.length === 0 ? 'without terms' : `without ${terms.join(', ')}`} ×
             </button>
           )}
-          <select
-            aria-label="Date to filter on"
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            value={get('dateField') || 'first_seen'}
-            onChange={(event) => update({ dateField: event.target.value === 'first_seen' ? undefined : event.target.value })}
-          >
-            <option value="first_seen">First seen</option>
-            <option value="last_seen">Last seen</option>
-            <option value="fetched_at">Text read</option>
-          </select>
           <Input
             aria-label="From date"
             type="date"

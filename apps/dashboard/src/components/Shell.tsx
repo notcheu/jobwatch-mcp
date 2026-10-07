@@ -1,6 +1,23 @@
 import { useQuery } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, BarChart3, BookOpen, Briefcase, LogOut, Moon, Search, Settings, Sun, Telescope, Zap, MapPin } from 'lucide-react';
+import {
+  Activity,
+  BarChart3,
+  BookOpen,
+  Briefcase,
+  LogOut,
+  Moon,
+  Search,
+  Settings,
+  Sun,
+  Telescope,
+  Zap,
+  MapPin,
+  ChevronDown,
+  ChevronUp,
+  Wrench,
+} from 'lucide-react';
+import { useState } from 'react';
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +26,9 @@ import { api } from '@/lib/api';
 import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
-/** `group`: the heading the item sits under, for the pages of the utilities (they fetch no jobs, so they have no platform tab). */
+/** `group`: the menu item the page sits under, for the pages of the utilities (they fetch no jobs, so they have no platform tab). */
+const GROUP_ICONS: Record<string, LucideIcon> = { Tools: Wrench };
+
 const SECTIONS: readonly { to: string; label: string; icon: LucideIcon; end: boolean; tabs: boolean; group?: string }[] = [
   { to: '/', label: 'Overview', icon: Activity, end: true, tabs: false },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, end: false, tabs: true },
@@ -21,6 +40,54 @@ const SECTIONS: readonly { to: string; label: string; icon: LucideIcon; end: boo
   { to: '/docs', label: 'Docs', icon: BookOpen, end: false, tabs: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false, tabs: false },
 ];
+
+const NAV_ITEM =
+  'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground';
+const NAV_ACTIVE = 'bg-accent text-accent-foreground';
+
+/** A menu item that folds and unfolds the pages under it. Open at first; a folded group is marked when the page shown is one of its own. */
+function NavGroup({
+  label,
+  icon: Icon,
+  items,
+  pathname,
+}: {
+  label: string;
+  icon: LucideIcon;
+  items: readonly (typeof SECTIONS)[number][];
+  pathname: string;
+}) {
+  const [open, setOpen] = useState(true);
+  const Chevron = open ? ChevronUp : ChevronDown;
+  const hasCurrent = items.some((item) => pathname.startsWith(item.to));
+  return (
+    <li>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`nav-group-${label}`}
+        className={cn(NAV_ITEM, !open && hasCurrent && NAV_ACTIVE)}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon className="size-4" />
+        <span className="flex-1 text-left">{label}</span>
+        <Chevron className="size-4" aria-hidden="true" />
+      </button>
+      {open && (
+        <ul id={`nav-group-${label}`} className="mt-0.5 space-y-0.5">
+          {items.map((item) => (
+            <li key={item.to}>
+              <NavLink to={item.to} end={item.end} className={({ isActive }) => cn(NAV_ITEM, 'pl-9', isActive && NAV_ACTIVE)}>
+                <item.icon className="size-4" />
+                {item.label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
 
 /** `?tool=linkedin` filters the section to one platform; the tab is kept in the URL so a view is a link. */
 export function usePlatform(): string | undefined {
@@ -59,30 +126,33 @@ export function Shell() {
       <nav aria-label="Sections" className="flex w-52 shrink-0 flex-col border-r bg-card">
         <div className="px-4 py-4 text-sm font-semibold tracking-wide">jobwatch</div>
         <ul className="flex-1 space-y-0.5 px-2">
-          {SECTIONS.map(({ to, label, icon: Icon, end, group }, index) => (
-            <li key={to}>
-              {group !== undefined && SECTIONS[index - 1]?.group !== group && (
-                <div className="px-3 pt-3 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{group}</div>
-              )}
-              <NavLink
-                to={{
-                  pathname: to,
-                  search: params.get('tool') && SECTIONS.find((s) => s.to === to)?.tabs ? `?tool=${params.get('tool')}` : '',
-                }}
-                end={end}
-                className={({ isActive }) =>
-                  cn(
-                    'flex items-center gap-2 rounded-md py-2 pr-3 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                    group === undefined ? 'pl-3' : 'pl-5',
-                    isActive && 'bg-accent text-accent-foreground',
-                  )
-                }
-              >
-                <Icon className="size-4" />
-                {label}
-              </NavLink>
-            </li>
-          ))}
+          {SECTIONS.map((item, index) => {
+            if (item.group !== undefined) {
+              // the pages of a group are drawn once, under the group's own item, at the place of its first page
+              if (SECTIONS[index - 1]?.group === item.group) return null;
+              return (
+                <NavGroup
+                  key={item.group}
+                  label={item.group}
+                  icon={GROUP_ICONS[item.group] ?? Wrench}
+                  items={SECTIONS.filter((entry) => entry.group === item.group)}
+                  pathname={location.pathname}
+                />
+              );
+            }
+            return (
+              <li key={item.to}>
+                <NavLink
+                  to={{ pathname: item.to, search: params.get('tool') && item.tabs ? `?tool=${params.get('tool')}` : '' }}
+                  end={item.end}
+                  className={({ isActive }) => cn(NAV_ITEM, isActive && NAV_ACTIVE)}
+                >
+                  <item.icon className="size-4" />
+                  {item.label}
+                </NavLink>
+              </li>
+            );
+          })}
         </ul>
         <div className="border-t p-3 text-xs text-muted-foreground">
           {me.data?.mode === 'google' ? <div className="truncate">{me.data.email}</div> : <div>Local development</div>}

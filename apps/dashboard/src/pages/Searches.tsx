@@ -52,7 +52,6 @@ export function Searches() {
               Last {window.label}
             </Button>
           ))}
-          <span className="ml-auto text-xs text-muted-foreground">Click a search to see its health and its jobs</span>
         </div>
         <div className="flex-1 overflow-auto">
           <Table>

@@ -42,16 +42,21 @@ describe('the shell', () => {
     ).toEqual(['All', 'linkedin', 'apec']); // wttj is disabled
   });
 
-  it('puts the pages of the utilities under a Tools heading in the menu', async () => {
+  it('puts the pages of the utilities under a Tools menu item that folds and unfolds, open at first', async () => {
     mockApi({ '/me': me, '/tools': tools, '/overview': overview });
     renderApp('/');
+    const user = userEvent.setup();
     const nav = await screen.findByRole('navigation', { name: 'Sections' });
-    expect(within(nav).getByText('Tools')).toBeInTheDocument();
+    const group = within(nav).getByRole('button', { name: 'Tools' });
+    expect(group).toHaveAttribute('aria-expanded', 'true');
+    expect(within(nav).getByRole('link', { name: 'ATS discovery' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'LinkedIn places' })).toBeInTheDocument();
     expect(within(nav).queryByText('Tools & status')).not.toBeInTheDocument();
-    const items = within(nav)
-      .getAllByRole('link')
-      .map((link) => link.textContent);
-    expect(items.indexOf('ATS discovery')).toBeGreaterThan(items.indexOf('Searches'));
+    await user.click(group);
+    expect(group).toHaveAttribute('aria-expanded', 'false');
+    expect(within(nav).queryByRole('link', { name: 'ATS discovery' })).not.toBeInTheDocument();
+    await user.click(group);
+    expect(within(nav).getByRole('link', { name: 'ATS discovery' })).toBeInTheDocument();
   });
 
   it('offers one Utility tab on Runs and Analytics, only when a utility is enabled, and sends role=utility', async () => {

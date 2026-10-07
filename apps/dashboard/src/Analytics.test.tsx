@@ -152,6 +152,12 @@ describe('analytics', () => {
     expect(seen.some((url) => url.startsWith('/dashboard/api/v1/searches'))).toBe(false);
   });
 
+  it('says since when the session counts, and that the token counts are estimates', async () => {
+    mockApi({ ...common, '/usage': usage() });
+    renderApp('/analytics');
+    expect(await screen.findByText(`since ${new Date(NOW).toLocaleDateString()}. Token counts are estimates (~).`)).toBeInTheDocument();
+  });
+
   it('lists each tool with its calls, errors, tokens, durations and share of the tokens', async () => {
     mockApi({ ...common, '/usage': usage() });
     renderApp('/analytics');

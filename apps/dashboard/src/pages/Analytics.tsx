@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 
 type Scope = 'session' | 'lifetime' | 'historical';
 const SCOPES: { value: Scope; label: string; hint: string }[] = [
-  { value: 'session', label: 'Session', hint: 'The most recent calls (also after a restart), by the hour' },
+  { value: 'session', label: 'Session', hint: '' },
   { value: 'lifetime', label: 'Lifetime', hint: 'Daily totals kept across restarts' },
   { value: 'historical', label: 'Historical', hint: 'Daily totals for the dates you pick' },
 ];
@@ -55,6 +55,12 @@ export function Analytics() {
     queryFn: () => api.usage({ scope, ...(scope === 'historical' ? { from, to } : {}), ...filter }),
     refetchInterval: scope === 'session' ? 5000 : 30_000,
   });
+  const hint = [
+    SCOPES.find((item) => item.value === scope)?.hint,
+    usage.data?.since ? `since ${new Date(usage.data.since).toLocaleDateString()}` : undefined,
+  ]
+    .filter((part) => part !== undefined && part !== '')
+    .join(' · ');
   const overview = useQuery({ queryKey: ['overview'], queryFn: api.overview, refetchInterval: 5000 });
   const tools = useQuery({ queryKey: ['tools'], queryFn: api.tools, refetchInterval: 15_000 });
 
@@ -83,8 +89,8 @@ export function Analytics() {
           </div>
         )}
         <span className="text-xs text-muted-foreground">
-          {SCOPES.find((item) => item.value === scope)?.hint}
-          {usage.data?.since ? ` · since ${new Date(usage.data.since).toLocaleDateString()}` : ''}. Token counts are estimates (~).
+          {hint === '' ? '' : `${hint}. `}
+          Token counts are estimates (~).
         </span>
       </div>
 
