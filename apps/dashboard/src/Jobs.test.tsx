@@ -53,7 +53,7 @@ const at = <T,>(list: readonly T[], index: number): T => {
 };
 
 describe('jobs table', () => {
-  it('lists the stored jobs without their text, with source, board, keywords and size', async () => {
+  it('lists the stored jobs without their text, with source, keywords and size', async () => {
     mockApi({
       ...common,
       '/jobs': page([
@@ -72,14 +72,15 @@ describe('jobs table', () => {
     expect(first.getByText('linkedin')).toBeInTheDocument();
     expect(first.getAllByText('react')).toHaveLength(2); // one badge for each search that found it
     expect(first.getByText('4.2k')).toBeInTheDocument();
-    expect(within(at(rows, 2)).getByText('bsport')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Board' })).not.toBeInTheDocument();
+    expect(within(at(rows, 2)).queryByText('bsport')).not.toBeInTheDocument();
     expect(screen.getByText('1–2 of 2')).toBeInTheDocument();
     expect(screen.queryByText(/Build things/)).not.toBeInTheDocument();
   });
 
   it('sends the filters of the URL to the server: tool tab, text, keyword, dates and page', async () => {
     const seen = mockApi({ ...common, '/jobs': page([job()], 80) });
-    renderApp('/jobs?tool=linkedin&q=react&found_by=react&from=2026-10-01&to=2026-10-09&page=2&pageSize=10&sort=title&dir=asc&board=acme');
+    renderApp('/jobs?tool=linkedin&q=react&found_by=react&from=2026-10-01&to=2026-10-09&page=2&pageSize=10&sort=title&dir=asc');
     await rowsLoaded(2);
     const call = seen.find((url) => url.startsWith('/dashboard/api/v1/jobs?')) ?? '';
     const query = new URLSearchParams(call.split('?')[1]);
@@ -93,7 +94,6 @@ describe('jobs table', () => {
       pageSize: '10',
       sort: 'title',
       dir: 'asc',
-      board: 'acme',
     });
   });
 

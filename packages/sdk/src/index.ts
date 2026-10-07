@@ -126,6 +126,7 @@ export {
   judgeBoardPostings,
   runBoardTool,
   slugify,
+  titleCase,
 } from './boards';
 export type { BoardAddress, BoardExcluded, BoardFilters, BoardJob, BoardPosting, BoardReport, BoardSource, Judged } from './boards';
 
