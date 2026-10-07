@@ -202,8 +202,7 @@ export interface PlaceHit {
 
 /** The log of LinkedIn place lookups, for the dashboard's LinkedIn places page (docs/plans/17-dashboard.md). */
 export interface PlaceLog {
-  /** `tool`: a `linkedin_locations` lookup. `search`: a LinkedIn search that looked a place name up by itself. */
-  recordLookup(lookup: { query: string; source: 'tool' | 'search'; hits: readonly PlaceHit[] }): Promise<void>;
+  recordLookup(lookup: { query: string; hits: readonly PlaceHit[] }): Promise<void>;
 }
 
 export interface BaseContext {

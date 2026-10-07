@@ -41,9 +41,6 @@ function Log({ onReauth, onNotice }: { onReauth: () => void; onNotice: (message:
       </TableCell>
       <TableCell className="max-w-48 font-medium break-words">{lookup.query}</TableCell>
       <TableCell>
-        <Badge variant="outline">{lookup.source === 'search' ? 'A search' : 'The tool'}</Badge>
-      </TableCell>
-      <TableCell>
         {lookup.hits.length === 0 ? (
           <span className="text-muted-foreground">LinkedIn suggested nothing</span>
         ) : (
@@ -87,7 +84,6 @@ function Log({ onReauth, onNotice }: { onReauth: () => void; onNotice: (message:
             <TableRow className="hover:bg-transparent">
               <TableHead>When</TableHead>
               <TableHead>Place</TableHead>
-              <TableHead>Asked by</TableHead>
               <TableHead>What LinkedIn suggested</TableHead>
             </TableRow>
           </TableHeader>

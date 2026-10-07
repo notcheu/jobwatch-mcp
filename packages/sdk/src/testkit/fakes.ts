@@ -49,8 +49,8 @@ export class FakePlatformMemory implements PlatformMemory {
 
 /** `ctx.places` for tests: assert on `lookups`. */
 export class FakePlaceLog implements PlaceLog {
-  readonly lookups: { query: string; source: 'tool' | 'search'; hits: readonly PlaceHit[] }[] = [];
-  recordLookup(lookup: { query: string; source: 'tool' | 'search'; hits: readonly PlaceHit[] }): Promise<void> {
+  readonly lookups: { query: string; hits: readonly PlaceHit[] }[] = [];
+  recordLookup(lookup: { query: string; hits: readonly PlaceHit[] }): Promise<void> {
     this.lookups.push(lookup);
     return Promise.resolve();
   }

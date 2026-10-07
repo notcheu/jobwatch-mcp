@@ -242,7 +242,6 @@ const MIGRATIONS: readonly string[] = [
     id     INTEGER PRIMARY KEY,
     ts     INTEGER NOT NULL,
     query  TEXT    NOT NULL,
-    source TEXT    NOT NULL CHECK (source IN ('tool', 'search')),
     hits   TEXT    NOT NULL
   );
   CREATE INDEX place_lookups_ts ON place_lookups (ts);
@@ -594,14 +593,11 @@ export class Store {
   // ------------------------------------------------------------------------------------------ LinkedIn places
 
   /** Log one place lookup (newest kept, at most MAX_PLACE_LOOKUPS rows; dropped with the call log). */
-  recordPlaceLookup(
-    lookup: { query: string; source: 'tool' | 'search'; hits: readonly { id: string; label: string }[] },
-    now: number,
-  ): void {
+  recordPlaceLookup(lookup: { query: string; hits: readonly { id: string; label: string }[] }, now: number): void {
     this.transaction(() => {
       this.db
-        .prepare('INSERT INTO place_lookups (ts, query, source, hits) VALUES (?, ?, ?, ?)')
-        .run(now, lookup.query.slice(0, 100), lookup.source, JSON.stringify(lookup.hits.slice(0, 10)));
+        .prepare('INSERT INTO place_lookups (ts, query, hits) VALUES (?, ?, ?)')
+        .run(now, lookup.query.slice(0, 100), JSON.stringify(lookup.hits.slice(0, 10)));
       this.db
         .prepare('DELETE FROM place_lookups WHERE id IN (SELECT id FROM place_lookups ORDER BY id DESC LIMIT -1 OFFSET ?)')
         .run(MAX_PLACE_LOOKUPS);
@@ -612,7 +608,7 @@ export class Store {
   listPlaceLookups(limit: number, offset: number): { rows: PlaceLookup[]; total: number } {
     const total = Number((this.db.prepare('SELECT count(*) AS n FROM place_lookups').get() as Rows | undefined)?.['n'] ?? 0);
     const rows = this.db
-      .prepare('SELECT id, ts, query, source, hits FROM place_lookups ORDER BY id DESC LIMIT ? OFFSET ?')
+      .prepare('SELECT id, ts, query, hits FROM place_lookups ORDER BY id DESC LIMIT ? OFFSET ?')
       .all(limit, offset) as Rows[];
     return {
       total,
@@ -620,7 +616,6 @@ export class Store {
         id: Number(row['id']),
         ts: Number(row['ts']),
         query: String(row['query']),
-        source: row['source'] === 'search' ? 'search' : 'tool',
         hits: JSON.parse(String(row['hits'])) as { id: string; label: string }[],
       })),
     };
@@ -1168,7 +1163,6 @@ export interface PlaceLookup {
   id: number;
   ts: number;
   query: string;
-  source: 'tool' | 'search';
   hits: { id: string; label: string }[];
 }
 

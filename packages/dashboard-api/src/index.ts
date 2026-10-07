@@ -391,7 +391,6 @@ export const placeLookupSchema = z
     id: z.number(),
     at: z.string(),
     query: z.string(),
-    source: z.enum(['tool', 'search']),
     hits: z.array(z.object({ id: z.string(), label: z.string(), saved: z.enum(['none', 'same', 'other']) }).strict()),
   })
   .strict();

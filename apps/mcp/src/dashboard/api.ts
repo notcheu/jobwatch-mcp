@@ -430,7 +430,6 @@ export async function listPlaceLookups(data: DashboardData, query: unknown): Pro
       id: row.id,
       at: iso(row.ts),
       query: row.query,
-      source: row.source,
       hits: row.hits.map((hit) => ({ ...hit, saved: saved === null ? 'none' : saved.id === hit.id ? 'same' : 'other' })),
     });
   }

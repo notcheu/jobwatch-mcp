@@ -43,7 +43,7 @@ describe('resolvePlace', () => {
     await resolvePlace(c.ctx, 'Berlin', {});
     await resolvePlace(c.ctx, 'berlin', {});
     expect(c.places.lookups).toHaveLength(1);
-    expect(c.places.lookups[0]).toMatchObject({ query: 'Berlin', source: 'search' });
+    expect(c.places.lookups[0]).toMatchObject({ query: 'Berlin' });
     expect(c.places.lookups[0]?.hits.map((hit) => hit.id)).toEqual(['103035651', '106967730', '90009712']);
   });
 

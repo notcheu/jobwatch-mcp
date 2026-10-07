@@ -31,7 +31,7 @@ export async function resolvePlace(
   const known = await savedLocation(ctx.memory, wanted);
   if (known !== null) return { geo: known.id };
   const hits = await lookupLocations(ctx.http, wanted);
-  await ctx.places.recordLookup({ query: wanted, source: 'search', hits: hits.slice(0, 10) });
+  await ctx.places.recordLookup({ query: wanted, hits: hits.slice(0, 10) });
   const best = bestLocation(hits, wanted);
   if (best === undefined) return { geo: wanted };
   await saveLocation(ctx.memory, wanted, best, 'auto');

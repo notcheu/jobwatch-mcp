@@ -6,7 +6,7 @@ import { NOW, me, mockApi, renderApp, tools } from './test-utils';
 afterEach(() => vi.unstubAllGlobals());
 
 const hit = (over: Record<string, unknown> = {}) => ({ id: '103035651', label: 'Berlin, Germany', saved: 'none', ...over });
-const lookup = (over: Record<string, unknown> = {}) => ({ id: 1, at: NOW, query: 'Berlin', source: 'search', hits: [hit()], ...over });
+const lookup = (over: Record<string, unknown> = {}) => ({ id: 1, at: NOW, query: 'Berlin', hits: [hit()], ...over });
 const place = (over: Record<string, unknown> = {}) => ({ alias: 'home', id: '555000', label: 'Home town', savedBy: 'operator', ...over });
 const common = { '/me': me, '/tools': tools };
 
@@ -17,7 +17,7 @@ describe('LinkedIn places page', () => {
       '/place-lookups': {
         items: [
           lookup({ hits: [hit({ saved: 'same' }), hit({ id: '90009712', label: 'Berlin Metropolitan Area', saved: 'other' })] }),
-          lookup({ id: 2, query: 'Nowhere', source: 'tool', hits: [] }),
+          lookup({ id: 2, query: 'Nowhere', hits: [] }),
           lookup({ id: 3, query: 'Lisbon', hits: [hit({ id: '100364837', label: 'Lisbon, Portugal' })] }),
         ],
         total: 3,

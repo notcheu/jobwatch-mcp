@@ -34,7 +34,7 @@ describe('linkedin_locations: look up', () => {
     await run(c.ctx, { save_as: 'home', id: '103035651' });
     await run(c.ctx, { list: true });
     expect(c.places.lookups).toHaveLength(1);
-    expect(c.places.lookups[0]).toMatchObject({ query: 'Berlin', source: 'tool' });
+    expect(c.places.lookups[0]).toMatchObject({ query: 'Berlin' });
     expect(c.places.lookups[0]?.hits.length).toBeGreaterThan(0);
   });
 

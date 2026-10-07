@@ -838,15 +838,15 @@ describe('ATS discovery', () => {
 });
 
 describe('LinkedIn place lookups', () => {
-  it('logs them newest first with their source and hits, and drops them with the call log', () => {
+  it('logs them newest first with their hits, and drops them with the call log', () => {
     const store = Store.open(':memory:');
-    store.recordPlaceLookup({ query: 'Berlin', source: 'tool', hits: [{ id: '103035651', label: 'Berlin, Germany' }] }, 1000);
-    store.recordPlaceLookup({ query: 'Nowhere', source: 'search', hits: [] }, 2000);
+    store.recordPlaceLookup({ query: 'Berlin', hits: [{ id: '103035651', label: 'Berlin, Germany' }] }, 1000);
+    store.recordPlaceLookup({ query: 'Nowhere', hits: [] }, 2000);
     const { rows, total } = store.listPlaceLookups(10, 0);
     expect(total).toBe(2);
-    expect(rows.map((row) => [row.query, row.source, row.hits.length])).toEqual([
-      ['Nowhere', 'search', 0],
-      ['Berlin', 'tool', 1],
+    expect(rows.map((row) => [row.query, row.hits.length])).toEqual([
+      ['Nowhere', 0],
+      ['Berlin', 1],
     ]);
     expect(store.listPlaceLookups(1, 1).rows[0]?.hits[0]).toEqual({ id: '103035651', label: 'Berlin, Germany' });
     store.prune(2000 + 31 * 24 * 3600 * 1000);

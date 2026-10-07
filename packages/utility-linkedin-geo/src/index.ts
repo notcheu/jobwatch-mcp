@@ -91,7 +91,7 @@ export const locations = defineHttpTool({
 
     if (args.query !== undefined) {
       const places = await lookupLocations(http, args.query);
-      await log.recordLookup({ query: args.query, source: 'tool', hits: places.slice(0, 10) });
+      await log.recordLookup({ query: args.query, hits: places.slice(0, 10) });
       return {
         data: { ...empty, places, best: bestLocation(places, args.query) ?? null },
         warnings:
