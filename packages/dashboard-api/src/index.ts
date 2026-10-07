@@ -75,6 +75,41 @@ export type CallDetail = z.infer<typeof callDetailSchema>;
 export const salarySchema = z.object({ min: z.number(), max: z.number(), currency: z.string(), variable: z.number().nullable() }).strict();
 export type SalaryInfo = z.infer<typeof salarySchema>;
 
+/** How well a search does: `bad` says why (no result at all, or most of what it lists is dropped by disallowed terms or the salary floor). */
+export const searchHealthSchema = z
+  .object({
+    status: z.enum(['good', 'bad']),
+    issues: z.array(z.enum(['no_results', 'mostly_discarded'])),
+    /** Jobs dropped by disallowed terms or the salary floor, as a share of the jobs listed (0 to 1). */
+    discardedShare: z.number(),
+  })
+  .strict();
+export type SearchHealthInfo = z.infer<typeof searchHealthSchema>;
+
+/** A search is its keywords and its disallowed terms: the same keywords with other terms keeps other jobs. */
+export const searchRefSchema = z.object({ keywords: z.array(z.string()), disallowed: z.array(z.string()) }).strict();
+export type SearchRef = z.infer<typeof searchRefSchema>;
+
+/** Why a job was dropped: the term, and where it matched (for `salary`, the salary the job states). */
+export const excludedBySchema = z.object({ reason: z.enum(['title', 'description', 'salary']), term: z.string() }).strict();
+export type ExcludedByInfo = z.infer<typeof excludedBySchema>;
+
+/** A search that listed a job, summarised: its counts and health, and what it did with this job. */
+export const jobSearchSchema = searchRefSchema
+  .extend({
+    runs: z.number(),
+    lastRun: iso,
+    jobsFound: z.number(),
+    jobsReturned: z.number(),
+    jobsExcluded: z.number(),
+    health: searchHealthSchema,
+    /** returned: this job was handed back. excluded: dropped by a disallowed term or the salary floor. other: matched but not returned. */
+    outcome: z.enum(['returned', 'excluded', 'other']),
+    excludedBy: excludedBySchema.nullable(),
+  })
+  .strict();
+export type JobSearch = z.infer<typeof jobSearchSchema>;
+
 export const jobRowSchema = z
   .object({
     source: z.string(),
@@ -89,8 +124,8 @@ export const jobRowSchema = z
     lastSeen: iso,
     descriptionChars: z.number(),
     salary: salarySchema.nullable(),
-    /** The searches that listed the job, each as its keyword list (empty list: a search without keywords). */
-    foundBy: z.array(z.object({ keywords: z.array(z.string()) }).strict()),
+    /** The searches that listed the job (an empty keyword list is a search without keywords). */
+    foundBy: z.array(searchRefSchema),
   })
   .strict();
 export type JobRow = z.infer<typeof jobRowSchema>;
@@ -100,6 +135,8 @@ export type JobsPage = z.infer<typeof jobsPageSchema>;
 
 export const jobDetailSchema = jobRowSchema
   .extend({
+    /** The searches that listed the job, with the counts of each and what happened to this job in it. */
+    foundBy: z.array(jobSearchSchema),
     description: z.string(),
     summary: z.string(),
     summaryKind: z.enum(['sections', 'excerpt']).nullable(),
@@ -117,22 +154,13 @@ export type JobDetail = z.infer<typeof jobDetailSchema>;
 
 // ------------------------------------------------------------------------------------------------------ searches
 
-/** How well a search does: `bad` says why (no result at all, or most of what it lists is dropped by disallowed terms or the salary floor). */
-export const searchHealthSchema = z
-  .object({
-    status: z.enum(['good', 'bad']),
-    issues: z.array(z.enum(['no_results', 'mostly_discarded'])),
-    /** Jobs dropped by disallowed terms or the salary floor, as a share of the jobs listed (0 to 1). */
-    discardedShare: z.number(),
-  })
-  .strict();
-export type SearchHealthInfo = z.infer<typeof searchHealthSchema>;
-
 export const searchRowSchema = z
   .object({
     source: z.string(),
     /** The keywords of the search, lower case and sorted (any of them matches); empty for a search without keywords. */
     keywords: z.array(z.string()),
+    /** Its disallowed terms, lower case and sorted; empty when it had none. */
+    disallowed: z.array(z.string()),
     runs: z.number(),
     firstRun: iso,
     lastRun: iso,
@@ -156,6 +184,8 @@ export const searchJobSchema = z
     lastSeen: iso.nullable(),
     /** returned: handed back to Claude. excluded: dropped by a disallowed term or the salary floor. other: listed but not returned (a limit, only_new, a filter). */
     outcome: z.enum(['returned', 'excluded', 'other']),
+    /** For an excluded job: the term that dropped it and where it was found; null when the search did not record it. */
+    excludedBy: excludedBySchema.nullable(),
     timesListed: z.number(),
   })
   .strict();

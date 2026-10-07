@@ -31,6 +31,9 @@ const output = z.object({
         .describe(
           'The keywords of the search, lower case and sorted (any of them matched); empty for a search without any (WTTJ matches, a whole company board).',
         ),
+      disallowed_terms: z
+        .array(z.string())
+        .describe('The disallowed terms of the search, lower case and sorted. The same keywords with other terms is another search.'),
       runs: z.number().describe('How many times this search ran in the window.'),
       last_run: z.string(),
       jobs_found: z.number().describe('Distinct jobs the search listed in the window.'),
@@ -58,7 +61,7 @@ export function createStoredSearchesTool(store: Store, clock: Clock) {
     name: 'stored_searches',
     title: 'Stored search history (read-only)',
     description:
-      'Read-only. For each search (a platform and a list of keywords, any of which matches) used in a window (default: the last 7 days), how many times it ran and how many distinct jobs it listed, returned, dropped by disallowed terms and found for the first time, from the router database and without contacting any site. Use it to refine the keywords you search with. List the jobs of one search with stored_jobs(found_by=[...]). Kept for JOB_RETENTION_DAYS (default 30).',
+      'Read-only. For each search (a platform, a list of keywords any of which matches, and the disallowed terms it used) used in a window (default: the last 7 days), how many times it ran and how many distinct jobs it listed, returned, dropped by disallowed terms and found for the first time, from the router database and without contacting any site. Use it to refine the keywords you search with. List the jobs of one search with stored_jobs(found_by=[...]). Kept for JOB_RETENTION_DAYS (default 30).',
     input,
     output,
     annotations: { readOnlyHint: true, openWorldHint: false, idempotentHint: true },
@@ -74,6 +77,7 @@ export function createStoredSearchesTool(store: Store, clock: Clock) {
           searches: rows.map((row) => ({
             source: row.platform,
             keywords: row.keywords,
+            disallowed_terms: row.disallowed,
             runs: row.runs,
             last_run: new Date(row.lastRun).toISOString(),
             jobs_found: row.jobsFound,

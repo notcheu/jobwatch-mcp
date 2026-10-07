@@ -5,7 +5,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { useNavigate } from 'react-router';
 import { StatCard } from '@/components/StatCard';
 import { usePlatform } from '@/components/Shell';
-import { KeywordBadges } from '@/components/KeywordBadges';
+import { DisallowedBadges, KeywordBadges } from '@/components/KeywordBadges';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -462,7 +462,8 @@ function SearchEffectiveness({ platform }: { platform: string | undefined }) {
   if (rows.length === 0) return null;
   const best = [...rows].sort((a, b) => b.jobsNew - a.jobsNew).slice(0, 5);
   const stale = rows.filter((row) => row.jobsNew === 0 && row.runs >= 2);
-  const open = (source: string, keywords: readonly string[]): void => void navigate(searchDetailLink(source, keywords));
+  const open = (source: string, keywords: readonly string[], disallowed: readonly string[]): void =>
+    void navigate(searchDetailLink(source, keywords, disallowed));
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card aria-label="Best keywords">
@@ -472,12 +473,13 @@ function SearchEffectiveness({ platform }: { platform: string | undefined }) {
         <CardContent className="space-y-1">
           {best.map((row) => (
             <button
-              key={`${row.source}|${row.keywords.join('\u0000')}`}
+              key={`${row.source}|${row.keywords.join('\u0000')}|${row.disallowed.join('\u0000')}`}
               className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left text-sm hover:bg-accent"
-              onClick={() => open(row.source, row.keywords)}
+              onClick={() => open(row.source, row.keywords, row.disallowed)}
             >
               <span className="flex min-w-0 items-center gap-1.5">
                 <KeywordBadges keywords={row.keywords} />
+                {row.disallowed.length > 0 && <DisallowedBadges terms={row.disallowed} />}
                 <Badge variant="secondary">{row.source}</Badge>
               </span>
               <span className="shrink-0 tabular-nums text-muted-foreground">
@@ -496,9 +498,13 @@ function SearchEffectiveness({ platform }: { platform: string | undefined }) {
             <p className="text-muted-foreground">Every keyword brought something new.</p>
           ) : (
             stale.map((row) => (
-              <div key={`${row.source}|${row.keywords.join('\u0000')}`} className="flex items-center justify-between gap-2">
+              <div
+                key={`${row.source}|${row.keywords.join('\u0000')}|${row.disallowed.join('\u0000')}`}
+                className="flex items-center justify-between gap-2"
+              >
                 <span className="flex min-w-0 items-center gap-1.5">
                   <KeywordBadges keywords={row.keywords} />
+                  {row.disallowed.length > 0 && <DisallowedBadges terms={row.disallowed} />}
                   <Badge variant="secondary">{row.source}</Badge>
                 </span>
                 <span className="shrink-0 text-muted-foreground">

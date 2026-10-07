@@ -308,7 +308,8 @@ const matches = defineBrowserTool({
         outcome,
         args.max_jobs === 0,
       ),
-      excluded: outcome.excluded.map((entry) => entry.id),
+      disallowed: args.disallowed_terms,
+      excluded: outcome.excluded.map(({ id, reason, term }) => ({ id, reason, term })),
     });
     const { fit, rest } = fitToBytes(
       outcome.accepted.map((accepted) => toJob(accepted, args.detail, args.description_max_chars, args.hint_terms, byId)),

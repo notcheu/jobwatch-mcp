@@ -85,6 +85,7 @@ export const tools = {
 export const searchRow = (over: Record<string, unknown> = {}) => ({
   source: 'linkedin',
   keywords: ['react engineer'],
+  disallowed: [],
   runs: 4,
   firstRun: NOW,
   lastRun: NOW,
@@ -107,6 +108,24 @@ export const badSearchRow = (over: Record<string, unknown> = {}) =>
     health: { status: 'bad', issues: ['mostly_discarded'], discardedShare: 0.9 },
     ...over,
   });
+
+/** A search as it appears in a job's `foundBy` list on the Jobs table. */
+export const searchRef = (keywords: string[], disallowed: string[] = []) => ({ keywords, disallowed });
+
+/** A search that listed one job, as the job detail gets it: its counts and health, and what it did with that job. */
+export const jobSearch = (over: Record<string, unknown> = {}) => ({
+  keywords: ['react'],
+  disallowed: [],
+  runs: 3,
+  lastRun: NOW,
+  jobsFound: 20,
+  jobsReturned: 15,
+  jobsExcluded: 2,
+  health: { status: 'good', issues: [], discardedShare: 0.1 },
+  outcome: 'returned',
+  excludedBy: null,
+  ...over,
+});
 
 export const callRow = (over: Record<string, unknown> = {}) => ({
   id: 1,

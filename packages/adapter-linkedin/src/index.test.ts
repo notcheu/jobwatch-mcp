@@ -216,7 +216,9 @@ describe('linkedin_search (read)', () => {
     const [search] = c.jobs.searches;
     expect(c.jobs.searches).toHaveLength(1);
     expect(search?.keywords).toEqual(['full stack', 'backend']); // the OR in one string is split before it is stored
+    expect(search?.disallowed).toEqual(['frontend']); // the terms are part of the search
     expect(search?.excluded.length).toBeGreaterThan(0);
+    expect(search?.excluded[0]).toMatchObject({ reason: 'title', term: 'frontend' }); // and which term dropped the job
     expect(search?.found.length).toBeGreaterThan(search?.returned.length ?? 0);
     expect(search?.returned.sort()).toEqual(result.data.jobs.map((j) => j.id).sort());
   });

@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import type { SearchDetailInfo, SearchHealthInfo, SearchJob, SearchRow } from '@jobwatch/dashboard-api';
+import type { SearchDetailInfo, SearchJob, SearchRow } from '@jobwatch/dashboard-api';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { DetailPanel, Field } from '@/components/DetailPanel';
-import { KeywordBadges } from '@/components/KeywordBadges';
+import { DisallowedBadges, KeywordBadges } from '@/components/KeywordBadges';
+import { HealthBadge, ISSUE_TEXT, describeExclusion } from '@/components/SearchHealth';
 import { usePlatform } from '@/components/Shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,22 +17,6 @@ const WINDOWS = [
   { label: '7 days', days: 7 },
   { label: '30 days', days: 30 },
 ] as const;
-
-/** What a bad health means, in words. */
-export const ISSUE_TEXT: Record<SearchHealthInfo['issues'][number], string> = {
-  no_results: 'It ran more than once and found nothing: its keywords match no job.',
-  mostly_discarded: 'Most of the jobs it finds are dropped by the disallowed terms or the salary floor.',
-};
-
-export function HealthBadge({ health }: { health: SearchHealthInfo }) {
-  return health.status === 'good' ? (
-    <Badge variant="success">healthy</Badge>
-  ) : (
-    <Badge variant="destructive" title={health.issues.map((issue) => ISSUE_TEXT[issue]).join(' ')}>
-      {health.issues.includes('no_results') ? 'no results' : `${Math.round(health.discardedShare * 100)}% discarded`}
-    </Badge>
-  );
-}
 
 /** How well each search does: the keywords it uses, what it finds, what gets discarded, and what it brings that is new. */
 export function Searches() {
@@ -46,14 +31,17 @@ export function Searches() {
     queryFn: () => api.searches({ since, ...(source === undefined ? {} : { source }) }),
   });
   const rows = searches.data?.searches ?? [];
-  const selected = params['source'] === undefined ? undefined : { source: params['source'], keywords: query.getAll('k') };
-  const open = (row: SearchRow): void => void navigate(searchDetailLink(row.source, row.keywords, days));
+  const selected =
+    params['source'] === undefined ? undefined : { source: params['source'], keywords: query.getAll('k'), disallowed: query.getAll('d') };
+  const open = (row: SearchRow): void => void navigate(searchDetailLink(row.source, row.keywords, row.disallowed, days));
   const close = (): void =>
     void navigate({ pathname: '/searches', search: source === undefined ? '' : `?tool=${encodeURIComponent(source)}` });
+  const same = (a: readonly string[], b: readonly string[]): boolean => [...a].sort().join('\u0000') === [...b].sort().join('\u0000');
   const isSelected = (row: SearchRow): boolean =>
     selected !== undefined &&
     selected.source === row.source &&
-    row.keywords.join('\u0000') === [...selected.keywords].sort().join('\u0000');
+    same(row.keywords, selected.keywords) &&
+    same(row.disallowed, selected.disallowed);
 
   return (
     <div className="flex min-w-0 flex-1">
@@ -70,15 +58,17 @@ export function Searches() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                {['Source', 'Keywords', 'Health', 'Runs', 'Jobs found', 'Discarded', 'Returned', 'New', 'Last run'].map((title) => (
-                  <TableHead key={title}>{title}</TableHead>
-                ))}
+                {['Source', 'Keywords', 'Disallowed terms', 'Health', 'Runs', 'Jobs found', 'Discarded', 'Returned', 'New', 'Last run'].map(
+                  (title) => (
+                    <TableHead key={title}>{title}</TableHead>
+                  ),
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
                 <TableRow
-                  key={`${row.source}|${row.keywords.join('\u0000')}`}
+                  key={`${row.source}|${row.keywords.join('\u0000')}|${row.disallowed.join('\u0000')}`}
                   tabIndex={0}
                   className="cursor-pointer"
                   data-state={isSelected(row) ? 'selected' : undefined}
@@ -90,6 +80,9 @@ export function Searches() {
                   </TableCell>
                   <TableCell className="max-w-80 font-medium">
                     <KeywordBadges keywords={row.keywords} />
+                  </TableCell>
+                  <TableCell className="max-w-64">
+                    <DisallowedBadges terms={row.disallowed} />
                   </TableCell>
                   <TableCell>
                     <HealthBadge health={row.health} />
@@ -114,16 +107,30 @@ export function Searches() {
           {searches.isError && <p className="p-8 text-center text-sm text-destructive">Could not load the searches.</p>}
         </div>
       </div>
-      {selected !== undefined && <SearchPanel source={selected.source} keywords={selected.keywords} days={days} onClose={close} />}
+      {selected !== undefined && (
+        <SearchPanel source={selected.source} keywords={selected.keywords} disallowed={selected.disallowed} days={days} onClose={close} />
+      )}
     </div>
   );
 }
 
-function SearchPanel({ source, keywords, days, onClose }: { source: string; keywords: string[]; days: number; onClose: () => void }) {
+function SearchPanel({
+  source,
+  keywords,
+  disallowed,
+  days,
+  onClose,
+}: {
+  source: string;
+  keywords: string[];
+  disallowed: string[];
+  days: number;
+  onClose: () => void;
+}) {
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
   const search = useQuery({
-    queryKey: ['search', source, keywords, days],
-    queryFn: () => api.search(source, { keywords, since }),
+    queryKey: ['search', source, keywords, disallowed, days],
+    queryFn: () => api.search(source, { keywords, disallowed, since }),
     retry: false,
   });
   const title = keywords.length === 0 ? `${source}: no keywords` : `${source}: ${keywords.join(', ')}`;
@@ -148,6 +155,11 @@ function SearchBody({ search, days }: { search: SearchDetailInfo; days: number }
     <>
       <div className="space-y-2">
         <KeywordBadges keywords={search.keywords} />
+        {search.disallowed.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            without <DisallowedBadges terms={search.disallowed} />
+          </div>
+        )}
         <div className="text-xs text-muted-foreground">
           {search.source} · {search.runs} run{search.runs === 1 ? '' : 's'} in the last {days} days · last {ago(search.lastRun)}
         </div>
@@ -200,7 +212,10 @@ function SearchBody({ search, days }: { search: SearchDetailInfo; days: number }
         </dl>
       </section>
 
-      <Link to={jobsOfSearch(search.source, search.keywords)} className="inline-block text-sm text-primary hover:underline">
+      <Link
+        to={jobsOfSearch(search.source, search.keywords, search.disallowed)}
+        className="inline-block text-sm text-primary hover:underline"
+      >
         See all the jobs this search found →
       </Link>
 
@@ -240,6 +255,7 @@ function JobItem({ source, job }: { source: string; job: SearchJob }) {
           {job.company ?? '–'}
           {job.location !== null && ` · ${job.location}`}
         </div>
+        {job.outcome === 'excluded' && <div className="text-xs text-destructive">Dropped: {describeExclusion(job.excludedBy)}</div>}
       </div>
       <Badge variant={outcome.variant} className="shrink-0">
         {outcome.label}

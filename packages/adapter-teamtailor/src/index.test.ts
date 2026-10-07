@@ -146,9 +146,14 @@ describe('title_any as keywords', () => {
     // the board lists more postings than match "engineer": only the matching ones were found by this search
     expect(search?.found.length).toBeGreaterThan(0);
     expect(search?.found.length).toBeLessThan(Object.keys(acme.items).length);
+    expect(search?.disallowed).toEqual(['java']);
     expect(search?.excluded.length).toBeGreaterThan(0);
-    for (const id of search?.excluded ?? []) expect(search?.found).toContain(id); // what was dropped was first matched
-    for (const id of search?.returned ?? []) expect(search?.excluded).not.toContain(id);
+    for (const entry of search?.excluded ?? []) {
+      expect(search?.found).toContain(entry.id); // what was dropped was first matched
+      expect(entry).toMatchObject({ reason: 'title', term: 'java' }); // and the record says which term dropped it, and where
+    }
+    const droppedIds = (search?.excluded ?? []).map((entry) => entry.id);
+    for (const id of search?.returned ?? []) expect(droppedIds).not.toContain(id);
   });
 
   it('is a list, any of them matching, and a string with a pipe is split into it before it is stored', async () => {

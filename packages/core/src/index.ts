@@ -92,6 +92,7 @@ export {
   USAGE_RETENTION_MS,
   keywordsKey,
   normalizeKeywords,
+  normalizeTerms,
 } from './store/store';
 export type {
   BreakerReason,
@@ -102,8 +103,11 @@ export type {
   DailyUsageRow,
   NewJobRow,
   StoredJobRow,
+  ExcludedBy,
+  JobSearch,
   SearchDetail,
   SearchDetailJob,
+  SearchRef,
   SearchStat,
   StoredSalary,
   UsageEvent,

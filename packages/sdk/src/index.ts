@@ -37,6 +37,7 @@ export type {
   NewJob,
   StoredJob,
   JobStore,
+  SearchExclusion,
   SearchRecord,
   HttpAdapterContext,
   BrowserAdapterContext,

@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { KeywordBadges } from '@/components/KeywordBadges';
+import { DisallowedBadges, KeywordBadges } from '@/components/KeywordBadges';
 import { StatCard } from '@/components/StatCard';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/lib/api';
 import { compact, searchDetailLink } from '@/lib/format';
-import { HealthBadge } from '@/pages/Searches';
+import { HealthBadge } from '@/components/SearchHealth';
 
 export function Overview() {
   const overview = useQuery({ queryKey: ['overview'], queryFn: api.overview, refetchInterval: 5000 });
@@ -66,13 +66,14 @@ export function Overview() {
             <>
               <ul className="divide-y">
                 {o.badSearches.items.map((search) => (
-                  <li key={`${search.source}|${search.keywords.join('\u0000')}`}>
+                  <li key={`${search.source}|${search.keywords.join('\u0000')}|${search.disallowed.join('\u0000')}`}>
                     <Link
-                      to={searchDetailLink(search.source, search.keywords)}
+                      to={searchDetailLink(search.source, search.keywords, search.disallowed)}
                       className="flex items-center justify-between gap-2 py-1.5 hover:bg-accent/50"
                     >
                       <span className="flex min-w-0 items-center gap-1.5">
                         <KeywordBadges keywords={search.keywords} />
+                        {search.disallowed.length > 0 && <DisallowedBadges terms={search.disallowed} />}
                         <Badge variant="secondary">{search.source}</Badge>
                       </span>
                       <span className="flex shrink-0 items-center gap-2">

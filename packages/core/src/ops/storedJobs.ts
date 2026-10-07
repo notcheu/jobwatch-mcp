@@ -44,7 +44,7 @@ const input = z
     found_by: keywordsSchema(ANY_SEPARATOR, { allowEmpty: true })
       .optional()
       .describe(
-        'Only jobs that a search with exactly these keywords listed (a list; any order, case-insensitive), from the history of searches. One string with OR or a pipe between the keywords is split into the list.',
+        'Only jobs that a search with exactly these keywords listed (a list; any order, case-insensitive), from the history of searches, whatever its disallowed terms. One string with OR or a pipe between the keywords is split into the list.',
       ),
     only_matching: z
       .boolean()
@@ -79,8 +79,10 @@ const jobSchema = z.object({
   description: z.string().describe('With detail=full. Empty otherwise.'),
   description_truncated: z.boolean(),
   found_by: z
-    .array(z.array(z.string()))
-    .describe('The searches that listed this job (the history of searches), each as its list of keywords. Empty when none is recorded.'),
+    .array(z.object({ keywords: z.array(z.string()), disallowed_terms: z.array(z.string()) }))
+    .describe(
+      'The searches that listed this job (the history of searches), each as its keywords and its disallowed terms (the same keywords with other terms are another search). Empty when none is recorded.',
+    ),
   title_terms: z.array(z.string()).describe('Terms found in the title.'),
   description_terms: z.array(z.string()).describe('Terms found in the stored description.'),
 });
@@ -147,7 +149,7 @@ export function createStoredJobsTool(store: Store, clock: Clock) {
         until,
         sources: args.sources,
         boards: args.boards,
-        ...(args.found_by === undefined || args.found_by.length === 0 ? {} : { search: args.found_by }),
+        ...(args.found_by === undefined || args.found_by.length === 0 ? {} : { search: { keywords: args.found_by } }),
         limit: MAX_SCAN,
         withDescription: matchers.length > 0,
       });
@@ -188,7 +190,7 @@ export function createStoredJobsTool(store: Store, clock: Clock) {
       const jobs: z.infer<typeof jobSchema>[] = [];
       const encoder = new TextEncoder();
       let bytes = 0;
-      const foundBy = new Map<string, string[][]>();
+      const foundBy = new Map<string, { keywords: string[]; disallowed_terms: string[] }[]>();
       for (const platform of new Set(page.map((entry) => entry.row.platform)))
         for (const [id, queries] of store.foundBy(
           platform,
@@ -196,7 +198,9 @@ export function createStoredJobsTool(store: Store, clock: Clock) {
         ))
           foundBy.set(
             `${platform}\u0000${id}`,
-            queries.filter((keywords) => keywords.length > 0),
+            queries
+              .filter((search) => search.keywords.length > 0)
+              .map((search) => ({ keywords: search.keywords, disallowed_terms: search.disallowed })),
           );
       for (const { row, titleTerms, descriptionTerms } of page) {
         // the description is only read from SQLite for the jobs that are listed, unless the terms already needed it

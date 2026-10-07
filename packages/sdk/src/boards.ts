@@ -400,7 +400,8 @@ export async function runBoardTool<S extends string>(
     keywords: args.title_any,
     found: found.map((entry) => entry.posting.id).filter((id) => judged.relevantIds.has(id)),
     returned: judged.jobs.map((job) => job.id),
-    excluded: judged.excluded.map((entry) => entry.id),
+    disallowed: args.disallowed_terms,
+    excluded: judged.excluded.map(({ id, reason, term }) => ({ id, reason, term })),
   });
   for (const report of reports) {
     if (report.status === 'ok')

@@ -38,6 +38,8 @@ import {
   type StoredSalary,
   type Registry,
   type RuntimeManager,
+  type JobSearch,
+  type SearchRef,
   type SearchStat,
   type Store,
 } from '@jobwatch/core';
@@ -127,11 +129,24 @@ export function getCall(data: DashboardData, id: number): CallDetail | undefined
 
 // ----------------------------------------------------------------------------------------------------------- jobs
 
-/** The keyword list a jobs query asks for, or undefined when it does not filter by search. An empty list is the searches with no keyword. */
-function searchFilter(q: { found_by?: string | string[] | undefined; no_keywords?: '1' | undefined }): string[] | undefined {
-  if (q.no_keywords === '1') return [];
-  const list = (typeof q.found_by === 'string' ? [q.found_by] : (q.found_by ?? [])).filter((keyword) => keyword !== '');
-  return list.length === 0 ? undefined : list;
+/** The list a query parameter carries, repeated or not, without empty entries. */
+const listOf = (value: string | string[] | undefined): string[] =>
+  (typeof value === 'string' ? [value] : (value ?? [])).filter((entry) => entry !== '');
+
+/**
+ * The search a jobs query asks for, or undefined when it does not filter by search. An empty keyword list (`no_keywords=1`) is the
+ * searches with no keyword. Disallowed terms narrow it to one exact search; without them it is any search with these keywords.
+ */
+function searchFilter(q: {
+  found_by?: string | string[] | undefined;
+  no_keywords?: '1' | undefined;
+  disallowed?: string | string[] | undefined;
+  no_disallowed?: '1' | undefined;
+}): { keywords: string[]; disallowed?: string[] } | undefined {
+  const keywords = q.no_keywords === '1' ? [] : listOf(q.found_by);
+  if (q.no_keywords !== '1' && keywords.length === 0) return undefined;
+  const disallowed = q.no_disallowed === '1' ? [] : listOf(q.disallowed);
+  return q.no_disallowed === '1' || disallowed.length > 0 ? { keywords, disallowed } : { keywords };
 }
 
 const jobsQuery = z.object({
@@ -146,6 +161,9 @@ const jobsQuery = z.object({
   found_by: z.union([z.string().trim().max(100), z.array(z.string().trim().max(100)).max(20)]).optional(),
   /** The searches that had no keyword (a whole company board, the WTTJ matches). */
   no_keywords: z.enum(['1']).optional(),
+  /** With found_by: only the search that also had exactly these disallowed terms (repeated, one per term); `no_disallowed=1` for a search with none. */
+  disallowed: z.union([z.string().trim().max(100), z.array(z.string().trim().max(100)).max(60)]).optional(),
+  no_disallowed: z.enum(['1']).optional(),
   from: z.string().max(32).optional(),
   to: z.string().max(32).optional(),
   dateField: z.enum(['first_seen', 'last_seen', 'fetched_at']).default('first_seen'),
@@ -179,14 +197,14 @@ export function listJobs(data: DashboardData, query: unknown): JobsPage {
     sources: q.source === undefined ? [] : [q.source],
     boards: q.board === undefined || q.board === '' ? [] : [q.board],
     ...(q.q === undefined || q.q === '' ? {} : { q: q.q }),
-    ...(searchFilter(q) === undefined ? {} : { search: searchFilter(q) as string[] }),
+    ...(searchFilter(q) === undefined ? {} : { search: searchFilter(q) as NonNullable<ReturnType<typeof searchFilter>> }),
     ...(q.sort === undefined ? {} : { sort: q.sort }),
     dir: q.dir,
     offset: (q.page - 1) * q.pageSize,
     limit: q.pageSize,
     withDescription: false,
   });
-  const foundBy = new Map<string, string[][]>();
+  const foundBy = new Map<string, SearchRef[]>();
   for (const platform of new Set(rows.map((row) => row.platform)))
     for (const [id, queries] of data.store.foundBy(
       platform,
@@ -207,7 +225,7 @@ export function listJobs(data: DashboardData, query: unknown): JobsPage {
       lastSeen: iso(row.lastSeen),
       descriptionChars: row.descriptionChars,
       salary: salaryOf(row.salary),
-      foundBy: (foundBy.get(`${row.platform}\u0000${row.id}`) ?? []).map((keywords) => ({ keywords })),
+      foundBy: foundBy.get(`${row.platform}\u0000${row.id}`) ?? [],
     })),
     total,
     page: q.page,
@@ -234,7 +252,7 @@ export function getJob(data: DashboardData, source: string, id: string): JobDeta
     lastSeen: iso(row.lastSeen),
     descriptionChars: row.description.length,
     salary: salaryOf(row.salary),
-    foundBy: (data.store.foundBy(source, [id]).get(id) ?? []).map((keywords) => ({ keywords })),
+    foundBy: data.store.jobSearches(source, id).map(toJobSearch),
     description: row.description,
     summary: summary.summary,
     summaryKind: summary.kind,
@@ -259,11 +277,13 @@ const searchDetailQuery = z.object({
   since: z.string().max(32).optional(),
   until: z.string().max(32).optional(),
   keywords: z.union([z.string().trim().max(100), z.array(z.string().trim().max(100)).max(20)]).optional(),
+  disallowed: z.union([z.string().trim().max(100), z.array(z.string().trim().max(100)).max(60)]).optional(),
 });
 
 const toSearchRow = (stat: SearchStat) => ({
   source: stat.platform,
   keywords: stat.keywords,
+  disallowed: stat.disallowed,
   runs: stat.runs,
   firstRun: iso(stat.firstRun),
   lastRun: iso(stat.lastRun),
@@ -272,6 +292,20 @@ const toSearchRow = (stat: SearchStat) => ({
   jobsExcluded: stat.jobsExcluded,
   jobsNew: stat.jobsNew,
   health: searchHealth(stat),
+});
+
+/** One search that listed a job: its counts and health, and what it did with that job. */
+const toJobSearch = (search: JobSearch) => ({
+  keywords: search.keywords,
+  disallowed: search.disallowed,
+  runs: search.runs,
+  lastRun: iso(search.lastRun),
+  jobsFound: search.jobsFound,
+  jobsReturned: search.jobsReturned,
+  jobsExcluded: search.jobsExcluded,
+  health: searchHealth(search),
+  outcome: search.outcome,
+  excludedBy: search.excludedBy,
 });
 
 export function listSearches(data: DashboardData, query: unknown): Searches {
@@ -289,10 +323,11 @@ const SEARCH_JOBS_LIMIT = 200;
 export function getSearch(data: DashboardData, source: string, query: unknown): SearchDetailInfo | undefined {
   if (!/^[a-z][a-z0-9-]*$/.test(source)) return undefined;
   const q = searchDetailQuery.parse(query);
-  const keywords = (typeof q.keywords === 'string' ? [q.keywords] : (q.keywords ?? [])).filter((keyword) => keyword !== '');
+  const keywords = listOf(q.keywords);
+  const disallowed = listOf(q.disallowed);
   const until = parseDate('until', q.until, data.clock() + 1);
   const since = parseDate('since', q.since, until - 7 * DAY_MS);
-  const detail = data.store.searchDetail(source, keywords, { limit: SEARCH_JOBS_LIMIT + 1, since, until });
+  const detail = data.store.searchDetail(source, keywords, disallowed, { limit: SEARCH_JOBS_LIMIT + 1, since, until });
   if (detail === null) return undefined;
   const { jobs, ...stat } = detail;
   return checked(searchDetailSchema, {

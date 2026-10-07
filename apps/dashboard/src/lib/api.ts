@@ -103,8 +103,10 @@ export const api = {
     request(jobDetailSchema, `/jobs/${encodeURIComponent(source)}/${encodeURIComponent(id)}`),
   searches: (params: { since?: string; until?: string; source?: string }): Promise<Searches> =>
     request(searchesSchema, `/searches${query(params)}`),
-  search: (source: string, params: { keywords: readonly string[]; since?: string; until?: string }): Promise<SearchDetailInfo> =>
-    request(searchDetailSchema, `/searches/${encodeURIComponent(source)}${query(params)}`),
+  search: (
+    source: string,
+    params: { keywords: readonly string[]; disallowed: readonly string[]; since?: string; until?: string },
+  ): Promise<SearchDetailInfo> => request(searchDetailSchema, `/searches/${encodeURIComponent(source)}${query(params)}`),
   docs: (): Promise<Docs> => request(docsSchema, '/docs'),
   tools: (): Promise<Tools> => request(toolsSchema, '/tools'),
   settings: (): Promise<Settings> => request(settingsSchema, '/settings'),

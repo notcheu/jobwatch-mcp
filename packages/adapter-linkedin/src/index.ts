@@ -353,7 +353,8 @@ export function createLinkedinTools(layout: SearchLayout) {
           outcome,
           args.max_jobs === 0,
         ),
-        excluded: outcome.excluded.map((entry) => entry.id),
+        disallowed: args.disallowed_terms,
+        excluded: outcome.excluded.map(({ id, reason, term }) => ({ id, reason, term })),
       });
       const warnings = [...found.warnings, ...outcome.failed.map((f) => `job ${f.id}: ${f.status}`)];
       if (outcome.remaining.length > 0)

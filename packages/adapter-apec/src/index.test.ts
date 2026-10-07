@@ -348,6 +348,7 @@ describe('apec_search (read)', () => {
     await runRead(c.ctx, { keywords: 'react engineer' });
     expect(c.jobs.searches).toHaveLength(1);
     expect(c.jobs.searches[0]?.keywords).toEqual(['react engineer']);
+    expect(c.jobs.searches[0]?.disallowed).toEqual([]);
     expect(c.jobs.searches[0]?.found.length).toBeGreaterThan(0);
   });
 
