@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.2.0...jobwatch-router-v0.3.0) (2026-10-07)
+
+
+### Features
+
+* **bamboohr:** add the bamboohr_jobs tool to read the open jobs of a company on BambooHR ([#107](https://github.com/notcheu/jobwatch-mcp/issues/107)) ([98c0f78](https://github.com/notcheu/jobwatch-mcp/commit/98c0f78428b58f2c00149ac1bf95939d7aba1d0a))
+* **breezy:** add the breezy_jobs tool to read the open jobs of a company on Breezy HR ([#106](https://github.com/notcheu/jobwatch-mcp/issues/106)) ([2eef211](https://github.com/notcheu/jobwatch-mcp/commit/2eef211035eb11b7c282e6fccde7121836664c65))
+* **custom:** add custom adapters written on the dashboard, run in a sandbox with no network ([#109](https://github.com/notcheu/jobwatch-mcp/issues/109)) ([291d79b](https://github.com/notcheu/jobwatch-mcp/commit/291d79be5e645a3e1e8437fd99ced36726bda5fb))
+* **dashboard:** add ATS discovery and LinkedIn places pages, a Tools menu and a Utility tab ([#99](https://github.com/notcheu/jobwatch-mcp/issues/99)) ([ec726ff](https://github.com/notcheu/jobwatch-mcp/commit/ec726ff88ff19c7e38a0a71b16a482185d6e6208))
+* **dashboard:** drop the Board column and name the company of every ATS job ([#98](https://github.com/notcheu/jobwatch-mcp/issues/98)) ([558ad53](https://github.com/notcheu/jobwatch-mcp/commit/558ad53581c68003f4d50de8a15cbec4ee5f9399))
+* **dashboard:** search detail and health, and keyword lists for every search ([#96](https://github.com/notcheu/jobwatch-mcp/issues/96)) ([18fe50c](https://github.com/notcheu/jobwatch-mcp/commit/18fe50c31682f7edf7057c23e3b90278c3c70fd6))
+* **hibob:** add the hibob_jobs tool to read the open jobs of a company on HiBob ([#102](https://github.com/notcheu/jobwatch-mcp/issues/102)) ([2321e6c](https://github.com/notcheu/jobwatch-mcp/commit/2321e6ccb657e20e647e51e6599477780db15f28))
+* keep the call log in the database, with a log rotation setting ([#97](https://github.com/notcheu/jobwatch-mcp/issues/97)) ([34bff3a](https://github.com/notcheu/jobwatch-mcp/commit/34bff3a3595abbac37cf2f5c3efd488c410dd3af))
+* **personio:** add the personio_jobs tool to read the open jobs of a company on Personio ([#105](https://github.com/notcheu/jobwatch-mcp/issues/105)) ([e75f6ad](https://github.com/notcheu/jobwatch-mcp/commit/e75f6ad59e6c3ed0e6e5d011f5617f782e33a3c3))
+* **recruitee:** add the recruitee_jobs tool to read the open jobs of a company on Recruitee ([#101](https://github.com/notcheu/jobwatch-mcp/issues/101)) ([992451b](https://github.com/notcheu/jobwatch-mcp/commit/992451b090f8ac7ba25e48b124742c03baaed7f1))
+* **sdk:** let a board source read its board itself, with a limit on the postings read one by one ([#100](https://github.com/notcheu/jobwatch-mcp/issues/100)) ([23c4000](https://github.com/notcheu/jobwatch-mcp/commit/23c4000590e80b99cad23549b92679262ef1f4d3))
+* **smartrecruiters:** add the smartrecruiters_jobs tool to read the open jobs of a company on SmartRecruiters ([#104](https://github.com/notcheu/jobwatch-mcp/issues/104)) ([0b7cb7d](https://github.com/notcheu/jobwatch-mcp/commit/0b7cb7d1db8ecea6d44447fdd615faa57983fa3e))
+* **workable:** add the workable_jobs tool to read the open jobs of a company on Workable ([#103](https://github.com/notcheu/jobwatch-mcp/issues/103)) ([91d9fd4](https://github.com/notcheu/jobwatch-mcp/commit/91d9fd4266fb627a0d0eb30b71541f98405844d1))
+* **workday:** add the workday_jobs tool to read the open jobs of a company on Workday ([#108](https://github.com/notcheu/jobwatch-mcp/issues/108)) ([f0346f3](https://github.com/notcheu/jobwatch-mcp/commit/f0346f37f99a9e4e5a9d2b5e218ad07b19e62a69))
+
 ## [0.2.0](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.1.1...jobwatch-router-v0.2.0) (2026-10-06)
 
 
