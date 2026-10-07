@@ -14,6 +14,7 @@
     "@jobwatch/adapter-hibob": "*",
     "@jobwatch/adapter-lever": "*",
     "@jobwatch/adapter-linkedin": "*",
+    "@jobwatch/adapter-personio": "*",
     "@jobwatch/adapter-recruitee": "*",
     "@jobwatch/adapter-smartrecruiters": "*",
     "@jobwatch/adapter-teamtailor": "*",
