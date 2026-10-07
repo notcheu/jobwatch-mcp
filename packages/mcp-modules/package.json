@@ -13,6 +13,7 @@
     "@jobwatch/adapter-greenhouse": "*",
     "@jobwatch/adapter-lever": "*",
     "@jobwatch/adapter-linkedin": "*",
+    "@jobwatch/adapter-recruitee": "*",
     "@jobwatch/adapter-teamtailor": "*",
     "@jobwatch/adapter-wttj": "*",
     "@jobwatch/sdk": "*",

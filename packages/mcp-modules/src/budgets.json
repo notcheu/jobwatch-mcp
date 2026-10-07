@@ -6,6 +6,7 @@
   "lever": { "hourly": 600, "daily": 3000 },
   "linkedin": { "hourly": 200, "daily": 400 },
   "linkedin-geo": { "hourly": 60, "daily": 300 },
+  "recruitee": { "hourly": 600, "daily": 3000 },
   "teamtailor": { "hourly": 600, "daily": 3000 },
   "wttj": { "hourly": 60, "daily": 200 }
 }
