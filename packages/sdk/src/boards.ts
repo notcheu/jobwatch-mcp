@@ -265,13 +265,13 @@ export function slugify(name: string): string {
     .slice(0, 60);
 }
 
-/** A readable company name from a handle: `swile` -> `Swile`, `my-company` -> `MyCompany` (only the first letter of each part changes). */
+/** A readable company name from a handle or a name: `swile` -> `Swile`, `my-company` -> `My Company`, `société générale` -> `Société Générale`. */
 export function pascalCase(handle: string): string {
   return handle
     .split(/[-_\s]+/)
     .filter((part) => part !== '')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join('');
+    .join(' ');
 }
 
 /** Where a handle or URL points: the address of the board's job list, and a label for reports. */

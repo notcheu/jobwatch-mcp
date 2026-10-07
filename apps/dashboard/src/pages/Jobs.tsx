@@ -396,7 +396,11 @@ export function Jobs() {
 function JobPanel({ source, id, onClose }: { source: string; id: string; onClose: () => void }) {
   const job = useQuery({ queryKey: ['job', source, id], queryFn: () => api.job(source, id), retry: false });
   return (
-    <DetailPanel title={job.data?.title ?? 'Job'} onClose={onClose}>
+    <DetailPanel
+      title={job.data?.title ?? 'Job'}
+      subtitle={job.data && [job.data.company, job.data.location].filter((part) => part !== null && part !== '').join(' · ')}
+      onClose={onClose}
+    >
       {job.isError && <p className="text-sm text-muted-foreground">That job is no longer stored.</p>}
       {job.data && <JobBody job={job.data} />}
     </DetailPanel>
@@ -408,13 +412,6 @@ function JobBody({ job }: { job: JobDetail }) {
   const [copied, setCopied] = useState(false);
   return (
     <>
-      <div>
-        <div className="text-base font-semibold">{job.title ?? 'Untitled'}</div>
-        <div className="text-sm text-muted-foreground">
-          {job.company ?? '–'}
-          {job.location !== null && ` · ${job.location}`}
-        </div>
-      </div>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary">{job.source}</Badge>
         {href !== undefined && (
