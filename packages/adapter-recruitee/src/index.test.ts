@@ -32,9 +32,9 @@ function offer(id: number, title: string, over: { city?: string; days?: number; 
 
 const acme = {
   offers: [
-    offer(1001, 'Senior Frontend Engineer'),
+    offer(1001, 'Senior Frontend Engineer', { days: 3 }),
     offer(1002, 'Backend Engineer', { days: 9 }),
-    offer(1003, 'Fullstack Developer', { remote: true, city: 'Lyon' }),
+    offer(1003, 'Fullstack Developer', { remote: true, city: 'Lyon', days: 1 }),
     offer(1004, 'Draft Role', { status: 'draft' }),
   ],
 };
@@ -107,7 +107,7 @@ describe('recruitee_jobs', () => {
     const c = context();
     const result = await run(c.ctx);
     expect(c.spent()).toBe(1); // one request for one board
-    expect(data(result).jobs.map((j) => j.id)).toEqual(['1001', '1003', '1002']);
+    expect(data(result).jobs.map((j) => j.id)).toEqual(['1003', '1001', '1002']);
     expect(data(result).jobs[0]).toMatchObject({
       source: 'recruitee',
       board: 'acme',
@@ -117,8 +117,8 @@ describe('recruitee_jobs', () => {
     expect(data(result).jobs[0]?.posted_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(data(result).boards).toEqual([{ board: 'acme', feed_url: ACME, status: 'ok', jobs_total: 3, relevant: 3 }]);
     const full = await run(c.ctx, { detail: 'full' });
-    expect(data(full).jobs[0]?.description).toContain('We use React and TypeScript.');
-    expect(data(full).jobs[0]?.description).toContain('5 years of experience required.');
+    expect(data(full).jobs.find((j) => j.id === '1001')?.description).toContain('We use React and TypeScript.');
+    expect(data(full).jobs.find((j) => j.id === '1001')?.description).toContain('5 years of experience required.');
   });
 
   it('says so in the location when an offer is remote, so location filters can find it', async () => {
