@@ -230,6 +230,8 @@ export interface RecordedRequest {
   /** Redacted: no query string. */
   url: string;
   body?: unknown;
+  /** The headers the adapter set, when it set any. */
+  headers?: Record<string, string>;
 }
 
 /** Canned HTTP for adapter tests. Enforces the host allowlist; unknown requests fail the test loudly. */
@@ -242,17 +244,22 @@ export class FakeHttpClient implements HttpClient {
     private readonly openHttps = false,
   ) {}
 
-  get(url: string, _options?: HttpRequestOptions): Promise<HttpResponse> {
-    return this.send('GET', url, undefined);
+  get(url: string, options?: HttpRequestOptions): Promise<HttpResponse> {
+    return this.send('GET', url, undefined, options);
   }
 
-  postJson(url: string, body: unknown, _options?: HttpRequestOptions): Promise<HttpResponse> {
-    return this.send('POST', url, body);
+  postJson(url: string, body: unknown, options?: HttpRequestOptions): Promise<HttpResponse> {
+    return this.send('POST', url, body, options);
   }
 
-  private async send(method: 'GET' | 'POST', url: string, body: unknown): Promise<HttpResponse> {
+  private async send(method: 'GET' | 'POST', url: string, body: unknown, options?: HttpRequestOptions): Promise<HttpResponse> {
     assertUrlAllowed(url, this.allowedHosts, this.openHttps);
-    this.requests.push({ method, url: redactUrl(url), ...(body === undefined ? {} : { body }) });
+    this.requests.push({
+      method,
+      url: redactUrl(url),
+      ...(body === undefined ? {} : { body }),
+      ...(options?.headers === undefined ? {} : { headers: options.headers }),
+    });
     const route = this.routes.find((r) => (r.method ?? method) === method && (typeof r.url === 'string' ? r.url === url : r.url.test(url)));
     if (!route) throw new Error(`FakeHttpClient: no route for ${method} ${redactUrl(url)}`);
     const text = typeof route.body === 'string' ? route.body : JSON.stringify(route.body);

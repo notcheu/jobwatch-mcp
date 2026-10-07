@@ -46,6 +46,7 @@ A combined `ats_jobs` tool was dropped: every ATS has its own URLs, response sha
 | Greenhouse | Doctolib, Algolia, Mirakl | `GET boards-api.greenhouse.io/v1/boards/<handle>/jobs?content=true` | **adapter built** (`greenhouse_jobs`), verified live 2026-10-02 |
 | Lever | Pigment, Aircall, Swile, Malt, Brevo, BlaBlaCar | `GET api.lever.co/v0/postings/<handle>?mode=json` (handle is case-sensitive) | **adapter built** (`lever_jobs`), verified live 2026-10-02 |
 | Ashby | Alan, Pennylane, Nabla, Back Market, Ledger | `GET api.ashbyhq.com/posting-api/job-board/<handle>` (up to 4 MB) | **adapter built** (`ashby_jobs`), verified live 2026-10-02 |
+| **HiBob** | leboncoin | `GET <handle>.careers.hibob.com/api/job-ad` with the header `companyidentifier: <handle>` (every job ad with its text in four HTML parts and the pay range when published; an unknown company is answered 401) | **adapter built** (`hibob_jobs`), verified live 2026-10-07 on leboncoin |
 | SmartRecruiters | large groups | `GET api.smartrecruiters.com/v1/companies/<handle>/postings` | documented API, matched no watched company; VERIFY |
 | Workable | SMBs | `GET apply.workable.com/api/v1/widget/accounts/<handle>` (widget) | VERIFY; the widgets seen returned 0 jobs |
 | Recruitee | bunq and other European companies | `GET <handle>.recruitee.com/api/offers/` (every published offer with its description and requirements as HTML, no login; a company's own domain does not serve it) | **adapter built** (`recruitee_jobs`), verified live 2026-10-07 on bunq |
