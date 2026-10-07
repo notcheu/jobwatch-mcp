@@ -27,6 +27,7 @@ export const installedAdapters = {
   smartrecruiters: () => import('@jobwatch/adapter-smartrecruiters').then((m) => m.default),
   teamtailor: () => import('@jobwatch/adapter-teamtailor').then((m) => m.default),
   workable: () => import('@jobwatch/adapter-workable').then((m) => m.default),
+  workday: () => import('@jobwatch/adapter-workday').then((m) => m.default),
   wttj: () => import('@jobwatch/adapter-wttj').then((m) => m.default),
   // <adapters:end>
 } satisfies InstalledAdapterMap;

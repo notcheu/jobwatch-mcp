@@ -21,6 +21,7 @@
     "@jobwatch/adapter-smartrecruiters": "*",
     "@jobwatch/adapter-teamtailor": "*",
     "@jobwatch/adapter-workable": "*",
+    "@jobwatch/adapter-workday": "*",
     "@jobwatch/adapter-wttj": "*",
     "@jobwatch/sdk": "*",
     "@jobwatch/utility-ats-discovery": "*",
