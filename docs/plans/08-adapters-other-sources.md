@@ -48,7 +48,7 @@ A combined `ats_jobs` tool was dropped: every ATS has its own URLs, response sha
 | Ashby | Alan, Pennylane, Nabla, Back Market, Ledger | `GET api.ashbyhq.com/posting-api/job-board/<handle>` (up to 4 MB) | **adapter built** (`ashby_jobs`), verified live 2026-10-02 |
 | SmartRecruiters | large groups | `GET api.smartrecruiters.com/v1/companies/<handle>/postings` | documented API, matched no watched company; VERIFY |
 | Workable | SMBs | `GET apply.workable.com/api/v1/widget/accounts/<handle>` (widget) | VERIFY; the widgets seen returned 0 jobs |
-| Recruitee | SMBs, Europe | `GET <handle>.recruitee.com/api/offers/` | VERIFY |
+| Recruitee | bunq and other European companies | `GET <handle>.recruitee.com/api/offers/` (every published offer with its description and requirements as HTML, no login; a company's own domain does not serve it) | **adapter built** (`recruitee_jobs`), verified live 2026-10-07 on bunq |
 | Personio | German-speaking and French SMBs | XML feed `<handle>.jobs.personio.de/xml` | VERIFY |
 | BambooHR | SMBs | `GET <handle>.bamboohr.com/careers/list` | VERIFY |
 | Breezy HR | SMBs | `GET <handle>.breezy.hr/json` | VERIFY |
