@@ -97,12 +97,6 @@ export type ExcludedByInfo = z.infer<typeof excludedBySchema>;
 /** A search that listed a job, summarised: its counts and health, and what it did with this job. */
 export const jobSearchSchema = searchRefSchema
   .extend({
-    runs: z.number(),
-    lastRun: iso,
-    jobsFound: z.number(),
-    jobsReturned: z.number(),
-    jobsExcluded: z.number(),
-    health: searchHealthSchema,
     /** returned: this job was handed back. excluded: dropped by a disallowed term or the salary floor. other: matched but not returned. */
     outcome: z.enum(['returned', 'excluded', 'other']),
     excludedBy: excludedBySchema.nullable(),

@@ -528,17 +528,11 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(job.outline.length).toBeGreaterThan(0);
     expect(job.hints).toMatchObject({ years: [5] });
     expect(job.hints.stack).toBeUndefined(); // no technology list is built in
-    // the searches that found it, each with its counts and health and what it did with this job
+    // the searches that found it, each with what it did with this job and no figure of its own
     expect(job.foundBy).toEqual([
       {
         keywords: ['react'],
         disallowed: [],
-        runs: 1,
-        lastRun: new Date(NOW - 3 * DAY).toISOString(),
-        jobsFound: 2,
-        jobsReturned: 1,
-        jobsExcluded: 0,
-        health: { status: 'good', issues: [], discardedShare: 0 },
         outcome: 'returned',
         excludedBy: null,
       },

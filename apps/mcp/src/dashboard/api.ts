@@ -332,16 +332,10 @@ const toSearchRow = (stat: SearchStat) => ({
   health: searchHealth(stat),
 });
 
-/** One search that listed a job: its counts and health, and what it did with that job. */
+/** One search that listed a job, and what it did with that job. */
 const toJobSearch = (search: JobSearch) => ({
   keywords: search.keywords,
   disallowed: search.disallowed,
-  runs: search.runs,
-  lastRun: iso(search.lastRun),
-  jobsFound: search.jobsFound,
-  jobsReturned: search.jobsReturned,
-  jobsExcluded: search.jobsExcluded,
-  health: searchHealth(search),
   outcome: search.outcome,
   excludedBy: search.excludedBy,
 });

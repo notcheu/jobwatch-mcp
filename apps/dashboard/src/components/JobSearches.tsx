@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { DisallowedBadges, KeywordBadges } from '@/components/KeywordBadges';
-import { HealthBadge, describeExclusion } from '@/components/SearchHealth';
+import { describeExclusion } from '@/components/SearchHealth';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { searchDetailLink } from '@/lib/format';
@@ -32,7 +32,7 @@ function Outcome({ search }: { search: JobSearch }) {
 /**
  * The searches that found a job, as a short table that stays closed until it is asked for: a job found by many searches would
  * otherwise push its description out of sight. One row per search (keywords and disallowed terms), what that search did with this job,
- * how healthy it is, and a link to it.
+ * and a link to it.
  */
 export function JobSearches({ source, searches }: { source: string; searches: readonly JobSearch[] }) {
   const [open, setOpen] = useState(false);
@@ -56,7 +56,7 @@ export function JobSearches({ source, searches }: { source: string; searches: re
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="h-8 px-2">Search</TableHead>
-                  <TableHead className="h-8 w-36 px-2">This job · health</TableHead>
+                  <TableHead className="h-8 w-36 px-2">This job</TableHead>
                   <TableHead className="h-8 w-12 px-2">
                     <span className="sr-only">Open</span>
                   </TableHead>
@@ -76,14 +76,7 @@ export function JobSearches({ source, searches }: { source: string; searches: re
                       </div>
                     </TableCell>
                     <TableCell className="px-2 py-1.5 align-top">
-                      <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
-                        <Outcome search={search} />
-                        <span
-                          title={`${search.jobsFound} jobs found, ${search.jobsExcluded} dropped, over ${search.runs} run${search.runs === 1 ? '' : 's'}`}
-                        >
-                          <HealthBadge health={search.health} />
-                        </span>
-                      </div>
+                      <Outcome search={search} />
                     </TableCell>
                     <TableCell className="px-2 py-1.5 align-top">
                       <Link
