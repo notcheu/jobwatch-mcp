@@ -1,5 +1,5 @@
 /** The kinds of text the editor colours. Everything else is `plain`. */
-export type TokenKind = 'comment' | 'string' | 'number' | 'keyword' | 'global' | 'plain';
+export type TokenKind = 'comment' | 'tag' | 'string' | 'number' | 'keyword' | 'global' | 'plain';
 export interface Token {
   kind: TokenKind;
   text: string;
@@ -58,7 +58,7 @@ const PATTERN =
   /\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|'(?:\\.|[^'\\\n])*'?|"(?:\\.|[^"\\\n])*"?|`(?:\\[\s\S]|[^`\\])*`?|\b\d+(?:\.\d+)?\b|[A-Za-z_$][\w$]*/g;
 
 /**
- * Cuts JavaScript into coloured pieces: comments, strings (an unfinished one included, so typing a quote does not colour the rest of the
+ * Cuts JavaScript into coloured pieces: comments (the tags of a JSDoc block apart), strings (an unfinished one included, so typing a quote does not colour the rest of the
  * page wrongly), numbers, keywords and the globals of the sandbox. It is not a parser: it only has to be right for what is shown while someone
  * types. The pieces joined give the text back, always.
  */
@@ -82,7 +82,11 @@ export function highlight(source: string): Token[] {
               : GLOBALS.has(text)
                 ? 'global'
                 : 'plain';
-    tokens.push({ kind, text });
+    if (kind === 'comment' && text.startsWith('/*')) {
+      // the tags of a JSDoc block (@param, @returns, @typedef...) stand out from its prose
+      for (const piece of text.split(/(@[A-Za-z]+)/))
+        if (piece !== '') tokens.push({ kind: /^@[A-Za-z]+$/.test(piece) ? 'tag' : 'comment', text: piece });
+    } else tokens.push({ kind, text });
     at = start + text.length;
   }
   if (at < source.length) tokens.push({ kind: 'plain', text: source.slice(at) });

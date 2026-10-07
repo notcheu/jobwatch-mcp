@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 
 const COLOURS: Record<TokenKind, string> = {
   comment: 'text-muted-foreground italic',
+  tag: 'font-medium text-rose-600 italic dark:text-rose-400',
   string: 'text-emerald-600 dark:text-emerald-400',
   number: 'text-amber-600 dark:text-amber-400',
   keyword: 'text-violet-600 dark:text-violet-400',

@@ -357,17 +357,40 @@ describe('the module built from a row', () => {
     expect(boards[1]?.message).toMatch(/The script failed: nope/);
   }, 30_000);
 
-  it('starts the editor from a sample that names the input and the output and leaves the body to write', () => {
+  it('starts the editor from a sample documented with JSDoc: the globals, the input, the output, and a body left to write', () => {
     const http = sampleScript('http');
     const browser = sampleScript('browser');
     for (const text of [http, browser]) {
       expect(text).toContain('async function read(board, filters)');
       expect(text).toContain('TODO');
-      expect(text).toContain('postings');
+      // the contract is JSDoc, not prose: types for the input and the output, and the signature
+      for (const tag of [
+        '@typedef {Object} Filters',
+        '@typedef {Object} Posting',
+        '@typedef {Object} Result',
+        '@param {string} board',
+        '@param {Filters} filters',
+        '@returns {Promise<Result>}',
+        '@global {Http} http',
+      ])
+        expect(text).toContain(tag);
+      expect(text).toContain('@property {string} id');
+      expect(text).toContain('@property {Posting[]} postings');
+      expect(text).toMatch(/^\/\*\*\n/); // opens with a JSDoc block
     }
+    expect(http).not.toContain('Session');
     expect(http).not.toContain('session.goto');
-    expect(browser).toContain('session.goto');
+    expect(browser).toContain('@typedef {Object} Session');
+    expect(browser).toContain('@global {Session} session');
+    expect(browser).toContain('goto');
   });
+
+  it('is a script that runs as it stands (it returns no postings), whatever the kind', async () => {
+    for (const kind of ['http', 'browser'] as const) {
+      const result = await run(sampleScript(kind), { kind: 'http', board: 'acme' });
+      expect(result).toEqual({ name: 'acme', postings: [] });
+    }
+  }, 20_000);
 
   it('unused fakes stay out of the way', () => {
     expect([FakeJobStore, FakeCompanyBoards, FakePlaceLog, FakePlatformMemory]).toHaveLength(4);

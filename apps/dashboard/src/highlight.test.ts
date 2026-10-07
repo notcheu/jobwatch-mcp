@@ -22,6 +22,23 @@ describe('the syntax colours', () => {
     ]);
   });
 
+  it('sets the tags of a JSDoc block apart from its prose, and leaves a line comment alone', () => {
+    expect(kinds('/** Reads it.\n * @param {string} board The board.\n * @returns {Promise<void>}\n */')).toEqual([
+      ['comment', '/** Reads it.\n * '],
+      ['tag', '@param'],
+      ['comment', ' {string} board The board.\n * '],
+      ['tag', '@returns'],
+      ['comment', ' {Promise<void>}\n */'],
+    ]);
+    expect(kinds('// @param in a line comment')).toEqual([['comment', '// @param in a line comment']]);
+    const doc = '/** @typedef {Object} X */ async function read() {}';
+    expect(
+      highlight(doc)
+        .map((token) => token.text)
+        .join(''),
+    ).toBe(doc);
+  });
+
   it('gives the text back, whatever it is, and does not colour a word inside a string or a comment', () => {
     const source = "const a = 'return // not a comment'; /* await\nmulti */ let b = `x ${1}`;\nlet text = \"open";
     expect(

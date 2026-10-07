@@ -38,42 +38,89 @@ export function checkTargetUrl(input: string): { url: string; host: string } | {
   return { url: `${url.origin}${url.pathname === '/' ? '' : url.pathname}`, host: url.hostname.toLowerCase() };
 }
 
-/** What the editor starts from: the shape of the input and of the output, and the body left to write. */
+/** What the editor starts from: the input and the output documented with JSDoc, and the body left to write. */
 export function sampleScript(kind: 'http' | 'browser'): string {
-  return `// Runs in a sandbox with no network of its own: everything goes through the globals below, and the HTTP ones only reach the host
-// of the URL target. Nothing here can change anything on a site: read and return what you find.
-//
-// Globals (call the ones marked await with await):
-//   http.get(url, { headers })              -> { status, ok, headers, text, json() }
-//   http.postJson(url, body, { headers })   -> the same
-//   await htmlToText(html)                  -> plain text of a piece of HTML
-//   await slugify(text), await titleCase(text), await log(message)${
+  // the browser's page is typed with the rest, before the globals that name it
+  const sessionType =
     kind === 'browser'
-      ? `
-//   session (the page of this adapter's own browser; its pages are limited to the same host):
-//     await session.goto(url, { timeoutMs }), await session.waitForSelector(selector, timeoutMs),
-//     await session.text(selector), await session.evaluate('() => document.title'), await session.url()`
-      : ''
-  }
-//
-// Input: \`board\` is one entry of the tool's \`boards\` argument (a company, a site name...). \`filters\` holds its other arguments
-// (title_any, location_any, posted_within...); you may use them to ask less, but the router applies them again to what you return.
-// Output: the postings you found. The router filters them, stores the jobs and shapes the answer.
+      ? ` *
+ * @typedef {Object} Session The page of this adapter's own Chrome. Its pages are limited to the host of the URL target.
+ * @property {(url: string, options?: { timeoutMs?: number, waitFor?: string }) => Promise<void>} goto Loads a page (one unit of the budget).
+ * @property {(selector: string, timeoutMs?: number) => Promise<boolean>} waitForSelector True when the selector appears in time.
+ * @property {(selector: string) => Promise<string | null>} text The text of the first match, or null.
+ * @property {(script: string, arg?: unknown) => Promise<unknown>} evaluate Runs a function expression, given as text, in the page.
+ * @property {() => Promise<string>} url The address of the page.
+`
+      : '';
+  const sessionGlobal = kind === 'browser' ? '\n * @global {Session} session' : '';
+  return `/**
+ * Runs in a sandbox with no network of its own: everything goes through the globals below, and the HTTP ones only reach the host of the
+ * URL target. Nothing here can change anything on a site: read, and return what you find.
+ *
+ * @typedef {Object} Response
+ * @property {number} status
+ * @property {boolean} ok
+ * @property {Record<string, string>} headers
+ * @property {string} text
+ * @property {() => any} json Parses the text as JSON.
+ *
+ * @typedef {Object} Http
+ * @property {(url: string, options?: { headers?: Record<string, string> }) => Promise<Response>} get
+ * @property {(url: string, body: unknown, options?: { headers?: Record<string, string> }) => Promise<Response>} postJson
+${sessionType} *
+ * @global {Http} http Each request is one unit of the budget, 30 at most per run.
+ * @global {(html: string) => Promise<string>} htmlToText Plain text of a piece of HTML.
+ * @global {(text: string) => Promise<string>} slugify "Société Générale" becomes "societe-generale".
+ * @global {(text: string) => Promise<string>} titleCase "société générale" becomes "Société Générale".
+ * @global {(message: string) => Promise<void>} log Writes a line to the router's log.${sessionGlobal}
+ */
+
+/**
+ * The other arguments of the tool. The router applies them again to what you return, so you only need them to ask a site for less.
+ *
+ * @typedef {Object} Filters
+ * @property {string[]} title_any Keywords of the title, any of which matches. Empty keeps all.
+ * @property {string[]} location_any Places, any of which matches. Empty keeps all.
+ * @property {'any' | 'last_24_hours' | 'past_week' | 'past_month'} posted_within
+ * @property {string[]} disallowed_terms
+ * @property {number} max_results
+ */
+
+/**
+ * One job you found.
+ *
+ * @typedef {Object} Posting
+ * @property {string} id 1 to 64 letters, digits, - or _; unique within this adapter.
+ * @property {string} title
+ * @property {string | null} [company]
+ * @property {string[]} [locations] For example ['Paris, France'].
+ * @property {string} url An https address.
+ * @property {string | null} [postedAt] A date, for example '2026-10-01'.
+ * @property {string} [description] Plain text of the job.
+ */
+
+/**
+ * What \`read\` returns.
+ *
+ * @typedef {Object} Result
+ * @property {string | null} name The company name, or null.
+ * @property {Posting[]} postings
+ */
+
+/**
+ * Reads one board: the router calls it once for each entry of the tool's \`boards\` argument.
+ *
+ * @param {string} board One entry of \`boards\`, as written by the caller (a company, a site name...).
+ * @param {Filters} filters
+ * @returns {Promise<Result>}
+ */
 async function read(board, filters) {
-  // TODO: fetch the postings of \`board\` and build them.
+  // TODO: fetch the postings of \`board\` and build them, for example:
+  // const list = (await http.get('https://careers.example.com/api/jobs')).json();
+  // postings = list.map((job) => ({ id: String(job.id), title: job.title, url: job.url, description: job.text }));
   return {
-    name: board, // the company name, or null
-    postings: [
-      // {
-      //   id: 'job-123',                          // 1-64 letters, digits, - or _; unique within this adapter
-      //   title: 'Senior Engineer',
-      //   company: 'Acme',                        // or null
-      //   locations: ['Paris, France'],
-      //   url: 'https://careers.example.com/jobs/123', // https
-      //   postedAt: '2026-10-01',                 // a date, or null
-      //   description: 'Plain text of the job',
-      // },
-    ],
+    name: board,
+    postings: [],
   };
 }
 `;
