@@ -30,6 +30,28 @@ export interface CallEntry {
   jobText: { available: number; returned: number } | null;
 }
 
+/** A finished call as the database keeps it (`Store.restoreCalls`). */
+export interface RestoredCall {
+  requestId: string;
+  tool: string;
+  adapter: string;
+  platform: string;
+  outcome: string;
+  durationMs: number;
+  argsHash: string;
+  detail: {
+    startedAt: number;
+    unitsReserved: number;
+    unitsSpent: number;
+    responseBytes: number;
+    estimatedTokens: number;
+    warnings: number;
+    params: Record<string, unknown> | null;
+    paramsTruncated: boolean;
+    jobText: { available: number; returned: number } | null;
+  };
+}
+
 export interface CallQuery {
   tool?: string;
   platform?: string;
@@ -55,8 +77,9 @@ export function keywordsOf(params: Record<string, unknown> | null): string[] | n
 }
 
 /**
- * The last `capacity` calls, in memory (docs/plans/17-dashboard.md, D4). Bounded, so a busy router cannot grow it; a restart
- * empties it. The parameters of a call are kept here and nowhere else: not in the database, not in the logs.
+ * The last `capacity` calls, in memory (docs/plans/17-dashboard.md, D4). Bounded, so a busy router cannot grow it. Every finished call is
+ * also written to the database with its parameters (`call_log`, deleted after `CALL_LOG_RETENTION_DAYS`), and `restore` fills the buffer
+ * from it when the router starts, so a restart no longer empties it. The parameters are never written to the logs.
  */
 export class CallLog {
   private readonly entries: CallEntry[] = [];
@@ -74,6 +97,44 @@ export class CallLog {
     readonly maxParamsBytes = 4 * 1024 * 1024,
   ) {
     if (!Number.isInteger(capacity) || capacity < 1) throw new RangeError('capacity must be a positive integer');
+  }
+
+  /**
+   * Fill the buffer with calls read back from the database, oldest first, before anything else is recorded. They get new sequence numbers
+   * (the cursor of the list), in order. The memory bound on the parameters applies as for any call: the oldest lose theirs first.
+   */
+  restore(calls: readonly RestoredCall[]): void {
+    for (const call of calls.slice(-this.capacity)) {
+      const entry: CallEntry = {
+        id: this.next++,
+        requestId: call.requestId,
+        tool: call.tool,
+        adapter: call.adapter,
+        platform: call.platform,
+        startedAt: call.detail.startedAt,
+        state: 'done',
+        code: call.outcome as ToolOutcome['code'],
+        durationMs: call.durationMs,
+        argsHash: call.argsHash,
+        unitsReserved: call.detail.unitsReserved,
+        unitsSpent: call.detail.unitsSpent,
+        responseBytes: call.detail.responseBytes,
+        estimatedTokens: call.detail.estimatedTokens,
+        warnings: call.detail.warnings,
+        keywords: keywordsOf(call.detail.params),
+        params: call.detail.params,
+        paramsTruncated: call.detail.paramsTruncated,
+        paramsDropped: false,
+        jobText: call.detail.jobText,
+      };
+      this.push(entry);
+      if (entry.params !== null) {
+        const size = JSON.stringify(entry.params).length;
+        this.sizes.set(entry.id, size);
+        this.paramsBytes += size;
+      }
+    }
+    this.shed();
   }
 
   /** A call was admitted to run. */

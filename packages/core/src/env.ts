@@ -63,6 +63,7 @@ export const envSchema = z.object({
   DATA_DIR: z.string().min(1).default('/data'),
   DB_PATH: z.string().min(1).optional(),
   JOB_RETENTION_DAYS: integer(1, 3650, 30),
+  CALL_LOG_RETENTION_DAYS: integer(1, 3650, 30),
   ADAPTERS: z.string().optional(),
   UTILITIES: z.string().optional(),
   BROWSER_IDLE_TTL_S: integer(10, 3600, 120),

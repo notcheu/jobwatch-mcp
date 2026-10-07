@@ -53,6 +53,7 @@ async function build(over: Partial<DashboardSettings> = {}) {
         callBuffer: 2000,
         charsPerToken: 3.5,
         jobRetentionDays: 30,
+        callLogRetentionDays: 30,
         maxTabs: 3,
         browser: { idleStopSeconds: 120, memoryHighMb: 1200, memoryMaxMb: 1500 },
         adaptersPinned: false,

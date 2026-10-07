@@ -85,7 +85,9 @@ export function Runs() {
               {value === 'all' ? 'All' : value === 'running' ? 'Running' : value === 'ok' ? 'Succeeded' : 'Failed'}
             </Button>
           ))}
-          <span className="ml-auto text-xs text-muted-foreground">Kept in memory, cleared when the router restarts</span>
+          <span className="ml-auto text-xs text-muted-foreground">
+            The most recent calls, kept with their parameters and loaded again after a restart
+          </span>
         </div>
         <div className="flex-1 overflow-auto">
           <Table>
@@ -137,7 +139,11 @@ function CallPanel({ id, onClose }: { id: number; onClose: () => void }) {
   });
   return (
     <DetailPanel title={call.data ? call.data.tool : `Call ${id}`} onClose={onClose}>
-      {call.isError && <p className="text-sm text-muted-foreground">That call is no longer in memory.</p>}
+      {call.isError && (
+        <p className="text-sm text-muted-foreground">
+          That call is no longer in the call log (older than the retention, or pushed out by newer ones).
+        </p>
+      )}
       {call.data && <CallBody call={call.data} />}
     </DetailPanel>
   );

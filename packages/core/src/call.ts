@@ -111,7 +111,7 @@ export interface CallDetail {
   /** Estimated tokens of that text: an estimate, not Claude's count. */
   estimatedTokens: number;
   warnings: number;
-  /** The validated arguments, capped at MAX_PARAMS_BYTES. Memory only: not logged, not stored in the database. */
+  /** The validated arguments, capped at MAX_PARAMS_BYTES. Kept in the call log and in the database (rotated after CALL_LOG_RETENTION_DAYS), never in the logs. */
   params: Record<string, unknown> | null;
   paramsTruncated: boolean;
   jobText?: { available: number; returned: number };

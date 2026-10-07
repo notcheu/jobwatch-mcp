@@ -183,6 +183,58 @@ describe('persistence across a restart (a real database file)', () => {
     await client.close();
   });
 
+  it('keeps the call log, with its parameters, across a restart', async () => {
+    server = await bootOnDisk();
+    let client = await connectClient(server.url);
+    await client.callTool({ name: 'budgeted_run', arguments: {} });
+    await client.close();
+    const first = server.running.callLog.list({ limit: 10 }).calls[0];
+    expect(first).toMatchObject({ tool: 'budgeted_run', code: 'ok', state: 'done' });
+    await server.stop();
+
+    server = await bootOnDisk();
+    const back = server.running.callLog.list({ limit: 10 }).calls;
+    expect(back).toHaveLength(1);
+    expect(back[0]).toMatchObject({
+      tool: 'budgeted_run',
+      code: 'ok',
+      state: 'done',
+      unitsSpent: first?.unitsSpent,
+      params: first?.params,
+    });
+    client = await connectClient(server.url);
+    await client.callTool({ name: 'budgeted_run', arguments: {} });
+    await client.close();
+    expect(server.running.callLog.list({ limit: 10 }).calls.map((c) => c.id)).toEqual([2, 1]); // the new call follows the restored one
+  });
+
+  it('rotates the call log: a call older than CALL_LOG_RETENTION_DAYS is gone after a restart', async () => {
+    server = await bootOnDisk({ CALL_LOG_RETENTION_DAYS: '2' });
+    const client = await connectClient(server.url);
+    await client.callTool({ name: 'budgeted_run', arguments: {} });
+    await client.close();
+    await server.stop();
+
+    now += 3 * 24 * 3600 * 1000; // three days later, with a 2-day retention
+    server = await bootOnDisk({ CALL_LOG_RETENTION_DAYS: '2' });
+    expect(server.running.callLog.list({ limit: 10 }).calls).toEqual([]);
+    expect(server.running.store.countCalls()).toBe(0);
+    await server.stop();
+
+    server = await bootOnDisk({ CALL_LOG_RETENTION_DAYS: '2' });
+    const again = await connectClient(server.url);
+    await again.callTool({ name: 'budgeted_run', arguments: {} });
+    await again.close();
+    await server.stop();
+    server = await bootOnDisk({ CALL_LOG_RETENTION_DAYS: '2' }); // inside the retention: still there
+    expect(server.running.callLog.list({ limit: 10 }).calls).toHaveLength(1);
+  });
+
+  it('stops the start, naming the variable, for a retention that is not a whole number of days', async () => {
+    await expect(bootOnDisk({ CALL_LOG_RETENTION_DAYS: '0' })).rejects.toThrow('CALL_LOG_RETENTION_DAYS');
+    await expect(bootOnDisk({ CALL_LOG_RETENTION_DAYS: '1.5' })).rejects.toThrow('CALL_LOG_RETENTION_DAYS');
+  });
+
   it('creates the database with mode 0600 inside a directory it creates', async () => {
     server = await bootOnDisk();
     expect((await stat(join(dir, 'state', 'jobwatch.sqlite'))).mode & 0o777).toBe(0o600);

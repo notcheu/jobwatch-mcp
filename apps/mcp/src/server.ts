@@ -153,7 +153,10 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   // Persistent state. Fails fast (the process exits) when the database cannot be opened: running without a rate limiter or
   // breaker would mean nothing stops us from hammering a platform after a checkpoint.
   const clock = options.clock ?? Date.now;
-  const store = Store.open(config.dbPath, { jobRetentionDays: config.jobRetentionDays }); // applies the pending schema migrations
+  const store = Store.open(config.dbPath, {
+    jobRetentionDays: config.jobRetentionDays,
+    callLogRetentionDays: config.callLogRetentionDays,
+  }); // applies the pending schema migrations
   logger.info({ schemaVersion: store.schemaVersion, dbPath: config.dbPath }, 'database_ready');
   const breaker = new CircuitBreaker(store, clock, (platform, row) => {
     metrics?.setBreaker(platform, row?.reason);
@@ -281,6 +284,8 @@ export async function start(options: StartOptions): Promise<RunningServer> {
 
   // The last calls, in memory, for the dashboard (docs/plans/17-dashboard.md). Their parameters are kept nowhere else.
   const callLog = new CallLog(config.callBuffer);
+  // the calls of the last days come back with their parameters: the history does not start empty after a restart (prune ran above)
+  callLog.restore(store.restoreCalls(config.callBuffer));
   live.holder = holder;
   const appDeps: AppDeps = {
     registry: holder.view,
@@ -319,6 +324,21 @@ export async function start(options: StartOptions): Promise<RunningServer> {
         outcome: outcome.code,
         durationMs: outcome.durationMs,
         argsHash: outcome.argsHash,
+        ...(outcome.detail === undefined
+          ? {}
+          : {
+              detail: {
+                startedAt: outcome.detail.startedAt,
+                unitsReserved: outcome.detail.unitsReserved,
+                unitsSpent: outcome.detail.unitsSpent,
+                responseBytes: outcome.detail.responseBytes,
+                estimatedTokens: outcome.detail.estimatedTokens,
+                warnings: outcome.detail.warnings,
+                params: outcome.detail.params,
+                paramsTruncated: outcome.detail.paramsTruncated,
+                jobText: outcome.detail.jobText ?? null,
+              },
+            }),
       });
     },
   };
@@ -411,6 +431,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
         callBuffer: config.callBuffer,
         charsPerToken: config.charsPerToken,
         jobRetentionDays: config.jobRetentionDays,
+        callLogRetentionDays: config.callLogRetentionDays,
         maxTabs: config.maxTabs,
         browser: { idleStopSeconds: config.idleTtlS, memoryHighMb: config.memHighMb, memoryMaxMb: config.memMaxMb },
         adaptersPinned: pinnedByEnv,

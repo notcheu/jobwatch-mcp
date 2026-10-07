@@ -16,7 +16,8 @@ export function Overview() {
   return (
     <div className="w-full space-y-4 overflow-auto p-5">
       <p className="text-xs text-muted-foreground">
-        Current router process · the history of calls is kept in memory and resets when it restarts
+        The most recent calls, kept with their parameters for the number of days set under Settings, and loaded again when the router
+        restarts
       </p>
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
@@ -99,7 +100,7 @@ export function Overview() {
           value={`~${compact(o.tokensReturned)}`}
           note="Estimated from the size of the text sent"
         />
-        <StatCard title="Calls in memory" value={compact(o.callsInMemory)} note={`of ${compact(o.callBufferSize)} kept`} />
+        <StatCard title="Calls shown" value={compact(o.callsInMemory)} note={`of ${compact(o.callBufferSize)} kept`} />
         <StatCard title="Stored jobs" value={compact(o.storedJobs)} note="In the router database" />
       </div>
     </div>

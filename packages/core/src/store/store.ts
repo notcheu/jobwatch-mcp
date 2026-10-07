@@ -38,10 +38,26 @@ export interface CallRecord {
   outcome: string;
   durationMs: number;
   argsHash: string;
+  /** What the dashboard shows of the call beyond the fields above; absent for a call that never got that far. */
+  detail?: CallDetailRecord;
 }
 
-/** Retention: the call log keeps 30 days; usage events only need to cover the longest rate window with margin. */
-export const CALL_LOG_RETENTION_MS = 30 * 24 * 3600 * 1000;
+/** The part of a call's history that lives in the `detail` column: counts, and the validated arguments capped by the caller. */
+export interface CallDetailRecord {
+  startedAt: number;
+  unitsReserved: number;
+  unitsSpent: number;
+  responseBytes: number;
+  estimatedTokens: number;
+  warnings: number;
+  params: Record<string, unknown> | null;
+  paramsTruncated: boolean;
+  jobText: { available: number; returned: number } | null;
+}
+
+/** Retention: usage events only need to cover the longest rate window with margin. */
+/** The call log is kept `CALL_LOG_RETENTION_DAYS` (default 30), parameters included. */
+export const DEFAULT_CALL_LOG_RETENTION_DAYS = 30;
 export const USAGE_RETENTION_MS = 2 * 24 * 3600 * 1000;
 /** Stored job postings: kept `JOB_RETENTION_DAYS` (default 30) from the last time they were seen. */
 export const DEFAULT_JOB_RETENTION_DAYS = 30;
@@ -53,7 +69,7 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
  * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
  * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`),
  * 9 the keyword list of a search and the jobs it excluded, 10 its disallowed terms and the term that dropped each job,
- * 11 the title of a dropped job.
+ * 11 the title of a dropped job, 12 the detail of a call (its parameters among it).
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -192,6 +208,11 @@ const MIGRATIONS: readonly string[] = [
   `
   ALTER TABLE search_hits ADD COLUMN excluded_title TEXT;
   `,
+  // 12: what the dashboard shows of a call beyond the row above (units, bytes, tokens, warnings, the capped parameters), as JSON, so the call
+  // log survives a restart. Null for a call made before this migration. Deleted with its row, after CALL_LOG_RETENTION_DAYS.
+  `
+  ALTER TABLE call_log ADD COLUMN detail TEXT;
+  `,
 ];
 
 /** Days of per-tool daily totals kept (docs/plans/17-dashboard.md, D8). */
@@ -216,13 +237,17 @@ export class Store {
   private constructor(
     private readonly db: DatabaseSync,
     private readonly jobRetentionMs: number,
+    private readonly callLogRetentionMs: number,
   ) {}
 
   /** `path` may be `:memory:` (tests). A file is created with mode 0600 together with its parent directory. */
-  static open(path: string, options: { jobRetentionDays?: number } = {}): Store {
+  static open(path: string, options: { jobRetentionDays?: number; callLogRetentionDays?: number } = {}): Store {
     const days = options.jobRetentionDays ?? DEFAULT_JOB_RETENTION_DAYS;
     if (!Number.isInteger(days) || days < 1 || days > 3650)
       throw new StoreError('jobRetentionDays must be a whole number of days between 1 and 3650');
+    const callDays = options.callLogRetentionDays ?? DEFAULT_CALL_LOG_RETENTION_DAYS;
+    if (!Number.isInteger(callDays) || callDays < 1 || callDays > 3650)
+      throw new StoreError('callLogRetentionDays must be a whole number of days between 1 and 3650');
     let db: DatabaseSync;
     try {
       if (path !== ':memory:') {
@@ -249,7 +274,7 @@ export class Store {
       if (cause instanceof StoreError) throw cause;
       throw new StoreError(`Cannot prepare the database at ${path}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
-    return new Store(db, days * 24 * 3600 * 1000);
+    return new Store(db, days * 24 * 3600 * 1000, callDays * 24 * 3600 * 1000);
   }
 
   /** Read the salary of the jobs stored before the salary columns existed (migration 7). One pass, once. */
@@ -479,9 +504,48 @@ export class Store {
   recordCall(call: CallRecord): void {
     this.db
       .prepare(
-        'INSERT INTO call_log (ts, request_id, tool, adapter, platform, outcome, duration_ms, args_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO call_log (ts, request_id, tool, adapter, platform, outcome, duration_ms, args_hash, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(call.ts, call.requestId, call.tool, call.adapter, call.platform, call.outcome, call.durationMs, call.argsHash);
+      .run(
+        call.ts,
+        call.requestId,
+        call.tool,
+        call.adapter,
+        call.platform,
+        call.outcome,
+        call.durationMs,
+        call.argsHash,
+        call.detail === undefined ? null : JSON.stringify(call.detail),
+      );
+  }
+
+  /**
+   * The last `limit` calls that kept their detail, oldest first, to fill the dashboard's call log again after a restart. A call from
+   * before the detail was stored, or one with a damaged detail, is left out. Only what retention has not deleted yet.
+   */
+  restoreCalls(limit: number): (CallRecord & { detail: CallDetailRecord })[] {
+    const rows = this.db
+      .prepare(
+        'SELECT ts, request_id, tool, adapter, platform, outcome, duration_ms, args_hash, detail FROM call_log WHERE detail IS NOT NULL ORDER BY id DESC LIMIT ?',
+      )
+      .all(Math.max(1, Math.min(limit, 10_000))) as unknown as Rows[];
+    const out: (CallRecord & { detail: CallDetailRecord })[] = [];
+    for (const row of rows.reverse()) {
+      const detail = parseCallDetail(row['detail']);
+      if (detail === null) continue;
+      out.push({
+        ts: Number(row['ts']),
+        requestId: String(row['request_id']),
+        tool: String(row['tool']),
+        adapter: String(row['adapter']),
+        platform: String(row['platform']),
+        outcome: String(row['outcome']),
+        durationMs: Number(row['duration_ms']),
+        argsHash: String(row['args_hash']),
+        detail,
+      });
+    }
+    return out;
   }
 
   recentCalls(limit: number): CallRecord[] {
@@ -864,7 +928,7 @@ export class Store {
     this.db
       .prepare('DELETE FROM tool_usage_daily WHERE day < ?')
       .run(new Date(now - DAILY_USAGE_RETENTION_DAYS * 24 * 3600 * 1000).toISOString().slice(0, 10));
-    const calls = Number(this.db.prepare('DELETE FROM call_log WHERE ts < ?').run(now - CALL_LOG_RETENTION_MS).changes);
+    const calls = Number(this.db.prepare('DELETE FROM call_log WHERE ts < ?').run(now - this.callLogRetentionMs).changes);
     const usage = Number(this.db.prepare('DELETE FROM usage WHERE ts < ?').run(now - USAGE_RETENTION_MS).changes);
     return { calls, usage, jobs };
   }
@@ -1010,6 +1074,30 @@ function excludedBy(row: Rows): ExcludedBy | null {
 
 /** What makes two keyword lists one search: the same keywords in any order. */
 export const keywordsKey = (keywords: readonly string[]): string => JSON.stringify([...keywords].sort());
+
+/** The detail of a stored call, or null when it is not what was written (a damaged row never stops the router from starting). */
+function parseCallDetail(value: unknown): CallDetailRecord | null {
+  try {
+    const parsed = JSON.parse(String(value)) as Partial<CallDetailRecord> | null;
+    if (typeof parsed !== 'object' || parsed === null || typeof parsed.startedAt !== 'number') return null;
+    const count = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) ? n : 0);
+    const params = parsed.params;
+    const text = parsed.jobText;
+    return {
+      startedAt: parsed.startedAt,
+      unitsReserved: count(parsed.unitsReserved),
+      unitsSpent: count(parsed.unitsSpent),
+      responseBytes: count(parsed.responseBytes),
+      estimatedTokens: count(parsed.estimatedTokens),
+      warnings: count(parsed.warnings),
+      params: typeof params === 'object' && params !== null && !Array.isArray(params) ? params : null,
+      paramsTruncated: parsed.paramsTruncated === true,
+      jobText: typeof text === 'object' && text !== null ? { available: count(text.available), returned: count(text.returned) } : null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function parseKeywords(value: unknown): string[] {
   try {

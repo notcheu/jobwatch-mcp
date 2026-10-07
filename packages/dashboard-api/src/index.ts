@@ -419,6 +419,8 @@ export const settingsSchema = z
     callBuffer: z.number(),
     charsPerToken: z.number(),
     jobRetentionDays: z.number(),
+    /** Days a call is kept in the call log, parameters included, before it is deleted. */
+    callLogRetentionDays: z.number(),
     maxTabs: z.number(),
     browser: z.object({ idleStopSeconds: z.number(), memoryHighMb: z.number(), memoryMaxMb: z.number() }).strict(),
     adaptersPinned: z.boolean(),

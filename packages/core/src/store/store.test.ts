@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  CALL_LOG_RETENTION_MS,
   MAX_JOB_DESCRIPTION_CHARS,
   MAX_MEMORY_ENTRIES,
   SCHEMA_VERSION,
@@ -170,25 +169,111 @@ describe('call log', () => {
     expect(store.recentCalls(1)[0]).toEqual(call({ requestId: 'r4', ts: 4 }));
   });
 
-  it('stores no arguments, only a hash: the schema has no column that could hold them', () => {
+  it('keeps the arguments of a call in one column only, `detail`, next to the hash: nowhere else holds them', () => {
     const path = join(dir, 'schema.sqlite');
     Store.open(path).close();
     const raw = new DatabaseSync(path);
     const columns = (raw.prepare('PRAGMA table_info(call_log)').all() as { name: string }[]).map((c) => c.name);
     raw.close();
-    expect(columns).toEqual(['id', 'ts', 'request_id', 'tool', 'adapter', 'platform', 'outcome', 'duration_ms', 'args_hash']);
+    expect(columns).toEqual(['id', 'ts', 'request_id', 'tool', 'adapter', 'platform', 'outcome', 'duration_ms', 'args_hash', 'detail']);
   });
 
   it('prunes by retention and reports what it removed', () => {
     const store = Store.open(':memory:');
-    const now = 100 * 24 * 3600 * 1000;
-    store.recordCall(call({ ts: now - CALL_LOG_RETENTION_MS - 1, requestId: 'old' }));
-    store.recordCall(call({ ts: now - CALL_LOG_RETENTION_MS + 1000, requestId: 'kept' }));
+    const day = 24 * 3600 * 1000;
+    const now = 100 * day;
+    store.recordCall(call({ ts: now - 30 * day - 1, requestId: 'old' }));
+    store.recordCall(call({ ts: now - 30 * day + 1000, requestId: 'kept' }));
     store.addUsage('a', now - USAGE_RETENTION_MS - 1, 1);
     store.addUsage('a', now - 1000, 1);
     expect(store.prune(now)).toEqual({ calls: 1, usage: 1, jobs: 0 });
     expect(store.recentCalls(10).map((c) => c.requestId)).toEqual(['kept']);
     expect(store.usageSince('a', 0)).toHaveLength(1);
+  });
+
+  describe('rotation', () => {
+    const day = 24 * 3600 * 1000;
+    const detail = (over: object = {}) => ({
+      startedAt: 0,
+      unitsReserved: 5,
+      unitsSpent: 3,
+      responseBytes: 2048,
+      estimatedTokens: 570,
+      warnings: 1,
+      params: { keywords: ['react'], geo: 'france' },
+      paramsTruncated: false,
+      jobText: { available: 8000, returned: 700 },
+      ...over,
+    });
+
+    it('keeps a call for the number of days it was told, 30 by default, and deletes its parameters with it', () => {
+      const now = 100 * day;
+      const week = Store.open(':memory:', { callLogRetentionDays: 7 });
+      week.recordCall(call({ requestId: 'eight', ts: now - 8 * day, detail: detail() }));
+      week.recordCall(call({ requestId: 'six', ts: now - 6 * day, detail: detail() }));
+      expect(week.prune(now).calls).toBe(1);
+      expect(week.restoreCalls(10).map((c) => c.requestId)).toEqual(['six']);
+      week.close();
+      const normal = Store.open(':memory:');
+      normal.recordCall(call({ requestId: 'twenty-nine', ts: now - 29 * day, detail: detail() }));
+      normal.recordCall(call({ requestId: 'thirty-one', ts: now - 31 * day, detail: detail() }));
+      expect(normal.prune(now).calls).toBe(1);
+      expect(normal.restoreCalls(10).map((c) => c.requestId)).toEqual(['twenty-nine']);
+      normal.close();
+    });
+
+    it('refuses a retention that is not a whole number of days from 1 to 3650', () => {
+      for (const days of [0, -1, 1.5, 4000]) expect(() => Store.open(':memory:', { callLogRetentionDays: days })).toThrow(StoreError);
+    });
+
+    it('reads the last calls back, oldest first, with what the dashboard shows of them', () => {
+      const store = Store.open(':memory:');
+      for (let i = 1; i <= 5; i += 1) store.recordCall(call({ requestId: `r${i}`, ts: i, detail: detail({ startedAt: i }) }));
+      const back = store.restoreCalls(3);
+      expect(back.map((c) => c.requestId)).toEqual(['r3', 'r4', 'r5']);
+      expect(back[2]).toMatchObject({
+        tool: 'apec_search',
+        outcome: 'ok',
+        detail: {
+          startedAt: 5,
+          unitsSpent: 3,
+          estimatedTokens: 570,
+          params: { keywords: ['react'], geo: 'france' },
+          jobText: { available: 8000, returned: 700 },
+        },
+      });
+      store.close();
+    });
+
+    it('leaves out a call that has no detail (made before it was kept, or refused before it ran) and a damaged one', () => {
+      const store = Store.open(':memory:');
+      store.recordCall(call({ requestId: 'no-detail', ts: 1 }));
+      store.recordCall(call({ requestId: 'good', ts: 2, detail: detail() }));
+      store.recordCall(call({ requestId: 'no-params', ts: 3, detail: detail({ params: null }) }));
+      expect(store.restoreCalls(10).map((c) => [c.requestId, c.detail.params])).toEqual([
+        ['good', { keywords: ['react'], geo: 'france' }],
+        ['no-params', null],
+      ]);
+      store.close();
+    });
+
+    it('does not stop the start for a damaged detail', async () => {
+      const path = join(dir, 'damaged.sqlite');
+      const first = Store.open(path);
+      first.recordCall(call({ requestId: 'good', ts: 1, detail: detail() }));
+      first.close();
+      const raw = new DatabaseSync(path);
+      raw.exec(
+        "INSERT INTO call_log (ts, request_id, tool, adapter, platform, outcome, duration_ms, args_hash, detail) VALUES (2, 'bad', 't', 'a', 'p', 'ok', 1, 'h', '{not json')",
+      );
+      raw.exec(
+        "INSERT INTO call_log (ts, request_id, tool, adapter, platform, outcome, duration_ms, args_hash, detail) VALUES (3, 'odd', 't', 'a', 'p', 'ok', 1, 'h', '[1,2]')",
+      );
+      raw.close();
+      const second = Store.open(path);
+      expect(second.restoreCalls(10).map((c) => c.requestId)).toEqual(['good']);
+      second.close();
+    });
   });
 });
 
@@ -680,7 +765,7 @@ describe('salary columns', () => {
       const raw = new DatabaseSync(path);
       // put the file back as a version 6 database: no salary columns, no adapter memory
       raw.exec(
-        'ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
+        'ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -878,7 +963,7 @@ describe('searches as keyword lists', () => {
       raw.exec(`DELETE FROM search_runs; DELETE FROM search_hits;
         INSERT INTO search_runs (id, ts, platform, query, found, returned) VALUES (1, ${T0}, 'linkedin', 'React OR Vue', 1, 0), (2, ${T0}, 'teamtailor', 'go | rust', 1, 0), (3, ${T0}, 'linkedin', 'director or manager', 1, 0), (4, ${T0}, 'wttj', '', 1, 0);`);
       raw.exec(
-        'ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
+        'ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -1049,7 +1134,7 @@ describe('searches as keyword lists', () => {
         first.close();
         const raw = new DatabaseSync(path);
         raw.exec(
-          'ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); PRAGMA user_version = 9;',
+          'ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); PRAGMA user_version = 9;',
         );
         raw.close();
         const upgraded = Store.open(path);
