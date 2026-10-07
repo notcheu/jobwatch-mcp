@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ATS_IDS, type AtsLookup } from '@jobwatch/dashboard-api';
-import { ChevronLeft, ChevronRight, ExternalLink, Plus, Trash2 } from 'lucide-react';
+import { ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Badge } from '@/components/ui/badge';
@@ -9,46 +9,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ApiError, api, navigation } from '@/lib/api';
+import { DiscoveryBanners, PAGE_SIZE, Pager, useChangeError } from '@/components/Discovery';
+import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { safeHttpsUrl, useDebounced } from '@/lib/hooks';
-
-const PAGE_SIZE = 25;
-
-const failureText = (failure: unknown, fallback: string): string => (failure instanceof Error ? failure.message : fallback);
-
-/** Say what went wrong, or ask for a new sign-in when the change needs a recent one. Returns true when it was handled as a re-sign-in. */
-function useChangeError(onReauth: () => void) {
-  const [error, setError] = useState<string>();
-  return {
-    error,
-    clear: () => setError(undefined),
-    fail: (failure: unknown, fallback: string): void => {
-      if (failure instanceof ApiError && failure.code === 'reauth_required') return onReauth();
-      setError(failureText(failure, fallback));
-    },
-  };
-}
-
-function Pager({ page, total, onPage }: { page: number; total: number; onPage: (page: number) => void }) {
-  const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const to = Math.min(total, page * PAGE_SIZE);
-  return (
-    <div className="flex items-center justify-between border-t px-5 py-2 text-sm">
-      <span className="text-muted-foreground tabular-nums">
-        {from}–{to} of {total}
-      </span>
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-          <ChevronLeft className="size-4" /> Previous
-        </Button>
-        <Button variant="outline" size="sm" disabled={page * PAGE_SIZE >= total} onClick={() => onPage(page + 1)}>
-          Next <ChevronRight className="size-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function BoardLink({ url, children }: { url: string; children: string }) {
   const href = safeHttpsUrl(url);
@@ -407,19 +371,7 @@ export function AtsDiscovery() {
           </TabsList>
         </Tabs>
       </div>
-      {reauth && (
-        <div role="alert" className="flex items-center justify-between border-b border-warning/40 bg-warning/10 px-5 py-2 text-sm">
-          <span>Changes need a recent sign-in. Sign in again to continue.</span>
-          <Button size="sm" onClick={() => navigation.toReauth()}>
-            Sign in again
-          </Button>
-        </div>
-      )}
-      {notice !== undefined && (
-        <p role="status" className="border-b bg-success/10 px-5 py-2 text-sm">
-          {notice}
-        </p>
-      )}
+      <DiscoveryBanners utility="ats-discovery" reauth={reauth} notice={notice} />
       {view === 'log' ? (
         <Log onReauth={() => setReauth(true)} onNotice={setNotice} />
       ) : (

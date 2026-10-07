@@ -108,6 +108,10 @@ All paths are under the `/dashboard` prefix (`/dashboard/api/v1/...`). All `GET`
 | `GET /api/v1/company-boards?q&ats&page&pageSize` | the companies mapped to a board, A to Z; `q` matches the company or the board handle |
 | `POST /api/v1/company-boards` `{ company, ats, handle }` | maps a company to its board on an ATS (`greenhouse`, `lever`, `ashby`, `teamtailor`; the handle is checked for its shape only); 409 when the company already has a board on that ATS |
 | `DELETE /api/v1/company-boards/:id` | forgets a mapping |
+| `GET /api/v1/place-lookups?page&pageSize` | the log of LinkedIn place lookups, newest first, each candidate with `saved` (`none`, `same`, `other`) |
+| `GET /api/v1/places?q&page&pageSize` | the names remembered for a LinkedIn geoId, A to Z |
+| `POST /api/v1/places` `{ alias, id, label? }` | remembers a name for a geoId (replaces an older meaning of the name) |
+| `DELETE /api/v1/places/:alias` | forgets a name |
 | `GET /api/v1/events` | optional Server-Sent Events stream of call start / end for a live tab (v2) |
 
 Search and filtering run in SQL (`Store.listJobs` gains `q` over title and company, sort, offset) so a 5000-job window never goes to the browser. The jobs endpoints never trigger a fetch from a site.
@@ -173,6 +177,8 @@ Column visibility menu, a search box (`q`), filters for source / board / keyword
 **Settings.** Idle timeout of this dashboard session, theme, the characters-per-token ratio, and a read-only block of the effective limits (browser memory caps, tab limit, retention).
 
 **ATS discovery.** Two tabs kept in `?view=`. **Log**: what each company lookup (`ats_find`) found, newest first: company, the boards found (ATS badge, handle linked to the public board page, jobs listed) and the handles tried; each board whose company has no board on that ATS yet has an **Assign** button, which maps the company to it (a board that is already mapped says *Mapped*). **Company mapping**: every mapped company (table `company_boards`, migration 13), a search over the company name and the board handle, an ATS filter, **Add mapping** (company, ATS, handle, for a board the lookup did not find) and a remove button. Every ATS tool reads this map first: a company given by name in `boards` is read from its mapped board, which the tool then checks as usual (`ats_find` answers a mapped company from the mapping with no request, unless `refresh` is set); the tool schemas do not change. A company is matched by the slug of its name (`Société Générale` = `societe-generale`); one board per company and ATS. The lookups log (table `ats_lookups`) is cleared with the call log, after `CALL_LOG_RETENTION_DAYS`. The pages of the utilities sit under the **Tools** heading of the menu. Utilities (`ats-discovery`, `linkedin-geo`) never get a platform tab on Jobs, Searches or Runs: they fetch no jobs.
+
+**LinkedIn places.** Under the Tools heading, two tabs kept in `?view=`. **Log**: each place lookup (a `linkedin_locations` query, or a LinkedIn search that looked a place name up by itself; table `place_lookups`, migration 14, cleared with the call log) with what LinkedIn suggested; a candidate has an **Assign** button (**Use instead** when the name is remembered as another place; *Saved* when it is already this one), which remembers the name looked up for that geoId. **Saved places**: the names remembered for a geoId (the `linkedin.geo:` entries of `platform_memory`, by you or by a search), a search over name, label and geoId, **Add place** (name, geoId, optional label) and a forget button. A saved name is what a LinkedIn search uses as `geo`. Endpoints: `GET /place-lookups`, `GET /places`, `POST /places` (saves, replacing what the name meant), `DELETE /places/:alias`. A page whose utility is not enabled says so.
 
 ### 6.4 Hot reload of adapters (D7)
 

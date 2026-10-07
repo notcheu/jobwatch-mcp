@@ -69,7 +69,7 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
  * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
  * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`),
  * 9 the keyword list of a search and the jobs it excluded, 10 its disallowed terms and the term that dropped each job,
- * 11 the title of a dropped job, 12 the detail of a call (its parameters among it), 13 the company lookups and the company-to-board map.
+ * 11 the title of a dropped job, 12 the detail of a call (its parameters among it), 13 the company lookups and the company-to-board map, 14 the log of LinkedIn place lookups.
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -235,6 +235,17 @@ const MIGRATIONS: readonly string[] = [
     created_at  INTEGER NOT NULL,
     UNIQUE (company_key, ats)
   );
+  `,
+  // 14: the log of LinkedIn place lookups (a linkedin_locations query, or a search that looked a place name up by itself); hits as JSON.
+  `
+  CREATE TABLE place_lookups (
+    id     INTEGER PRIMARY KEY,
+    ts     INTEGER NOT NULL,
+    query  TEXT    NOT NULL,
+    source TEXT    NOT NULL CHECK (source IN ('tool', 'search')),
+    hits   TEXT    NOT NULL
+  );
+  CREATE INDEX place_lookups_ts ON place_lookups (ts);
   `,
 ];
 
@@ -578,6 +589,41 @@ export class Store {
   /** Forget a mapping. False when there was none. */
   deleteCompanyBoard(id: number): boolean {
     return Number(this.db.prepare('DELETE FROM company_boards WHERE id = ?').run(id).changes) > 0;
+  }
+
+  // ------------------------------------------------------------------------------------------ LinkedIn places
+
+  /** Log one place lookup (newest kept, at most MAX_PLACE_LOOKUPS rows; dropped with the call log). */
+  recordPlaceLookup(
+    lookup: { query: string; source: 'tool' | 'search'; hits: readonly { id: string; label: string }[] },
+    now: number,
+  ): void {
+    this.transaction(() => {
+      this.db
+        .prepare('INSERT INTO place_lookups (ts, query, source, hits) VALUES (?, ?, ?, ?)')
+        .run(now, lookup.query.slice(0, 100), lookup.source, JSON.stringify(lookup.hits.slice(0, 10)));
+      this.db
+        .prepare('DELETE FROM place_lookups WHERE id IN (SELECT id FROM place_lookups ORDER BY id DESC LIMIT -1 OFFSET ?)')
+        .run(MAX_PLACE_LOOKUPS);
+    });
+  }
+
+  /** The place lookups, newest first. */
+  listPlaceLookups(limit: number, offset: number): { rows: PlaceLookup[]; total: number } {
+    const total = Number((this.db.prepare('SELECT count(*) AS n FROM place_lookups').get() as Rows | undefined)?.['n'] ?? 0);
+    const rows = this.db
+      .prepare('SELECT id, ts, query, source, hits FROM place_lookups ORDER BY id DESC LIMIT ? OFFSET ?')
+      .all(limit, offset) as Rows[];
+    return {
+      total,
+      rows: rows.map((row) => ({
+        id: Number(row['id']),
+        ts: Number(row['ts']),
+        query: String(row['query']),
+        source: row['source'] === 'search' ? 'search' : 'tool',
+        hits: JSON.parse(String(row['hits'])) as { id: string; label: string }[],
+      })),
+    };
   }
 
   // ------------------------------------------------------------------------------------------------ adapter memory
@@ -1046,6 +1092,7 @@ export class Store {
       .run(new Date(now - DAILY_USAGE_RETENTION_DAYS * 24 * 3600 * 1000).toISOString().slice(0, 10));
     const calls = Number(this.db.prepare('DELETE FROM call_log WHERE ts < ?').run(now - this.callLogRetentionMs).changes);
     this.db.prepare('DELETE FROM ats_lookups WHERE ts < ?').run(now - this.callLogRetentionMs);
+    this.db.prepare('DELETE FROM place_lookups WHERE ts < ?').run(now - this.callLogRetentionMs);
     const usage = Number(this.db.prepare('DELETE FROM usage WHERE ts < ?').run(now - USAGE_RETENTION_MS).changes);
     return { calls, usage, jobs };
   }
@@ -1094,6 +1141,8 @@ export const MAX_MEMORY_ENTRIES = 1000;
 /** Ids kept per search: a board listing can hold thousands of postings, and the counts stay exact whatever is kept. */
 const MAX_SEARCH_HITS = 1000;
 
+/** Lookups kept in the LinkedIn places log. */
+const MAX_PLACE_LOOKUPS = 2000;
 /** Lookups kept in the ATS discovery log. */
 const MAX_ATS_LOOKUPS = 2000;
 
@@ -1113,6 +1162,14 @@ export interface AtsLookup {
   company: string;
   tried: string[];
   matches: CompanyBoardLookupMatch[];
+}
+
+export interface PlaceLookup {
+  id: number;
+  ts: number;
+  query: string;
+  source: 'tool' | 'search';
+  hits: { id: string; label: string }[];
 }
 
 /** A company the operator mapped to its board on an ATS. */

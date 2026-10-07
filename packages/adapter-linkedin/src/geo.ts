@@ -1,4 +1,12 @@
-import { bestLocation, lookupLocations, saveLocation, savedLocation, type HttpClient, type PlatformMemory } from '@jobwatch/sdk';
+import {
+  bestLocation,
+  lookupLocations,
+  saveLocation,
+  savedLocation,
+  type HttpClient,
+  type PlaceLog,
+  type PlatformMemory,
+} from '@jobwatch/sdk';
 import { resolveGeo } from './parse';
 
 export interface ResolvedPlace {
@@ -14,7 +22,7 @@ export interface ResolvedPlace {
  * asked about once). When LinkedIn does not answer, the name goes into the address as it is and LinkedIn resolves it itself.
  */
 export async function resolvePlace(
-  ctx: { http: HttpClient; memory: PlatformMemory },
+  ctx: { http: HttpClient; memory: PlatformMemory; places: PlaceLog },
   geo: string | undefined,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<ResolvedPlace> {
@@ -23,6 +31,7 @@ export async function resolvePlace(
   const known = await savedLocation(ctx.memory, wanted);
   if (known !== null) return { geo: known.id };
   const hits = await lookupLocations(ctx.http, wanted);
+  await ctx.places.recordLookup({ query: wanted, source: 'search', hits: hits.slice(0, 10) });
   const best = bestLocation(hits, wanted);
   if (best === undefined) return { geo: wanted };
   await saveLocation(ctx.memory, wanted, best, 'auto');

@@ -1,5 +1,9 @@
 import {
   API_PREFIX,
+  placeLookupsSchema,
+  savedPlaceRemovedSchema,
+  savedPlaceSchema,
+  savedPlacesSchema,
   atsLookupsSchema,
   companyBoardRemovedSchema,
   companyBoardSchema,
@@ -22,6 +26,9 @@ import {
   usageSchemaResponse,
   type AdapterToggle,
   type AtsLookups,
+  type PlaceLookups,
+  type SavedPlace,
+  type SavedPlaces,
   type CompanyBoard,
   type CompanyBoards,
   type BudgetUpdated,
@@ -122,6 +129,14 @@ export const api = {
     request(companyBoardSchema, '/company-boards', { method: 'POST', body: JSON.stringify(entry) }),
   removeCompanyBoard: (id: number): Promise<{ id: number }> =>
     request(companyBoardRemovedSchema, `/company-boards/${id}`, { method: 'DELETE' }),
+  placeLookups: (params: { page?: number; pageSize?: number }): Promise<PlaceLookups> =>
+    request(placeLookupsSchema, `/place-lookups${query(params)}`),
+  places: (params: { q?: string; page?: number; pageSize?: number }): Promise<SavedPlaces> =>
+    request(savedPlacesSchema, `/places${query(params)}`),
+  savePlace: (entry: { alias: string; id: string; label?: string }): Promise<SavedPlace> =>
+    request(savedPlaceSchema, '/places', { method: 'POST', body: JSON.stringify(entry) }),
+  forgetPlace: (alias: string): Promise<{ alias: string }> =>
+    request(savedPlaceRemovedSchema, `/places/${encodeURIComponent(alias)}`, { method: 'DELETE' }),
   docs: (): Promise<Docs> => request(docsSchema, '/docs'),
   tools: (): Promise<Tools> => request(toolsSchema, '/tools'),
   settings: (): Promise<Settings> => request(settingsSchema, '/settings'),

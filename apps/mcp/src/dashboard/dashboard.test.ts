@@ -348,6 +348,31 @@ describe('the API in local development mode (no sign-in)', () => {
     expect((await t.call('/dashboard/api/v1/company-boards?ats=Bad!')).status).toBe(400);
   });
 
+  it('lists the place lookups with what each name is remembered as, and the remembered names with a search', async () => {
+    const t = await build();
+    const berlin = { id: '103035651', label: 'Berlin, Germany' };
+    const other = { id: '90009712', label: 'Berlin Metropolitan Area' };
+    t.deps.store.recordPlaceLookup({ query: 'Berlin', source: 'search', hits: [berlin, other] }, NOW - DAY);
+    t.deps.store.recordPlaceLookup({ query: 'Lisbon', source: 'tool', hits: [{ id: '100364837', label: 'Lisbon, Portugal' }] }, NOW);
+    t.deps.store.setMemory('linkedin.geo:berlin', JSON.stringify({ id: berlin.id, label: berlin.label, by: 'auto' }), NOW);
+    t.deps.store.setMemory('linkedin.geo:home', JSON.stringify({ id: '555000', label: 'Home town', by: 'operator' }), NOW);
+    const lookups = await json(await t.call('/dashboard/api/v1/place-lookups'));
+    expect(lookups.total).toBe(2);
+    expect(lookups.items.map((i: any) => [i.query, i.source])).toEqual([
+      ['Lisbon', 'tool'],
+      ['Berlin', 'search'],
+    ]);
+    expect(lookups.items[0].hits[0].saved).toBe('none');
+    expect(lookups.items[1].hits.map((h: any) => h.saved)).toEqual(['same', 'other']);
+    const places = await json(await t.call('/dashboard/api/v1/places'));
+    expect(places.items).toEqual([
+      { alias: 'berlin', id: '103035651', label: 'Berlin, Germany', savedBy: 'auto' },
+      { alias: 'home', id: '555000', label: 'Home town', savedBy: 'operator' },
+    ]);
+    expect((await json(await t.call('/dashboard/api/v1/places?q=TOWN'))).items.map((p: any) => p.alias)).toEqual(['home']);
+    expect((await json(await t.call('/dashboard/api/v1/places?q=zzz'))).total).toBe(0);
+  });
+
   it('gives one search with its health, its counts and its jobs, and a 404 for a search that did not run', async () => {
     const t = await build();
     t.deps.store.recordSearch(

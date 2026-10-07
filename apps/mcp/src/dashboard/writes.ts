@@ -3,12 +3,15 @@ import {
   adapterToggleSchema,
   companyBoardRemovedSchema,
   companyBoardSchema,
+  savedPlaceRemovedSchema,
+  savedPlaceSchema,
   budgetUpdatedSchema,
   dataClearedSchema,
   restartSchema,
   type AdapterToggle,
   type Budget,
   type CompanyBoard,
+  type SavedPlace,
   type DataCleared,
 } from '@jobwatch/dashboard-api';
 import { BUDGET_MAX, BUDGET_MIN, type EngineLogger } from '@jobwatch/core';
@@ -40,6 +43,10 @@ export interface Changes {
   addCompanyBoard(entry: { company: string; ats: string; handle: string }): CompanyBoard;
   /** Forget a mapping. False when there was none. */
   removeCompanyBoard(id: number): boolean;
+  /** Remember a name for a LinkedIn place (replaces what the name stood for, a lookup's guess or an older choice). */
+  savePlace(entry: { alias: string; id: string; label: string }): Promise<SavedPlace>;
+  /** Forget a remembered name. False when there was none. */
+  forgetPlace(alias: string): Promise<boolean>;
   /** Number of calls still running. */
   running(): number;
   /** Stop the router process so the container's restart policy brings it back. */
@@ -68,6 +75,13 @@ const companyBoardBody = z
     message: 'a Teamtailor handle is lower case',
     path: ['handle'],
   });
+const placeBody = z
+  .object({
+    alias: z.string().trim().min(2).max(60),
+    id: z.string().regex(/^\d{3,12}$/, 'a numeric LinkedIn geoId'),
+    label: z.string().trim().max(200).default(''),
+  })
+  .strict();
 const restartBody = z.object({ force: z.boolean().default(false) }).strict();
 
 /**
@@ -139,6 +153,29 @@ export function registerWrites(router: Router, changes: Changes, logger: EngineL
       if (!changes.removeCompanyBoard(id)) return refuse(res, new ChangeRefused(404, 'not_found', 'That mapping no longer exists.'));
       logger.info({ actor: actor(res), id }, 'dashboard_company_board_removed');
       res.json(checked(companyBoardRemovedSchema, { id }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/places', async (req, res, next) => {
+    try {
+      const entry = placeBody.parse(req.body);
+      const place = await changes.savePlace({ ...entry, label: entry.label === '' ? entry.alias : entry.label });
+      logger.info({ actor: actor(res), alias: place.alias, id: place.id }, 'dashboard_place_saved');
+      res.status(201).json(checked(savedPlaceSchema, place));
+    } catch (error) {
+      if (error instanceof ChangeRefused) return refuse(res, error);
+      next(error);
+    }
+  });
+
+  router.delete('/places/:alias', async (req, res, next) => {
+    try {
+      const alias = z.string().trim().min(2).max(100).parse(req.params['alias']);
+      if (!(await changes.forgetPlace(alias))) return refuse(res, new ChangeRefused(404, 'not_found', 'That name is not remembered.'));
+      logger.info({ actor: actor(res), alias }, 'dashboard_place_forgotten');
+      res.json(checked(savedPlaceRemovedSchema, { alias }));
     } catch (error) {
       next(error);
     }

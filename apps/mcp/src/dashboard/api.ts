@@ -1,4 +1,7 @@
 import {
+  placeLookupsSchema,
+  savedPlaceSchema,
+  savedPlacesSchema,
   atsLookupsSchema,
   companyBoardSchema,
   companyBoardsSchema,
@@ -15,6 +18,9 @@ import {
   toolsSchema,
   usageSchemaResponse,
   type AtsLookups,
+  type PlaceLookups,
+  type SavedPlace,
+  type SavedPlaces,
   type CompanyBoard,
   type CompanyBoards,
   type CallDetail,
@@ -32,6 +38,7 @@ import {
 import { describeInstalledModules } from '@jobwatch/mcp-modules';
 import {
   JOB_SORT_COLUMNS,
+  createPlatformMemory,
   effectiveRate,
   searchHealth,
   type CallEntry,
@@ -50,7 +57,16 @@ import {
   type SearchStat,
   type Store,
 } from '@jobwatch/core';
-import { buildCatalog, describeParams, extractHints, sampleInput, summarizeJob } from '@jobwatch/sdk';
+import {
+  buildCatalog,
+  savedLocation,
+  savedLocations,
+  type SavedLocation,
+  describeParams,
+  extractHints,
+  sampleInput,
+  summarizeJob,
+} from '@jobwatch/sdk';
 import { z } from 'zod';
 
 /** What the dashboard reads. Nothing here can start a browser, call a site or spend a rate-limit unit. */
@@ -393,6 +409,45 @@ export function listCompanyBoards(data: DashboardData, query: unknown): CompanyB
     offset: (q.page - 1) * q.pageSize,
   });
   return checked(companyBoardsSchema, { total, items: rows.map(toCompanyBoard) });
+}
+
+// ---------------------------------------------------------------------------------------------------------- LinkedIn places
+
+const savedPlacesQuery = z.object({ q: z.string().trim().max(120).optional(), ...pageQuery });
+
+export const toSavedPlace = (place: SavedLocation): SavedPlace =>
+  checked(savedPlaceSchema, { alias: place.alias, id: place.id, label: place.label, savedBy: place.by });
+
+/** The past place lookups, newest first; each candidate says whether the name looked up is remembered as it, as another place, or not. */
+export async function listPlaceLookups(data: DashboardData, query: unknown): Promise<PlaceLookups> {
+  const q = lookupsQuery.parse(query);
+  const memory = createPlatformMemory(data.store);
+  const { rows, total } = data.store.listPlaceLookups(q.pageSize, (q.page - 1) * q.pageSize);
+  const items = [];
+  for (const row of rows) {
+    const saved = await savedLocation(memory, row.query);
+    items.push({
+      id: row.id,
+      at: iso(row.ts),
+      query: row.query,
+      source: row.source,
+      hits: row.hits.map((hit) => ({ ...hit, saved: saved === null ? 'none' : saved.id === hit.id ? 'same' : 'other' })),
+    });
+  }
+  return checked(placeLookupsSchema, { total, items });
+}
+
+/** The remembered place names, A to Z; `q` keeps those whose name or LinkedIn label contains it. */
+export async function listSavedPlaces(data: DashboardData, query: unknown): Promise<SavedPlaces> {
+  const q = savedPlacesQuery.parse(query);
+  const wanted = (q.q ?? '').toLowerCase();
+  const all = (await savedLocations(createPlatformMemory(data.store)))
+    .filter(
+      (place) => wanted === '' || place.alias.includes(wanted) || place.label.toLowerCase().includes(wanted) || place.id.includes(wanted),
+    )
+    .sort((a, b) => a.alias.localeCompare(b.alias));
+  const start = (q.page - 1) * q.pageSize;
+  return checked(savedPlacesSchema, { total: all.length, items: all.slice(start, start + q.pageSize).map(toSavedPlace) });
 }
 
 // ---------------------------------------------------------------------------------------------------------- tools

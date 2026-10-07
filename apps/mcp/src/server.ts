@@ -22,6 +22,7 @@ import {
   RegistryError,
   RuntimeManager,
   Store,
+  createPlatformMemory,
   StoreError,
   createGuard,
   createLogger,
@@ -48,9 +49,9 @@ import {
   type RuntimeHooks,
 } from '@jobwatch/core';
 import { budgetDefaults, installedModules } from '@jobwatch/mcp-modules';
-import { roleOf, type McpModule } from '@jobwatch/sdk';
+import { forgetLocation, roleOf, saveLocation, savedLocation, type McpModule } from '@jobwatch/sdk';
 import { createApp, type AppDeps } from './app';
-import { toCompanyBoard } from './dashboard/api';
+import { toCompanyBoard, toSavedPlace } from './dashboard/api';
 import { DashboardManager } from './dashboard/manager';
 import { ChangeRefused, registerWrites } from './dashboard/writes';
 import { createMetricsServer } from './metrics-server';
@@ -495,6 +496,19 @@ export async function start(options: StartOptions): Promise<RunningServer> {
               return toCompanyBoard(board);
             },
             removeCompanyBoard: (id) => store.deleteCompanyBoard(id),
+            savePlace: async (entry) => {
+              const memory = createPlatformMemory(store, clock);
+              await saveLocation(memory, entry.alias, entry, 'operator');
+              const saved = await savedLocation(memory, entry.alias);
+              if (saved === null) throw new ChangeRefused(400, 'invalid', 'That name could not be saved.');
+              return toSavedPlace(saved);
+            },
+            forgetPlace: async (alias) => {
+              const memory = createPlatformMemory(store, clock);
+              if ((await savedLocation(memory, alias)) === null) return false;
+              await forgetLocation(memory, alias);
+              return true;
+            },
             running: () => callLog.all().filter((call) => call.state === 'running').length,
             restart: () => void process.kill(process.pid, 'SIGTERM'),
           },

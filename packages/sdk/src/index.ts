@@ -30,6 +30,8 @@ export type {
   BrowserTab,
   PlatformMemory,
   CompanyBoards,
+  PlaceHit,
+  PlaceLog,
   CompanyBoardMatch,
   HttpRequestOptions,
   HttpResponse,

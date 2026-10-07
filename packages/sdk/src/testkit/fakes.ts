@@ -19,6 +19,8 @@ import type {
   PlatformMemory,
   CompanyBoards,
   CompanyBoardMatch,
+  PlaceHit,
+  PlaceLog,
   StoredJob,
 } from '../context';
 
@@ -42,6 +44,15 @@ export class FakePlatformMemory implements PlatformMemory {
         .filter(([key]) => key.startsWith(prefix))
         .map(([key, value]) => ({ key, value, updatedAt: new Date(0).toISOString() })),
     );
+  }
+}
+
+/** `ctx.places` for tests: assert on `lookups`. */
+export class FakePlaceLog implements PlaceLog {
+  readonly lookups: { query: string; source: 'tool' | 'search'; hits: readonly PlaceHit[] }[] = [];
+  recordLookup(lookup: { query: string; source: 'tool' | 'search'; hits: readonly PlaceHit[] }): Promise<void> {
+    this.lookups.push(lookup);
+    return Promise.resolve();
   }
 }
 
@@ -294,6 +305,8 @@ export interface TestContext<C> {
   jobs: FakeJobStore;
   /** The memory behind `ctx.memory`: seed it with `set`, assert on `entries`. */
   memory: FakePlatformMemory;
+  /** The place log behind `ctx.places`: assert on `lookups`. */
+  places: FakePlaceLog;
   /** The company mappings behind `ctx.companies`: seed them with `set`, assert on `lookups`. */
   companies: FakeCompanyBoards;
   /**
@@ -308,6 +321,7 @@ function baseParts(options: TestContextOptions): {
   jobs: FakeJobStore;
   memory: FakePlatformMemory;
   companies: FakeCompanyBoards;
+  places: FakePlaceLog;
   log: Logger;
   logs: CapturedLog[];
   paced: PaceKind[];
@@ -343,6 +357,7 @@ function baseParts(options: TestContextOptions): {
     jobs: new FakeJobStore(undefined, options.platform),
     memory: new FakePlatformMemory(),
     companies: new FakeCompanyBoards(),
+    places: new FakePlaceLog(),
     log: { debug: push('debug'), info: push('info'), warn: push('warn'), error: push('error') },
     logs,
     paced,
@@ -355,15 +370,25 @@ function baseParts(options: TestContextOptions): {
 
 /** Context for testing a `kind: "http"` adapter. */
 export function createHttpTestContext(options: TestContextOptions): TestContext<HttpAdapterContext> {
-  const { http, jobs, memory, companies, log, logs, paced, pace, spend, meter } = baseParts(options);
-  return { ctx: { http, jobs, memory, companies, log, pace, spend }, http, jobs, memory, companies, logs, paced, spent: () => meter.units };
+  const { http, jobs, memory, companies, places, log, logs, paced, pace, spend, meter } = baseParts(options);
+  return {
+    ctx: { http, jobs, memory, companies, places, log, pace, spend },
+    http,
+    jobs,
+    memory,
+    companies,
+    places,
+    logs,
+    paced,
+    spent: () => meter.units,
+  };
 }
 
 /** Context for testing a `kind: "browser"` adapter. Also returns the fake session for assertions. */
 export function createBrowserTestContext(
   options: TestContextOptions,
 ): TestContext<BrowserAdapterContext> & { session: FakeBrowserSession } {
-  const { http, jobs, memory, companies, log, logs, paced, pace, spend, meter } = baseParts(options);
+  const { http, jobs, memory, companies, places, log, logs, paced, pace, spend, meter } = baseParts(options);
   const session = new FakeBrowserSession(options.allowedHosts, options.pages, options.maxTabs);
   // the engine counts every page load, in an extra tab as well
   const count = (target: FakeBrowserSession): void => {
@@ -376,11 +401,12 @@ export function createBrowserTestContext(
   count(session);
   session.onTab = count;
   return {
-    ctx: { http, jobs, memory, companies, log, pace, spend, session },
+    ctx: { http, jobs, memory, companies, places, log, pace, spend, session },
     http,
     jobs,
     memory,
     companies,
+    places,
     logs,
     paced,
     session,

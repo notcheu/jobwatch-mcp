@@ -380,6 +380,33 @@ export const companyBoardsSchema = z.object({ items: z.array(companyBoardSchema)
 export type CompanyBoards = z.infer<typeof companyBoardsSchema>;
 export const companyBoardRemovedSchema = z.object({ id: z.number() }).strict();
 
+// ------------------------------------------------------------------------------------------------------ LinkedIn places
+
+/**
+ * A lookup of a place (a `linkedin_locations` query, or a search that looked a name up by itself) with what LinkedIn suggested. Per
+ * candidate, `saved` says what the name is remembered as: `none`, `same` (this candidate), or `other` (another place).
+ */
+export const placeLookupSchema = z
+  .object({
+    id: z.number(),
+    at: z.string(),
+    query: z.string(),
+    source: z.enum(['tool', 'search']),
+    hits: z.array(z.object({ id: z.string(), label: z.string(), saved: z.enum(['none', 'same', 'other']) }).strict()),
+  })
+  .strict();
+export const placeLookupsSchema = z.object({ items: z.array(placeLookupSchema), total: z.number() }).strict();
+export type PlaceLookups = z.infer<typeof placeLookupsSchema>;
+
+/** A name remembered for a LinkedIn place: by the operator, or by a search that looked it up (`auto`). */
+export const savedPlaceSchema = z
+  .object({ alias: z.string(), id: z.string(), label: z.string(), savedBy: z.enum(['operator', 'auto']) })
+  .strict();
+export type SavedPlace = z.infer<typeof savedPlaceSchema>;
+export const savedPlacesSchema = z.object({ items: z.array(savedPlaceSchema), total: z.number() }).strict();
+export type SavedPlaces = z.infer<typeof savedPlacesSchema>;
+export const savedPlaceRemovedSchema = z.object({ alias: z.string() }).strict();
+
 // ------------------------------------------------------------------------------------------------------ overview and usage
 
 export const overviewSchema = z

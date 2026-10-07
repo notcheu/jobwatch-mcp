@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, BarChart3, BookOpen, Briefcase, LogOut, Moon, Search, Settings, Sun, Telescope, Zap } from 'lucide-react';
+import { Activity, BarChart3, BookOpen, Briefcase, LogOut, Moon, Search, Settings, Sun, Telescope, Zap, MapPin } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ const SECTIONS: readonly { to: string; label: string; icon: LucideIcon; end: boo
   { to: '/jobs', label: 'Jobs', icon: Briefcase, end: false, tabs: true },
   { to: '/searches', label: 'Searches', icon: Search, end: false, tabs: true },
   { to: '/ats-discovery', label: 'ATS discovery', icon: Telescope, end: false, tabs: false, group: 'Tools' },
+  { to: '/linkedin-places', label: 'LinkedIn places', icon: MapPin, end: false, tabs: false, group: 'Tools' },
   { to: '/docs', label: 'Docs', icon: BookOpen, end: false, tabs: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false, tabs: false },
 ];

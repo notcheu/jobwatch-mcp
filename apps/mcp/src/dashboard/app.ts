@@ -17,6 +17,8 @@ import {
   listCalls,
   listJobs,
   listAtsLookups,
+  listPlaceLookups,
+  listSavedPlaces,
   listCompanyBoards,
   listSearches,
   type DashboardData,
@@ -287,6 +289,14 @@ export function createDashboardApp(deps: DashboardDeps): Express {
   api.get(
     '/ats-lookups',
     wrap((req) => listAtsLookups(deps, req.query)),
+  );
+  api.get(
+    '/place-lookups',
+    wrap((req) => listPlaceLookups(deps, req.query)),
+  );
+  api.get(
+    '/places',
+    wrap((req) => listSavedPlaces(deps, req.query)),
   );
   api.get(
     '/company-boards',

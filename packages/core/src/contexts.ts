@@ -7,6 +7,7 @@ import {
   type CompanyBoards,
   type HttpClient,
   type JobStore,
+  type PlaceLog,
   type PlatformMemory,
 } from '@jobwatch/sdk';
 import type { ContextProvider } from './call';
@@ -73,6 +74,11 @@ export function createPlatformMemory(store: Store, clock: () => number = Date.no
     list: async (prefix) =>
       store.listMemory(prefix).map((entry) => ({ key: entry.key, value: entry.value, updatedAt: new Date(entry.updatedAt).toISOString() })),
   };
+}
+
+/** The log of LinkedIn place lookups over the store (`ctx.places`). */
+export function createPlaceLog(store: Store, clock: () => number = Date.now): PlaceLog {
+  return { recordLookup: async (lookup) => store.recordPlaceLookup(lookup, clock()) };
 }
 
 /** The company-to-board map and the discovery log over the store (`ctx.companies`). */
@@ -142,6 +148,7 @@ export function createContextProvider(deps: ContextProviderDeps): ContextProvide
         jobs: createJobStore(jobStore, adapter.platform, deps.clock),
         memory: createPlatformMemory(jobStore, deps.clock),
         companies: createCompanyBoards(jobStore, deps.clock),
+        places: createPlaceLog(jobStore, deps.clock),
         log: createAdapterLogger(deps.logger, adapter.id),
         pace: pacerFor(adapter),
       };

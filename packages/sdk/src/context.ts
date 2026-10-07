@@ -194,11 +194,24 @@ export interface CompanyBoards {
   recordLookup(lookup: { company: string; tried: readonly string[]; matches: readonly CompanyBoardMatch[] }): Promise<void>;
 }
 
+/** One place LinkedIn suggested for a lookup. */
+export interface PlaceHit {
+  id: string;
+  label: string;
+}
+
+/** The log of LinkedIn place lookups, for the dashboard's LinkedIn places page (docs/plans/17-dashboard.md). */
+export interface PlaceLog {
+  /** `tool`: a `linkedin_locations` lookup. `search`: a LinkedIn search that looked a place name up by itself. */
+  recordLookup(lookup: { query: string; source: 'tool' | 'search'; hits: readonly PlaceHit[] }): Promise<void>;
+}
+
 export interface BaseContext {
   http: HttpClient;
   jobs: JobStore;
   memory: PlatformMemory;
   companies: CompanyBoards;
+  places: PlaceLog;
   log: Logger;
   /** Human-like delay from the platform's pacing policy. */
   pace(kind: PaceKind): Promise<void>;

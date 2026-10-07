@@ -5,6 +5,7 @@ import { Analytics } from '@/pages/Analytics';
 import { AtsDiscovery } from '@/pages/AtsDiscovery';
 import { Docs } from '@/pages/Docs';
 import { Jobs } from '@/pages/Jobs';
+import { LinkedinPlaces } from '@/pages/LinkedinPlaces';
 import { Overview } from '@/pages/Overview';
 import { Runs } from '@/pages/Runs';
 import { Searches } from '@/pages/Searches';
@@ -24,6 +25,7 @@ export function AppRoutes() {
         <Route path="searches" element={<Searches />} />
         <Route path="searches/:source" element={<Searches />} />
         <Route path="ats-discovery" element={<AtsDiscovery />} />
+        <Route path="linkedin-places" element={<LinkedinPlaces />} />
         <Route path="tools" element={<Navigate to="/settings?view=tools" replace />} />
         <Route path="docs" element={<Docs />} />
         <Route path="settings" element={<Settings />} />
