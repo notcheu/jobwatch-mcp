@@ -148,12 +148,15 @@ export function Jobs() {
   const page = Math.max(1, Number(get('page')) || 1);
   const pageSize = PAGE_SIZES.includes(Number(get('pageSize'))) ? Number(get('pageSize')) : 25;
   // the search whose jobs to list, by its slug: set by the Search select or by the link of a search
-  const searches = useQuery({
-    queryKey: ['search-options', source],
-    queryFn: () => api.searchOptions(source === undefined ? {} : { source }),
-    staleTime: 60_000,
-  });
+  // every search, fetched once: switching the source tab only filters this list, so the select never reloads or loses its choice
+  const searches = useQuery({ queryKey: ['search-options'], queryFn: () => api.searchOptions({}), staleTime: 60_000 });
+  const allSearches = useMemo(() => searches.data?.searches ?? [], [searches.data]);
+  const offered = useMemo(
+    () => (source === undefined ? allSearches : allSearches.filter((option) => option.source === source)),
+    [allSearches, source],
+  );
   const searchSlug = get('search');
+  const chosen = allSearches.find((option) => option.slug === searchSlug);
   const seenWithin = SEEN_WITHIN.find((option) => option.value === get('seen'));
   const seenFrom = useMemo(
     () => (seenWithin === undefined ? undefined : new Date(Math.floor((Date.now() - seenWithin.ms) / 60_000) * 60_000).toISOString()),
@@ -176,6 +179,10 @@ export function Jobs() {
     if (!('page' in changes)) next.delete('page');
     setSearch(next, { replace: true });
   };
+  // a search belongs to one source: on the tab of another source it cannot apply, so it is dropped there (and kept on its own tab and on All)
+  useEffect(() => {
+    if (chosen !== undefined && source !== undefined && chosen.source !== source) update({ search: undefined });
+  }, [chosen, source]);
   // the search box writes to the URL once the typist stops
   useEffect(() => {
     if (q !== get('q')) update({ q });
@@ -256,10 +263,8 @@ export function Jobs() {
             onChange={(event) => update({ search: event.target.value })}
           >
             <option value="">Search: all</option>
-            {searchSlug !== '' && !(searches.data?.searches ?? []).some((option) => option.slug === searchSlug) && (
-              <option value={searchSlug}>Unknown search</option>
-            )}
-            {(searches.data?.searches ?? []).map((option) => (
+            {searchSlug !== '' && searches.isSuccess && chosen === undefined && <option value={searchSlug}>Unknown search</option>}
+            {offered.map((option) => (
               <option key={option.slug} value={option.slug}>
                 {searchLabel(option, source === undefined)}
               </option>

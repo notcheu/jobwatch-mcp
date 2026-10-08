@@ -126,11 +126,19 @@ describe('jobs table', () => {
     ).toEqual(['Search: all', 'linkedin: react', 'linkedin: react, vue · without intern', 'ashby · doctolib: react', 'wttj: no keywords']);
   });
 
-  it('lists only the searches of the source tab, without repeating the source', async () => {
+  it('lists only the searches of the source tab, without repeating the source, from one request for all of them', async () => {
     const seen = mockApi({ ...common, '/jobs': page([job()], 1) });
     renderApp('/jobs?tool=ashby');
     await rowsLoaded(2);
-    expect(seen.some((url) => url.startsWith('/dashboard/api/v1/search-options?') && url.includes('source=ashby'))).toBe(true);
+    const select = screen.getByRole('combobox', { name: 'Search' });
+    await waitFor(() =>
+      expect(
+        within(select)
+          .getAllByRole('option')
+          .map((entry) => entry.textContent),
+      ).toEqual(['Search: all', 'doctolib: react']),
+    );
+    expect(seen.filter((url) => url.startsWith('/dashboard/api/v1/search-options')).every((url) => !url.includes('source='))).toBe(true);
   });
 
   it('filters the jobs by the slug of the chosen search, and clears it with "all"', async () => {
@@ -149,7 +157,7 @@ describe('jobs table', () => {
 
   it('shows the search a link points at as chosen, and an unknown slug as such', async () => {
     mockApi({ ...common, '/jobs': page([job()], 1) });
-    renderApp('/jobs?tool=linkedin&search=ashby-doctolib-react-9c0d1e2f');
+    renderApp('/jobs?tool=ashby&search=ashby-doctolib-react-9c0d1e2f');
     await rowsLoaded(2);
     expect(screen.getByRole('combobox', { name: 'Search' })).toHaveValue('ashby-doctolib-react-9c0d1e2f');
   });
@@ -160,6 +168,40 @@ describe('jobs table', () => {
     const select = await screen.findByRole('combobox', { name: 'Search' });
     await waitFor(() => expect(select).toHaveValue('gone-00000000'));
     expect(within(select).getByRole('option', { name: 'Unknown search' })).toBeInTheDocument();
+  });
+
+  describe('switching the source tab', () => {
+    const slug = 'linkedin-react-1a2b3c4d';
+    const tab = async (user: ReturnType<typeof userEvent.setup>, name: string) =>
+      user.click(within(await screen.findByRole('tablist', { name: 'Tool' })).getByRole('tab', { name }));
+
+    it('keeps the chosen search on All and on the tab of its own source, with no flash of "Unknown search"', async () => {
+      const seen = mockApi({ ...common, '/jobs': page([job()], 1) });
+      renderApp(`/jobs?search=${slug}`);
+      await rowsLoaded(2);
+      const user = userEvent.setup();
+      const select = () => screen.getByRole('combobox', { name: 'Search' });
+      await waitFor(() => expect(select()).toHaveValue(slug));
+      await tab(user, 'linkedin');
+      expect(select()).toHaveValue(slug); // at once: nothing is refetched for a tab
+      expect(within(select()).queryByRole('option', { name: 'Unknown search' })).not.toBeInTheDocument();
+      await tab(user, 'All');
+      expect(select()).toHaveValue(slug);
+      expect(seen.filter((url) => url.startsWith('/dashboard/api/v1/search-options'))).toHaveLength(1);
+    });
+
+    it('drops the search on the tab of another source, where it cannot apply', async () => {
+      const seen = mockApi({ ...common, '/jobs': page([job()], 1) });
+      renderApp(`/jobs?search=${slug}`);
+      await rowsLoaded(2);
+      const user = userEvent.setup();
+      await waitFor(() => expect(screen.getByRole('combobox', { name: 'Search' })).toHaveValue(slug));
+      await tab(user, 'apec');
+      await waitFor(() => expect(screen.getByRole('combobox', { name: 'Search' })).toHaveValue(''));
+      const last = new URLSearchParams((seen.filter((url) => url.startsWith('/dashboard/api/v1/jobs?')).at(-1) ?? '').split('?')[1]);
+      expect(last.get('source')).toBe('apec');
+      expect(last.has('search')).toBe(false); // the jobs are the apec tab's, not the linkedin search's
+    });
   });
 
   it('filters by when the job was last seen with one select, all time by default', async () => {
