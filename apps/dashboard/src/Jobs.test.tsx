@@ -34,7 +34,8 @@ const detail = (over: Record<string, unknown> = {}) => ({
 });
 
 const page = (jobs: unknown[], total = jobs.length) => ({ jobs, total, page: 1, pageSize: 25 });
-const common = { '/me': me, '/tools': tools };
+const termsUsed = { keywords: ['react', 'svelte', 'vue', 'angular'], disallowed: ['intern', 'junior', 'senior'] };
+const common = { '/me': me, '/tools': tools, '/search-terms': termsUsed };
 const rowsLoaded = async (count: number) => {
   await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(count));
   return screen.getAllByRole('row');
@@ -93,6 +94,64 @@ describe('jobs table', () => {
       pageSize: '10',
       sort: 'title',
       dir: 'asc',
+    });
+  });
+
+  it('has a Keywords field and a Disallowed terms field, each listing every term used', async () => {
+    mockApi({ ...common, '/jobs': page([job()], 1) });
+    renderApp('/jobs');
+    await rowsLoaded(2);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Keywords' }));
+    const list = within(screen.getByRole('listbox', { name: 'Keywords' }));
+    expect(list.getAllByRole('option').map((option) => option.textContent)).toEqual(['No keyword', 'react', 'svelte', 'vue', 'angular']);
+    await user.click(screen.getByRole('combobox', { name: 'Disallowed terms' }));
+    expect(
+      within(screen.getByRole('listbox', { name: 'Disallowed terms' }))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['No disallowed term', 'intern', 'junior', 'senior']);
+  });
+
+  it('shows a tag per chosen term up to two, then "N Selected", and sends the choice to the server', async () => {
+    const seen = mockApi({ ...common, '/jobs': page([job()], 1) });
+    renderApp('/jobs?tool=linkedin');
+    await rowsLoaded(2);
+    const user = userEvent.setup();
+    const lastQuery = () =>
+      new URLSearchParams((seen.filter((url) => url.startsWith('/dashboard/api/v1/jobs?')).at(-1) ?? '').split('?')[1]);
+    await user.click(screen.getByRole('combobox', { name: 'Keywords' }));
+    const list = within(screen.getByRole('listbox', { name: 'Keywords' }));
+    await user.click(list.getByText('react'));
+    await user.click(list.getByText('vue'));
+    expect(screen.getByLabelText('Remove react from Keywords')).toBeInTheDocument();
+    expect(screen.getByLabelText('Remove vue from Keywords')).toBeInTheDocument();
+    await user.click(list.getByText('svelte'));
+    expect(screen.getByText('3 Selected')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Remove react from Keywords')).not.toBeInTheDocument();
+    await waitFor(() => expect(lastQuery().getAll('found_by')).toEqual(['react', 'vue', 'svelte']));
+
+    await user.click(screen.getByRole('combobox', { name: 'Disallowed terms' }));
+    await user.click(within(screen.getByRole('listbox', { name: 'Disallowed terms' })).getByText('intern'));
+    await waitFor(() => expect(lastQuery().getAll('disallowed')).toEqual(['intern']));
+    expect(lastQuery().getAll('found_by')).toEqual(['react', 'vue', 'svelte']); // both together: one exact search
+  });
+
+  it('shows the search a link points at as tags, and lets "No keyword" replace the keywords', async () => {
+    const seen = mockApi({ ...common, '/jobs': page([job()], 1) });
+    renderApp('/jobs?tool=linkedin&found_by=react&disallowed=intern&disallowed=senior');
+    await rowsLoaded(2);
+    const user = userEvent.setup();
+    expect(screen.getByLabelText('Remove react from Keywords')).toBeInTheDocument();
+    expect(screen.getByLabelText('Remove intern from Disallowed terms')).toBeInTheDocument();
+    expect(screen.getByLabelText('Remove senior from Disallowed terms')).toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: 'Keywords' }));
+    await user.click(within(screen.getByRole('listbox', { name: 'Keywords' })).getByText('No keyword'));
+    await waitFor(() => {
+      const last = new URLSearchParams((seen.filter((url) => url.startsWith('/dashboard/api/v1/jobs?')).at(-1) ?? '').split('?')[1]);
+      expect(last.get('no_keywords')).toBe('1');
+      expect(last.has('found_by')).toBe(false);
+      expect(last.getAll('disallowed')).toEqual(['intern', 'senior']);
     });
   });
 
@@ -478,7 +537,7 @@ describe('searches', () => {
     const href = new URL(link.getAttribute('href') ?? '', 'http://x');
     expect(href.pathname).toBe('/jobs');
     expect(href.searchParams.getAll('found_by')).toEqual(['react', 'vue']);
-    expect(href.searchParams.has('no_disallowed')).toBe(false); // the disallowed terms are not a filter of the list
+    expect(href.searchParams.get('no_disallowed')).toBe('1'); // exactly this search: it had no disallowed terms
     expect(href.searchParams.get('tool')).toBe('linkedin');
   });
 
@@ -515,7 +574,7 @@ describe('searches', () => {
     expect(seen.some((url) => url.startsWith('/dashboard/api/v1/searches') && url.includes('source=wttj'))).toBe(true);
   });
 
-  it('does not put the disallowed terms of the search in the link, so the list shows no filter the user did not choose', async () => {
+  it('links the search with its disallowed terms to exactly the jobs it found', async () => {
     mockApi({
       ...common,
       '/searches': searches,
@@ -524,7 +583,7 @@ describe('searches', () => {
     renderApp('/searches/linkedin?k=react&d=intern&d=senior&days=7');
     const link = await screen.findByRole('link', { name: /See all the jobs this search found/ });
     const href = new URL(link.getAttribute('href') ?? '', 'http://x');
-    expect(href.searchParams.has('disallowed')).toBe(false);
+    expect(href.searchParams.getAll('disallowed')).toEqual(['intern', 'senior']);
     expect(href.searchParams.has('no_disallowed')).toBe(false);
   });
 

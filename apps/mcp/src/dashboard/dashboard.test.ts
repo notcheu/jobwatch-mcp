@@ -572,6 +572,27 @@ describe('the API in local development mode (no sign-in)', () => {
     ]);
   });
 
+  it('filters the jobs by disallowed terms alone, and lists every keyword and term used for the filters', async () => {
+    const t = await build();
+    t.deps.store.recordSearch(
+      'linkedin',
+      { keywords: ['Svelte', 'Vue'], disallowed: ['Intern', 'senior'], found: ['1000002'], returned: ['1000002'], excluded: [] },
+      NOW - DAY,
+    );
+    const total = async (query: string) => (await json(await t.call(`/dashboard/api/v1/jobs?${query}`))).total;
+    expect(await total('disallowed=intern&disallowed=senior')).toBe(1); // no keywords given: whatever the keywords
+    expect(await total('disallowed=intern')).toBe(0); // the terms are the whole list of the search
+    expect(await total('found_by=svelte&found_by=vue&disallowed=intern&disallowed=senior')).toBe(1);
+    const terms = await json(await t.call('/dashboard/api/v1/search-terms'));
+    expect(terms.keywords).toEqual(expect.arrayContaining(['svelte', 'vue']));
+    expect(terms.disallowed).toEqual(expect.arrayContaining(['intern', 'senior']));
+    expect([...terms.keywords].sort()).toEqual(terms.keywords); // sorted, each once
+    expect(new Set(terms.keywords).size).toBe(terms.keywords.length);
+    const none = await json(await t.call('/dashboard/api/v1/search-terms?source=apec'));
+    expect(none.keywords).not.toContain('svelte');
+    expect((await t.call('/dashboard/api/v1/search-terms?source=Bad%20Source')).status).toBe(400);
+  });
+
   it('puts the searches in bad health on the overview: nothing found at all, or most of it discarded', async () => {
     const t = await build();
     expect((await json(await t.call('/dashboard/api/v1/overview'))).badSearches).toEqual({ count: 0, items: [] });

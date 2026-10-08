@@ -14,6 +14,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { DetailPanel, Field } from '@/components/DetailPanel';
 import { JobSearches } from '@/components/JobSearches';
 import { KeywordBadges } from '@/components/KeywordBadges';
+import { NONE, TermSelect } from '@/components/TermSelect';
 import { usePlatform } from '@/components/Shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -139,6 +140,14 @@ export function Jobs() {
   const q = useDebounced(text);
   const page = Math.max(1, Number(get('page')) || 1);
   const pageSize = PAGE_SIZES.includes(Number(get('pageSize'))) ? Number(get('pageSize')) : 25;
+  // the keywords and the disallowed terms of the search to look at, in the URL: found_by / no_keywords and disallowed / no_disallowed
+  const keywordsChosen = search.get('no_keywords') === '1' ? [NONE] : search.getAll('found_by');
+  const termsChosen = search.get('no_disallowed') === '1' ? [NONE] : search.getAll('disallowed');
+  const terms = useQuery({
+    queryKey: ['search-terms', source],
+    queryFn: () => api.searchTerms(source === undefined ? {} : { source }),
+    staleTime: 60_000,
+  });
   const seenWithin = SEEN_WITHIN.find((option) => option.value === get('seen'));
   const seenFrom = useMemo(
     () => (seenWithin === undefined ? undefined : new Date(Math.floor((Date.now() - seenWithin.ms) / 60_000) * 60_000).toISOString()),
@@ -172,6 +181,8 @@ export function Jobs() {
     source,
     found_by: search.getAll('found_by'),
     no_keywords: search.get('no_keywords') ?? undefined,
+    disallowed: search.getAll('disallowed'),
+    no_disallowed: search.get('no_disallowed') ?? undefined,
     // the jobs seen again within the chosen period (the last run of a search that still lists them), all time when none is chosen
     dateField: seenWithin === undefined ? undefined : 'last_seen',
     from: seenFrom,
@@ -201,6 +212,17 @@ export function Jobs() {
     getRowId: (row) => `${row.source}/${row.id}`,
   });
 
+  /** Write one of the two lists of a search to the URL: its terms, or the "none" choice. */
+  const choose = (kind: 'keywords' | 'terms', next: string[]): void => {
+    const [list, none] = kind === 'keywords' ? (['found_by', 'no_keywords'] as const) : (['disallowed', 'no_disallowed'] as const);
+    const params = new URLSearchParams(search);
+    params.delete(list);
+    params.delete(none);
+    if (next.includes(NONE)) params.set(none, '1');
+    else for (const term of next) params.append(list, term);
+    params.delete('page');
+    setSearch(params, { replace: true });
+  };
   const open = (row: JobRow): void =>
     void navigate({ pathname: `/jobs/${encodeURIComponent(row.source)}/${encodeURIComponent(row.id)}`, search: search.toString() });
   const close = (): void => void navigate({ pathname: '/jobs', search: search.toString() });
@@ -234,6 +256,24 @@ export function Jobs() {
               board {get('board')} ×
             </button>
           )}
+          <TermSelect
+            label="Keywords"
+            placeholder="Keywords"
+            title="Only the jobs found by a search with exactly these keywords"
+            options={terms.data?.keywords ?? []}
+            selected={keywordsChosen}
+            noneLabel="No keyword"
+            onChange={(next) => choose('keywords', next)}
+          />
+          <TermSelect
+            label="Disallowed terms"
+            placeholder="Disallowed terms"
+            title="Only the jobs found by a search with exactly these disallowed terms"
+            options={terms.data?.disallowed ?? []}
+            selected={termsChosen}
+            noneLabel="No disallowed term"
+            onChange={(next) => choose('terms', next)}
+          />
           <select
             aria-label="Last seen"
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"

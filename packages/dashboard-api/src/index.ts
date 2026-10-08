@@ -206,6 +206,10 @@ export type SearchDetailInfo = z.infer<typeof searchDetailSchema>;
 export const searchesSchema = z.object({ searches: z.array(searchRowSchema) }).strict();
 export type Searches = z.infer<typeof searchesSchema>;
 
+/** Every keyword and every disallowed term a search used, each once: what the filters of the jobs list offer. */
+export const searchTermsSchema = z.object({ keywords: z.array(z.string()), disallowed: z.array(z.string()) }).strict();
+export type SearchTerms = z.infer<typeof searchTermsSchema>;
+
 // ------------------------------------------------------------------------------------------------------ tools and status
 
 const usageSchema = z.object({ used: z.number(), limit: z.number() }).strict();

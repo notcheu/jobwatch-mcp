@@ -243,7 +243,10 @@ function SearchBody({ search, days }: { search: SearchDetailInfo; days: number }
         </dl>
       </section>
 
-      <Link to={jobsOfSearch(search.source, search.keywords, search.board)} className="inline-block text-sm text-primary hover:underline">
+      <Link
+        to={jobsOfSearch(search.source, search.keywords, search.disallowed, search.board)}
+        className="inline-block text-sm text-primary hover:underline"
+      >
         See all the jobs this search found →
       </Link>
 

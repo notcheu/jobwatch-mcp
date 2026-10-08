@@ -18,6 +18,7 @@ import {
   overviewSchema,
   searchDetailSchema,
   searchesSchema,
+  searchTermsSchema,
   settingsSchema,
   toolsSchema,
   usageSchemaResponse,
@@ -39,6 +40,7 @@ import {
   type Overview,
   type SearchDetailInfo,
   type Searches,
+  type SearchTerms,
   type Settings,
   type Tools,
   type Usage,
@@ -190,19 +192,22 @@ const listOf = (value: string | string[] | undefined): string[] =>
   (typeof value === 'string' ? [value] : (value ?? [])).filter((entry) => entry !== '');
 
 /**
- * The search a jobs query asks for, or undefined when it does not filter by search. An empty keyword list (`no_keywords=1`) is the
- * searches with no keyword. Disallowed terms narrow it to one exact search; without them it is any search with these keywords.
+ * The search a jobs query asks for, or undefined when it does not filter by search. Each of the two lists is matched exactly, on its own:
+ * the keywords (an empty list, `no_keywords=1`, is the searches with no keyword) and the disallowed terms (`no_disallowed=1`: none).
+ * Given both, it is one exact search; given one, any search with that list.
  */
 function searchFilter(q: {
   found_by?: string | string[] | undefined;
   no_keywords?: '1' | undefined;
   disallowed?: string | string[] | undefined;
   no_disallowed?: '1' | undefined;
-}): { keywords: string[]; disallowed?: string[] } | undefined {
+}): { keywords?: string[]; disallowed?: string[] } | undefined {
   const keywords = q.no_keywords === '1' ? [] : listOf(q.found_by);
-  if (q.no_keywords !== '1' && keywords.length === 0) return undefined;
   const disallowed = q.no_disallowed === '1' ? [] : listOf(q.disallowed);
-  return q.no_disallowed === '1' || disallowed.length > 0 ? { keywords, disallowed } : { keywords };
+  const byKeywords = q.no_keywords === '1' || keywords.length > 0;
+  const byTerms = q.no_disallowed === '1' || disallowed.length > 0;
+  if (!byKeywords && !byTerms) return undefined;
+  return { ...(byKeywords ? { keywords } : {}), ...(byTerms ? { disallowed } : {}) };
 }
 
 const jobsQuery = z.object({
@@ -319,6 +324,14 @@ export function getJob(data: DashboardData, source: string, id: string): JobDeta
 
 // ------------------------------------------------------------------------------------------------------- searches
 
+const searchTermsQuery = z.object({
+  source: z
+    .string()
+    .max(32)
+    .regex(/^[a-z][a-z0-9-]*$/)
+    .optional(),
+});
+
 const searchesQuery = z.object({
   since: z.string().max(32).optional(),
   until: z.string().max(32).optional(),
@@ -368,6 +381,12 @@ export function listSearches(data: DashboardData, query: unknown): Searches {
   const since = parseDate('since', q.since, until - 7 * DAY_MS);
   const rows = data.store.searchStats({ since, until, ...(q.source === undefined ? {} : { platform: q.source }), limit: 200 });
   return checked(searchesSchema, { searches: rows.map(toSearchRow) });
+}
+
+/** Every keyword and disallowed term a search used, for the filters of the jobs list. */
+export function listSearchTerms(data: DashboardData, query: unknown): SearchTerms {
+  const q = searchTermsQuery.parse(query);
+  return checked(searchTermsSchema, data.store.searchTerms(q.source));
 }
 
 /** The most jobs a search detail lists; the counts are exact whatever is listed. */

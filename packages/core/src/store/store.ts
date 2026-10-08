@@ -915,14 +915,14 @@ export class Store {
       params.push(like, like, like);
     }
     if (filter.search !== undefined) {
-      const exactTerms = filter.search.disallowed !== undefined;
+      const { keywords, disallowed } = filter.search;
       where.push(
-        `EXISTS (SELECT 1 FROM search_hits h JOIN search_runs r ON r.id = h.run_id WHERE h.job_id = jobs.id AND r.platform = jobs.platform AND r.keywords_key = ?${
-          exactTerms ? ' AND r.disallowed_key = ?' : ''
-        })`,
+        `EXISTS (SELECT 1 FROM search_hits h JOIN search_runs r ON r.id = h.run_id WHERE h.job_id = jobs.id AND r.platform = jobs.platform${
+          keywords === undefined ? '' : ' AND r.keywords_key = ?'
+        }${disallowed === undefined ? '' : ' AND r.disallowed_key = ?'})`,
       );
-      params.push(keywordsKey(normalizeKeywords(filter.search.keywords)));
-      if (filter.search.disallowed !== undefined) params.push(keywordsKey(normalizeTerms(filter.search.disallowed)));
+      if (keywords !== undefined) params.push(keywordsKey(normalizeKeywords(keywords)));
+      if (disallowed !== undefined) params.push(keywordsKey(normalizeTerms(disallowed)));
     }
     if (filter.boards.length > 0) {
       where.push(`board IN (${filter.boards.map(() => '?').join(', ')})`);
@@ -1012,6 +1012,21 @@ export class Store {
         );
       }
     });
+  }
+
+  /** Every keyword and every disallowed term a search ever used (of one platform, or all), each once, sorted: what the jobs filters offer. */
+  searchTerms(platform?: string): { keywords: string[]; disallowed: string[] } {
+    const rows = this.db
+      .prepare(`SELECT DISTINCT keywords_key, disallowed_key FROM search_runs${platform === undefined ? '' : ' WHERE platform = ?'}`)
+      .all(...(platform === undefined ? [] : [platform])) as Rows[];
+    const keywords = new Set<string>();
+    const disallowed = new Set<string>();
+    for (const row of rows) {
+      for (const keyword of parseKeywords(row['keywords_key'])) keywords.add(keyword);
+      for (const term of parseKeywords(row['disallowed_key'])) disallowed.add(term);
+    }
+    const sorted = (set: Set<string>): string[] => [...set].sort((a, b) => a.localeCompare(b));
+    return { keywords: sorted(keywords), disallowed: sorted(disallowed) };
   }
 
   /** Per search (a platform, its board, its keyword list and its disallowed terms), over [since, until): runs, and the distinct jobs it matched, returned, dropped and found first. */
@@ -1526,10 +1541,11 @@ export interface JobListFilter {
   /** Rows to skip, for paging. */
   offset?: number;
   /**
-   * Only jobs a search with exactly these keywords (any order, case-insensitive) listed; an empty list is the searches with no keyword.
-   * With `disallowed`, only the search that also had exactly these disallowed terms (an empty list: none); without it, whatever its terms.
+   * Only jobs a search with exactly these keywords (any order, case-insensitive) listed; an empty list is the searches with no keyword;
+   * without `keywords`, whatever its keywords. With `disallowed`, only the search that also had exactly these disallowed terms (an empty
+   * list: none); without it, whatever its terms.
    */
-  search?: { keywords: readonly string[]; disallowed?: readonly string[] };
+  search?: { keywords?: readonly string[]; disallowed?: readonly string[] };
   /** Most rows returned; `total` still counts them all. */
   limit: number;
   withDescription: boolean;
