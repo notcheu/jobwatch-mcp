@@ -507,14 +507,21 @@ export async function runBoardTool<S extends string>(
     args,
   );
   // what a search with these title words matched (no words = the whole board, location and date filters aside), for the history of
-  // searches: the postings that did not match are not "found by" these keywords, and the discarded ones are counted against what matched
-  await ctx.jobs.recordSearch({
-    keywords: args.title_any,
-    found: found.map((entry) => entry.posting.id).filter((id) => judged.relevantIds.has(id)),
-    returned: judged.jobs.map((job) => job.id),
-    disallowed: args.disallowed_terms,
-    excluded: judged.excluded.map(({ id, title, reason, term }) => ({ id, title, reason, term })),
-  });
+  // searches: one search per board, since the same words on two companies are two searches. The postings that did not match are not
+  // "found by" these keywords, and the discarded ones are counted against what matched. A board that could not be read is no search.
+  for (const report of reports) {
+    if (report.status !== 'ok') continue;
+    await ctx.jobs.recordSearch({
+      board: report.board,
+      keywords: args.title_any,
+      found: found.filter((entry) => entry.report === report && judged.relevantIds.has(entry.posting.id)).map((entry) => entry.posting.id),
+      returned: judged.jobs.filter((job) => job.board === report.board).map((job) => job.id),
+      disallowed: args.disallowed_terms,
+      excluded: judged.excluded
+        .filter((entry) => entry.board === report.board)
+        .map(({ id, title, reason, term }) => ({ id, title, reason, term })),
+    });
+  }
   for (const report of reports) {
     if (report.status === 'ok')
       report.relevant = found.filter((entry) => entry.report === report && judged.relevantIds.has(entry.posting.id)).length;

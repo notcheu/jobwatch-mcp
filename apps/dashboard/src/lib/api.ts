@@ -134,7 +134,7 @@ export const api = {
     request(searchesSchema, `/searches${query(params)}`),
   search: (
     source: string,
-    params: { keywords: readonly string[]; disallowed: readonly string[]; since?: string; until?: string },
+    params: { keywords: readonly string[]; disallowed: readonly string[]; board?: string; since?: string; until?: string },
   ): Promise<SearchDetailInfo> => request(searchDetailSchema, `/searches/${encodeURIComponent(source)}${query(params)}`),
   atsLookups: (params: { page?: number; pageSize?: number }): Promise<AtsLookups> =>
     request(atsLookupsSchema, `/ats-lookups${query(params)}`),

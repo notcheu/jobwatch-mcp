@@ -373,7 +373,7 @@ describe('jobs', () => {
     expect(store.countJobs('lever')).toBe(1);
     expect(store.searchStats({ since: 0, until: 2000, limit: 10 }).map((row) => row.platform)).toEqual(['lever']);
     expect(store.foundBy('ashby', ['4000000001']).size).toBe(0);
-    expect(store.foundBy('lever', ['4000000001']).get('4000000001')).toEqual([{ keywords: ['dev'], disallowed: [] }]);
+    expect(store.foundBy('lever', ['4000000001']).get('4000000001')).toEqual([{ board: null, keywords: ['dev'], disallowed: [] }]);
     expect(store.usageSince('ashby', 0)).toHaveLength(1); // a budget is not job data
     expect(store.clearPlatform('ashby')).toEqual({ jobs: 0, searches: 0 });
     store.close();
@@ -519,6 +519,7 @@ describe('search history', () => {
     expect(stats).toEqual([
       {
         platform: 'linkedin',
+        board: null,
         keywords: ['react engineer'],
         disallowed: [],
         runs: 2,
@@ -531,6 +532,7 @@ describe('search history', () => {
       },
       {
         platform: 'linkedin',
+        board: null,
         keywords: ['vue'],
         disallowed: [],
         runs: 1,
@@ -553,12 +555,76 @@ describe('search history', () => {
     expect(store.searchStats({ since: T0 + 2 * DAY, until: T0 + 3 * DAY, limit: 10 })[0]?.jobsNew).toBe(0); // a2 was first stored a day earlier
   });
 
+  describe('one search per board', () => {
+    const search = (board: string | null, over: Partial<Parameters<Store['recordSearch']>[1]> = {}) => ({
+      ...(board === null ? {} : { board }),
+      keywords: ['react'],
+      disallowed: [],
+      found: ['a1'],
+      returned: ['a1'],
+      excluded: [],
+      ...over,
+    });
+
+    it('counts the same keywords on two boards as two searches, and the same board and keywords on two calls as one', () => {
+      store.recordSearch('ashby', search('pennylane', { found: ['p1', 'p2'], returned: ['p1'] }), T0);
+      store.recordSearch('ashby', search('doctolib', { found: ['d1'], returned: ['d1'] }), T0);
+      store.recordSearch('ashby', search('pennylane', { found: ['p1'], returned: ['p1'] }), T0 + DAY);
+      const stats = store.searchStats({ since: T0, until: T0 + 3 * DAY, limit: 10 });
+      expect(stats.map((row) => [row.platform, row.board, row.keywords, row.runs, row.jobsFound])).toEqual([
+        ['ashby', 'pennylane', ['react'], 2, 2],
+        ['ashby', 'doctolib', ['react'], 1, 1],
+      ]);
+      expect(store.searchStats({ since: T0, until: T0 + 3 * DAY, board: 'doctolib', limit: 10 }).map((row) => row.board)).toEqual([
+        'doctolib',
+      ]);
+    });
+
+    it('says the board of a platform that is one big board, or of a search from before boards were kept, as none', () => {
+      store.recordSearch('linkedin', search(null), T0);
+      store.recordSearch('ashby', search(''), T0);
+      expect(store.searchStats({ since: T0, until: T0 + DAY, limit: 10 }).map((row) => row.board)).toEqual([null, null]);
+    });
+
+    it('reads one search of one board in detail, and tells the boards apart for a job', () => {
+      store.recordSearch(
+        'ashby',
+        search('pennylane', {
+          found: ['p1', 'p2'],
+          returned: ['p1'],
+          excluded: [{ id: 'p2', title: 'Intern', reason: 'title', term: 'intern' }],
+        }),
+        T0,
+      );
+      store.recordSearch('ashby', search('doctolib', { found: ['d1'], returned: ['d1'] }), T0);
+      const detail = store.searchDetail('ashby', ['react'], [], { limit: 10, board: 'pennylane' });
+      expect(detail).toMatchObject({ board: 'pennylane', jobsFound: 2, jobsReturned: 1, jobsExcluded: 1 });
+      expect(detail?.jobs.map((job) => job.id).sort()).toEqual(['p1', 'p2']);
+      expect(store.searchDetail('ashby', ['react'], [], { limit: 10 })).toBeNull(); // no board is another search: none ran without one
+      expect(store.searchDetail('ashby', ['react'], [], { limit: 10, board: 'ghost' })).toBeNull();
+      expect(store.foundBy('ashby', ['p1', 'd1'])).toEqual(
+        new Map([
+          ['p1', [{ board: 'pennylane', keywords: ['react'], disallowed: [] }]],
+          ['d1', [{ board: 'doctolib', keywords: ['react'], disallowed: [] }]],
+        ]),
+      );
+      expect(store.jobSearches('ashby', 'p1').map((row) => [row.board, row.jobsFound, row.outcome])).toEqual([
+        ['pennylane', 2, 'returned'],
+      ]);
+    });
+
+    it('keeps the boards of a database from before the migration as searches of no board', () => {
+      store.recordSearch('ashby', search(''), T0);
+      expect(store.searchDetail('ashby', ['react'], [], { limit: 10 })).toMatchObject({ board: null, jobsFound: 1 });
+    });
+  });
+
   it('keeps at most 1000 ids per run, the returned ones first', () => {
     const ids = Array.from({ length: 1500 }, (_, i) => `j${i}`);
     store.recordSearch('teamtailor', { keywords: [], disallowed: [], found: ids, returned: ['j1400'], excluded: [] }, T0);
     const [stat] = store.searchStats({ since: T0, until: T0 + DAY, limit: 5 });
     expect(stat).toMatchObject({ runs: 1, jobsFound: 1000, jobsReturned: 1 });
-    expect(store.foundBy('teamtailor', ['j1400'])).toEqual(new Map([['j1400', [{ keywords: [], disallowed: [] }]]])); // a search without keywords is a search too
+    expect(store.foundBy('teamtailor', ['j1400'])).toEqual(new Map([['j1400', [{ board: null, keywords: [], disallowed: [] }]]])); // a search without keywords is a search too
   });
 
   it('says which keywords listed a job, and lists the jobs of a keyword', () => {
@@ -570,11 +636,11 @@ describe('search history', () => {
         [
           'a1',
           [
-            { keywords: ['react'], disallowed: [] },
-            { keywords: ['vue'], disallowed: [] },
+            { board: null, keywords: ['react'], disallowed: [] },
+            { board: null, keywords: ['vue'], disallowed: [] },
           ],
         ],
-        ['a2', [{ keywords: ['react'], disallowed: [] }]],
+        ['a2', [{ board: null, keywords: ['react'], disallowed: [] }]],
       ]),
     );
     const listed = store.listJobs({
@@ -765,7 +831,7 @@ describe('salary columns', () => {
       const raw = new DatabaseSync(path);
       // put the file back as a version 6 database: no salary columns, no adapter memory
       raw.exec(
-        'DROP TABLE custom_adapter_events; DROP TABLE custom_adapters; DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
+        'DROP TABLE custom_adapter_events; DROP TABLE custom_adapters; DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN board; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP TABLE platform_memory; DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; DROP INDEX jobs_salary_max; ALTER TABLE jobs DROP COLUMN salary_min; ALTER TABLE jobs DROP COLUMN salary_max; ALTER TABLE jobs DROP COLUMN salary_currency; ALTER TABLE jobs DROP COLUMN salary_variable; PRAGMA user_version = 6;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -990,7 +1056,7 @@ describe('searches as keyword lists', () => {
     const stats = store.searchStats({ since: T0, until: T0 + 3 * DAY, limit: 10 });
     expect(stats).toHaveLength(1);
     expect(stats[0]).toMatchObject({ keywords: ['react', 'vue'], runs: 2, jobsFound: 2 });
-    expect(store.foundBy('linkedin', ['a1']).get('a1')).toEqual([{ keywords: ['react', 'vue'], disallowed: [] }]);
+    expect(store.foundBy('linkedin', ['a1']).get('a1')).toEqual([{ board: null, keywords: ['react', 'vue'], disallowed: [] }]);
   });
 
   it('counts the jobs a search excluded apart from the ones it returned', () => {
@@ -1098,7 +1164,7 @@ describe('searches as keyword lists', () => {
       raw.exec(`DELETE FROM search_runs; DELETE FROM search_hits;
         INSERT INTO search_runs (id, ts, platform, query, found, returned) VALUES (1, ${T0}, 'linkedin', 'React OR Vue', 1, 0), (2, ${T0}, 'teamtailor', 'go | rust', 1, 0), (3, ${T0}, 'linkedin', 'director or manager', 1, 0), (4, ${T0}, 'wttj', '', 1, 0);`);
       raw.exec(
-        'DROP TABLE custom_adapter_events; DROP TABLE custom_adapters; DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
+        'DROP TABLE custom_adapter_events; DROP TABLE custom_adapters; DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN board; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); DROP INDEX search_runs_platform_keywords; ALTER TABLE search_runs DROP COLUMN keywords; ALTER TABLE search_runs DROP COLUMN keywords_key; ALTER TABLE search_hits DROP COLUMN excluded; PRAGMA user_version = 8;',
       );
       raw.close();
       const upgraded = Store.open(path);
@@ -1269,7 +1335,7 @@ describe('searches as keyword lists', () => {
         first.close();
         const raw = new DatabaseSync(path);
         raw.exec(
-          'DROP TABLE custom_adapter_events; DROP TABLE custom_adapters; DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); PRAGMA user_version = 9;',
+          'DROP TABLE custom_adapter_events; DROP TABLE custom_adapters; DROP TABLE place_lookups; DROP TABLE ats_lookups; DROP TABLE company_boards; ALTER TABLE call_log DROP COLUMN detail; ALTER TABLE search_hits DROP COLUMN excluded_title; DROP INDEX search_runs_search; ALTER TABLE search_runs DROP COLUMN board; ALTER TABLE search_runs DROP COLUMN disallowed; ALTER TABLE search_runs DROP COLUMN disallowed_key; ALTER TABLE search_hits DROP COLUMN excluded_reason; ALTER TABLE search_hits DROP COLUMN excluded_term; CREATE INDEX search_runs_platform_keywords ON search_runs (platform, keywords_key); PRAGMA user_version = 9;',
         );
         raw.close();
         const upgraded = Store.open(path);

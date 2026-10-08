@@ -132,6 +132,8 @@ export interface SearchExclusion {
  * same keywords with other terms is another search, because it keeps other jobs.
  */
 export interface SearchRecord {
+  /** The company board this search read (the `board` of its jobs), for a tool that takes several: one search for each. Omit it for a platform that is one big board. */
+  board?: string | null;
   keywords: readonly string[];
   /** The disallowed terms of the call (empty when it had none). */
   disallowed: readonly string[];

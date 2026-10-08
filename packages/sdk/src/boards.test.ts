@@ -337,6 +337,56 @@ describe('runBoardTool', () => {
     });
   });
 
+  it("records one search for each board it read, with that board's own jobs, and none for a board it could not read", async () => {
+    const h = http({
+      'https://demo.example.com/acme.json': {
+        status: 200,
+        body: {
+          name: 'Acme',
+          jobs: [
+            { id: '1', title: 'Engineer' },
+            { id: '2', title: 'Designer' },
+          ],
+        },
+      },
+      'https://demo.example.com/beta.json': { status: 200, body: { name: 'Beta', jobs: [{ id: '3', title: 'Engineer' }] } },
+    });
+    const jobs = new FakeJobStore();
+    await runBoardTool({ http: h, jobs, companies: new FakeCompanyBoards() }, 'demo', source, {
+      ...args({ title_any: ['engineer'], disallowed_terms: ['intern'] }),
+      boards: ['acme', 'beta', 'ghost'],
+    });
+    expect(jobs.searches.map((search) => [search.board, search.keywords, search.disallowed, search.found, search.returned])).toEqual([
+      ['acme', ['engineer'], ['intern'], ['1'], ['1']], // the designer does not match the words: it is not found by this search
+      ['beta', ['engineer'], ['intern'], ['3'], ['3']],
+    ]);
+  });
+
+  it('keeps what a board dropped with that board only', async () => {
+    const h = http({
+      'https://demo.example.com/acme.json': {
+        status: 200,
+        body: {
+          name: 'Acme',
+          jobs: [
+            { id: '1', title: 'Engineer' },
+            { id: '2', title: 'Engineer intern' },
+          ],
+        },
+      },
+      'https://demo.example.com/beta.json': { status: 200, body: { name: 'Beta', jobs: [{ id: '3', title: 'Engineer' }] } },
+    });
+    const jobs = new FakeJobStore();
+    await runBoardTool({ http: h, jobs, companies: new FakeCompanyBoards() }, 'demo', source, {
+      ...args({ disallowed_terms: ['intern'] }),
+      boards: ['acme', 'beta'],
+    });
+    const [acme, beta] = jobs.searches;
+    expect(acme?.excluded.map((entry) => entry.id)).toEqual(['2']);
+    expect(beta?.excluded).toEqual([]);
+    expect(beta?.returned).toEqual(['3']);
+  });
+
   it('maps failures to a status per board and counts only real requests', async () => {
     const h = http({
       'https://demo.example.com/acme.json': { status: 200, body: { name: 'Acme', jobs: [] } },

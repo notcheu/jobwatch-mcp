@@ -63,15 +63,16 @@ export function Overview() {
             <>
               <ul className="divide-y">
                 {o.badSearches.items.map((search) => (
-                  <li key={`${search.source}|${search.keywords.join('\u0000')}|${search.disallowed.join('\u0000')}`}>
+                  <li key={`${search.source}|${search.board ?? ''}|${search.keywords.join('\u0000')}|${search.disallowed.join('\u0000')}`}>
                     <Link
-                      to={searchDetailLink(search.source, search.keywords, search.disallowed)}
+                      to={searchDetailLink(search.source, search.keywords, search.disallowed, undefined, search.board)}
                       className="flex items-center justify-between gap-2 py-1.5 hover:bg-accent/50"
                     >
                       <span className="flex min-w-0 items-center gap-1.5">
                         <KeywordBadges keywords={search.keywords} />
                         {search.disallowed.length > 0 && <DisallowedBadges terms={search.disallowed} />}
                         <Badge variant="secondary">{search.source}</Badge>
+                        {search.board !== null && <Badge variant="outline">{search.board}</Badge>}
                       </span>
                       <span className="flex shrink-0 items-center gap-2">
                         <span className="text-xs tabular-nums text-muted-foreground">

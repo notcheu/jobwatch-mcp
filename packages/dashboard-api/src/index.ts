@@ -86,8 +86,13 @@ export const searchHealthSchema = z
   .strict();
 export type SearchHealthInfo = z.infer<typeof searchHealthSchema>;
 
-/** A search is its keywords and its disallowed terms: the same keywords with other terms keeps other jobs. */
-export const searchRefSchema = z.object({ keywords: z.array(z.string()), disallowed: z.array(z.string()) }).strict();
+/**
+ * A search is its board, its keywords and its disallowed terms: the same keywords with other terms keeps other jobs, and the same
+ * keywords on another company's board are another search. `board` is null for a platform that is one big board (LinkedIn, Apec, WTTJ).
+ */
+export const searchRefSchema = z
+  .object({ board: z.string().nullable(), keywords: z.array(z.string()), disallowed: z.array(z.string()) })
+  .strict();
 export type SearchRef = z.infer<typeof searchRefSchema>;
 
 /** Why a job was dropped: the term, and where it matched (for `salary`, the salary the job states). */
@@ -151,6 +156,8 @@ export type JobDetail = z.infer<typeof jobDetailSchema>;
 export const searchRowSchema = z
   .object({
     source: z.string(),
+    /** The company board the search read (an ATS handle), one search for each board; null when the source is one big board. */
+    board: z.string().nullable(),
     /** The keywords of the search, lower case and sorted (any of them matches); empty for a search without keywords. */
     keywords: z.array(z.string()),
     /** Its disallowed terms, lower case and sorted; empty when it had none. */

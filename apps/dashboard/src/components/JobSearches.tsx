@@ -80,7 +80,7 @@ export function JobSearches({ source, searches }: { source: string; searches: re
                     </TableCell>
                     <TableCell className="px-2 py-1.5 align-top">
                       <Link
-                        to={searchDetailLink(source, search.keywords, search.disallowed)}
+                        to={searchDetailLink(source, search.keywords, search.disallowed, undefined, search.board)}
                         className="text-primary hover:underline"
                         aria-label={`Open the search ${search.keywords.length === 0 ? 'without keywords' : search.keywords.join(', ')}`}
                       >

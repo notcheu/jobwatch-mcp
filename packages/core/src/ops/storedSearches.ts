@@ -26,6 +26,12 @@ const output = z.object({
   searches: z.array(
     z.object({
       source: z.string(),
+      board: z
+        .string()
+        .nullable()
+        .describe(
+          'The company board the search read (an ATS handle), one search per board; null for LinkedIn, Apec and WTTJ, which are one big board.',
+        ),
       keywords: z
         .array(z.string())
         .describe(
@@ -61,7 +67,7 @@ export function createStoredSearchesTool(store: Store, clock: Clock) {
     name: 'stored_searches',
     title: 'Stored search history (read-only)',
     description:
-      'Read-only. For each search (a platform, a list of keywords any of which matches, and the disallowed terms it used) used in a window (default: the last 7 days), how many times it ran and how many distinct jobs it listed, returned, dropped by disallowed terms and found for the first time, from the router database and without contacting any site. Use it to refine the keywords you search with. List the jobs of one search with stored_jobs(found_by=[...]). Kept for JOB_RETENTION_DAYS (default 30).',
+      'Read-only. For each search (a platform, for a company-board tool one company board, a list of keywords any of which matches, and the disallowed terms it used) used in a window (default: the last 7 days), how many times it ran and how many distinct jobs it listed, returned, dropped by disallowed terms and found for the first time, from the router database and without contacting any site. Use it to refine the keywords you search with. List the jobs of one search with stored_jobs(found_by=[...]). Kept for JOB_RETENTION_DAYS (default 30).',
     input,
     output,
     annotations: { readOnlyHint: true, openWorldHint: false, idempotentHint: true },
@@ -76,6 +82,7 @@ export function createStoredSearchesTool(store: Store, clock: Clock) {
           window: { since: new Date(since).toISOString(), until: new Date(until).toISOString() },
           searches: rows.map((row) => ({
             source: row.platform,
+            board: row.board,
             keywords: row.keywords,
             disallowed_terms: row.disallowed,
             runs: row.runs,

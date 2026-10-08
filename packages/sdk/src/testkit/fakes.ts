@@ -77,6 +77,8 @@ export class FakeJobStore implements JobStore {
   readonly jobs = new Map<string, StoredJob>();
   /** Every search an adapter recorded, in order. */
   readonly searches: {
+    /** The board of the search, null when the adapter named none. */
+    board: string | null;
     keywords: string[];
     disallowed: string[];
     found: string[];
@@ -111,6 +113,7 @@ export class FakeJobStore implements JobStore {
 
   recordSearch(search: SearchRecord): Promise<void> {
     this.searches.push({
+      board: search.board ?? null,
       keywords: [...search.keywords],
       disallowed: [...search.disallowed],
       found: [...search.found],
