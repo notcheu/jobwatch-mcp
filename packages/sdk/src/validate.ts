@@ -8,6 +8,7 @@ export type Rule =
   | 'id'
   | 'platform'
   | 'hosts'
+  | 'delegates'
   | 'rate'
   | 'pacing'
   | 'tools'
@@ -51,7 +52,16 @@ export function validateAdapter(adapter: McpModule): Violation[] {
   if (!ID_PATTERN.test(adapter.id)) add('id', 'adapter', `id "${adapter.id}" must match ${ID_PATTERN}`);
   if (!ID_PATTERN.test(adapter.platform)) add('platform', 'adapter', `platform "${adapter.platform}" must match ${ID_PATTERN}`);
 
-  if (adapter.allowedHosts.length === 0) add('hosts', 'adapter', 'allowedHosts must list at least one host');
+  if (adapter.allowedHosts.length === 0 && adapter.delegates === undefined)
+    add('hosts', 'adapter', 'allowedHosts must list at least one host (only a module that delegates may list none)');
+  if (adapter.delegates !== undefined) {
+    if (adapter.allowedHosts.length > 0 || (adapter.kind === 'http' && adapter.openHttps === true))
+      add('delegates', 'adapter', 'a module that delegates reaches no host itself: allowedHosts must be empty and openHttps off');
+    if (adapter.kind !== 'http') add('delegates', 'adapter', 'only a kind "http" module can delegate');
+    const { to } = adapter.delegates;
+    if (to.length === 0 || to.some((id) => !ID_PATTERN.test(id)) || new Set(to).size !== to.length || to.includes(adapter.id))
+      add('delegates', 'adapter', 'delegates.to needs distinct module ids other than its own');
+  }
   for (const host of adapter.allowedHosts) {
     if (!isHostEntry(host))
       add(

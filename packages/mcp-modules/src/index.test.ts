@@ -10,6 +10,7 @@ import {
   installedUtilities,
   installedUtilityIds,
   budgetDefaults,
+  managedModules,
   type InstalledAdapterMap,
   type InstalledModuleMap,
   type InstalledUtilityMap,
@@ -172,5 +173,16 @@ describe('the default budgets', () => {
     for (const id of ['ashby', 'greenhouse', 'lever', 'teamtailor']) expect(budgetDefaults[id], id).toEqual({ hourly: 600, daily: 3000 });
     expect(budgetDefaults['ats-discovery']).toEqual({ hourly: 200, daily: 600 });
     expect(budgetDefaults['linkedin-geo']).toEqual({ hourly: 60, daily: 300 });
+  });
+});
+
+describe('managedModules', () => {
+  it('lists, for each gateway, exactly the installed adapters it reads through', async () => {
+    for (const [id, follows] of Object.entries(managedModules)) {
+      const gateway = await (installedAdapters as InstalledAdapterMap)[id]?.();
+      const adapters = (gateway?.delegates?.to ?? []).filter((target) => target in installedAdapters);
+      expect([...follows].sort()).toEqual([...adapters].sort());
+      expect(follows.every((target) => target in installedAdapters)).toBe(true);
+    }
   });
 });

@@ -105,8 +105,12 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
               label: adapter.enabled ? 'Disable' : 'Enable',
               icon: <Power className="size-4" />,
               // ADAPTERS or UTILITIES sets the list: the page already says so at the top
-              disabled: adapter.pinned || toggle.isPending,
-              hint: adapter.pinned ? `Set by ${adapter.role === 'adapter' ? 'ADAPTERS' : 'UTILITIES'}` : undefined,
+              disabled: adapter.pinned || adapter.managed || toggle.isPending,
+              hint: adapter.managed
+                ? 'On while an ATS adapter is enabled'
+                : adapter.pinned
+                  ? `Set by ${adapter.role === 'adapter' ? 'ADAPTERS' : 'UTILITIES'}`
+                  : undefined,
               onSelect: () => toggle.mutate(!adapter.enabled),
             },
             { id: 'budget', label: 'Budget…', icon: <Gauge className="size-4" />, onSelect: () => setBudgetOpen(true) },

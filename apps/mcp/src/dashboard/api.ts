@@ -64,6 +64,7 @@ import {
   type RateLimiter,
   type StoredSalary,
   type Registry,
+  type ManagedModules,
   type RuntimeManager,
   type JobSearch,
   type SearchRef,
@@ -96,6 +97,8 @@ export interface DashboardData {
   installed: InstalledModules;
   /** `ADAPTERS` pins the list of adapters, `UTILITIES` the list of utilities: each is changed from the environment only. */
   pinned: { adapters: boolean; utilities: boolean };
+  /** Gateways the engine enables by itself (`managedModules`); omitted when there are none. */
+  managed?: ManagedModules;
   runtime: () => RuntimeManager | undefined;
   /** The limits in force, shown read only (no secret in it). */
   settings: Settings;
@@ -569,6 +572,7 @@ export async function getTools(data: DashboardData): Promise<Tools> {
       kind: entry.summary.kind,
       enabled: isOn,
       pinned: entry.summary.role === 'utility' ? data.pinned.utilities : data.pinned.adapters,
+      managed: entry.id in (data.managed ?? {}),
       hosts: [...entry.summary.allowedHosts],
       tools: catalog.map((tool) => ({
         name: tool.name,

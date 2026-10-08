@@ -165,3 +165,28 @@ describe('utilities are a group of their own', () => {
     expect(await readEnabledFile(dataDir)).toEqual({ adapters: ['apec'], utilities: [] });
   });
 });
+
+describe('managed modules', () => {
+  const managed = { gate: ['apec', 'wttj'] };
+  const all = [...installed, 'gate', 'wttj'];
+
+  it('is on while a module it follows is, and off otherwise', async () => {
+    expect((await resolveEnabledModules(fromFile, managed)).ids).toEqual([]);
+    await setModulesEnabled(fromFile, all, ['apec'], true);
+    expect((await resolveEnabledModules(fromFile, managed)).adapters).toEqual(['apec', 'gate']);
+    await setModulesEnabled(fromFile, all, ['apec'], false);
+    expect((await resolveEnabledModules(fromFile, managed)).ids).toEqual([]);
+  });
+
+  it('follows a list set by the environment too, and is never taken from a file entry', async () => {
+    await writeEnabledFile(dataDir, { adapters: ['gate'], utilities: [] });
+    expect((await resolveEnabledModules(fromFile, managed)).ids).toEqual([]);
+    expect((await resolveEnabledModules({ adaptersFromEnv: ['wttj'], dataDir }, managed)).ids).toEqual(['wttj', 'gate']);
+  });
+
+  it('is never written to the file and cannot be toggled by hand', async () => {
+    await expect(setModulesEnabled(fromFile, all, ['gate'], true, 'adapters', managed)).rejects.toThrow(/gate is managed/);
+    await expect(setModulesEnabled(fromFile, all, ['gate'], false, 'adapters', managed)).rejects.toBeInstanceOf(ConfigError);
+    expect(await readEnabledFile(dataDir)).toBeUndefined();
+  });
+});

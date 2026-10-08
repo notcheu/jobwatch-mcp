@@ -7,6 +7,10 @@
     "hourly": 600,
     "daily": 3000
   },
+  "ats": {
+    "hourly": 600,
+    "daily": 3000
+  },
   "ats-discovery": {
     "hourly": 200,
     "daily": 600

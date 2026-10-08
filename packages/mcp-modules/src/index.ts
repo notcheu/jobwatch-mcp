@@ -16,6 +16,7 @@ export const installedAdapters = {
   // <adapters:begin>
   apec: () => import('@jobwatch/adapter-apec').then((m) => m.default),
   ashby: () => import('@jobwatch/adapter-ashby').then((m) => m.default),
+  ats: () => import('@jobwatch/adapter-ats').then((m) => m.default),
   bamboohr: () => import('@jobwatch/adapter-bamboohr').then((m) => m.default),
   breezy: () => import('@jobwatch/adapter-breezy').then((m) => m.default),
   greenhouse: () => import('@jobwatch/adapter-greenhouse').then((m) => m.default),
@@ -62,3 +63,25 @@ export const installedUtilityIds = (map: InstalledUtilityMap = installedUtilitie
  * (`LINKEDIN_BUDGET_HOURLY`, `LINKEDIN_BUDGET_DAILY`) wins over both. A module with no entry gets the engine default of its kind.
  */
 export const budgetDefaults: Readonly<Record<string, { readonly hourly: number; readonly daily: number }>> = budgetsFile;
+
+/**
+ * THE GATEWAYS: modules the engine switches on by itself, each with the modules it reads through (`delegates.to` of the gateway).
+ * `ats` is on while any ATS adapter is, and cannot be enabled or disabled by hand. Kept here because core must know it before loading
+ * anything; a test checks it against the gateways' own declarations.
+ */
+export const managedModules: Readonly<Record<string, readonly string[]>> = {
+  ats: [
+    'ashby',
+    'bamboohr',
+    'breezy',
+    'greenhouse',
+    'hibob',
+    'lever',
+    'personio',
+    'recruitee',
+    'smartrecruiters',
+    'teamtailor',
+    'workable',
+    'workday',
+  ],
+};

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  ERROR_CODES,
   JobwatchError,
   type McpModule,
   type AdapterResult,
@@ -128,6 +129,44 @@ export function paramsForHistory(args: unknown): { params: Record<string, unknow
   return { params: { _preview: json.slice(0, MAX_PARAMS_BYTES) }, truncated: true };
 }
 
+/** `delegatedBy`: the call is made by a gateway module for one of its own calls (`ctx.callTool`); such a call cannot delegate again. */
+export interface CallOptions {
+  delegatedBy?: McpModule;
+}
+
+/**
+ * `ctx.callTool` of a gateway: runs the named tool as a full tool call (arguments, budget of the module that owns the tool,
+ * timeout, output check, call log) and returns its validated output, or throws the tool's error. Only the tools of the modules
+ * the gateway declares in `delegates.to` are reachable.
+ */
+function delegateFor(deps: CallDeps, gateway: McpModule): NonNullable<BaseContext['callTool']> {
+  const allowed = gateway.delegates?.to ?? [];
+  return async (toolName, args) => {
+    const target = deps.registry.tools.get(toolName);
+    if (target === undefined || !allowed.includes(target.adapter.id)) {
+      throw new JobwatchError('invalid_arguments', `${toolName} is not a tool this module can call, or its module is not enabled.`, {
+        details: { tool: toolName },
+      });
+    }
+    const { result } = await callTool(deps, toolName, args, { delegatedBy: gateway });
+    if (result.isError) {
+      const text = result.content.map((part) => part.text).join('');
+      let body: Partial<ErrorBody> = {};
+      try {
+        body = JSON.parse(text) as Partial<ErrorBody>;
+      } catch {
+        // not JSON: reported as an internal error below
+      }
+      const code = ERROR_CODES.find((candidate) => candidate === body.code) ?? 'internal';
+      throw new JobwatchError(code, typeof body.message === 'string' ? body.message : 'The delegated tool failed.', {
+        ...(typeof body.retry_after_s === 'number' ? { retryAfterS: body.retry_after_s } : {}),
+        details: { tool: toolName },
+      });
+    }
+    return result.structuredContent;
+  };
+}
+
 export class UnknownToolError extends Error {
   constructor(readonly toolName: string) {
     super(`Unknown tool: ${toolName}`);
@@ -186,7 +225,12 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
  * Errors that are not `JobwatchError` are logged in full here and returned as a generic `internal` error: a message
  * from deep inside an adapter or a library may contain URLs, cookies or HTML.
  */
-export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): Promise<{ result: ToolCallResult; outcome: ToolOutcome }> {
+export async function callTool(
+  deps: CallDeps,
+  name: string,
+  rawArgs: unknown,
+  options: CallOptions = {},
+): Promise<{ result: ToolCallResult; outcome: ToolOutcome }> {
   const registered = deps.registry.tools.get(name);
   if (registered === undefined) throw new UnknownToolError(name);
   const { adapter, tool } = registered;
@@ -261,6 +305,8 @@ export async function callTool(deps: CallDeps, name: string, rawArgs: unknown): 
 
   try {
     lease = await deps.contexts.acquire(adapter, requestId);
+    // A gateway gets the means to call the tools it delegates to; a tool called that way never gets them (one level only).
+    if (adapter.delegates !== undefined && options.delegatedBy === undefined) lease.ctx.callTool = delegateFor(deps, adapter);
     // One cast, here: the registry stores tools with their argument type erased; `input` has just validated the arguments.
     const handler = tool.handler as (args: unknown, ctx: BaseContext) => Promise<AdapterResult>;
     const produced = await withTimeout(raceAbort(handler(parsed.data, lease.ctx), lease.signal), tool.limits.timeoutS * 1000);

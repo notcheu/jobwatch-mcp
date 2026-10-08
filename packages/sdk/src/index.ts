@@ -126,6 +126,8 @@ export {
   boardReportSchema,
   boardToolOutput,
   boardsInput,
+  gatewayReportSchema,
+  gatewayToolOutput,
   detailFields,
   BoardHttpError,
   BoardNotFound,
@@ -146,6 +148,7 @@ export type {
   BoardRead,
   BoardReport,
   BoardSource,
+  GatewayReport,
   Judged,
 } from './boards';
 

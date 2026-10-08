@@ -399,6 +399,22 @@ export function boardToolOutput<S extends string>(source: S) {
   });
 }
 
+/** What a gateway says about each company: the board report plus the ATS it was read on (null when none was found). */
+export const gatewayReportSchema = boardReportSchema.extend({
+  ats: z.string().nullable().describe('The ATS the company was read on (the source of its jobs), or null when no ATS was found.'),
+});
+export type GatewayReport = z.infer<typeof gatewayReportSchema>;
+
+/** The output of a tool that reads through several board tools: their jobs, each with the `source` ATS it came from. */
+export function gatewayToolOutput() {
+  return z.object({
+    jobs: z.array(boardJobSchema('ats').extend({ source: z.string().describe('The ATS the job was read on (ashby, lever...).') })),
+    not_returned_ids: z.array(z.string()),
+    excluded: z.array(boardExcludedSchema),
+    boards: z.array(gatewayReportSchema),
+  });
+}
+
 /** The `boards` argument of a board tool. */
 export function boardsInput(description: string, maxBoards = 10) {
   return z.array(z.string().trim().min(1).max(300)).min(1).max(maxBoards).describe(description);

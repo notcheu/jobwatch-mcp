@@ -237,6 +237,8 @@ export const toolStateSchema = z
     enabled: z.boolean(),
     /** True when ADAPTERS (for an adapter) or UTILITIES (for a utility) pins the list: the switch is disabled, the page says why. */
     pinned: z.boolean(),
+    /** True for a gateway the engine enables by itself while one of the modules it reads through is: the switch is locked. */
+    managed: z.boolean(),
     hosts: z.array(z.string()),
     tools: z.array(z.object({ name: z.string(), title: z.string(), costMax: z.number(), params: z.array(z.string()) }).strict()),
     rateHour: usageSchema.nullable(),

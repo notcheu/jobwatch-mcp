@@ -10,6 +10,7 @@
   "dependencies": {
     "@jobwatch/adapter-apec": "*",
     "@jobwatch/adapter-ashby": "*",
+    "@jobwatch/adapter-ats": "*",
     "@jobwatch/adapter-bamboohr": "*",
     "@jobwatch/adapter-breezy": "*",
     "@jobwatch/adapter-greenhouse": "*",

@@ -38,7 +38,7 @@ export async function doctor(deps: Deps): Promise<number> {
     add('fail', `adapter ${entry.id}`, `broken: ${entry.error ?? 'unknown'}`);
   for (const entry of utilityEntries.filter((candidate) => candidate.error !== undefined))
     add('fail', `utility ${entry.id}`, `broken: ${entry.error ?? 'unknown'}`);
-  const lists = await resolveEnabledModules(settings);
+  const lists = await resolveEnabledModules(settings, deps.managed);
   const enabled = lists.adapters;
   for (const id of lists.adapters.filter((candidate) => !(candidate in deps.adapters)))
     add('fail', `adapter ${id}`, 'enabled but not installed');
