@@ -70,7 +70,7 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,64}$/;
  * Migration 2 adds the `jobs` table, 3 its `last_seen` column, 4 its `board` column, 5 the search history (`search_runs`, `search_hits`),
  * 6 the per-tool daily totals (`tool_usage_daily`), 7 the salary columns of `jobs`, 8 the adapters' key-value memory (`platform_memory`),
  * 9 the keyword list of a search and the jobs it excluded, 10 its disallowed terms and the term that dropped each job,
- * 11 the title of a dropped job, 12 the detail of a call (its parameters among it), 13 the company lookups and the company-to-board map, 14 the log of LinkedIn place lookups, 15 the adapters written on the dashboard (`custom_adapters`) and the log of their changes.
+ * 11 the title of a dropped job, 12 the detail of a call (its parameters among it), 13 the company lookups and the company-to-board map, 14 the log of LinkedIn place lookups, 15 the adapters written on the dashboard (`custom_adapters`) and the log of their changes, 16 the board of a search (`search_runs.board`).
  */
 const MIGRATIONS: readonly string[] = [
   `
@@ -270,6 +270,14 @@ const MIGRATIONS: readonly string[] = [
     sha256  TEXT
   );
   CREATE INDEX custom_adapter_events_handle ON custom_adapter_events (handle, id);
+  `,
+  // 16: a search of a company-board tool is one per board: the board (the company handle, lower case) is part of its identity, so
+  // "react" on Ashby's pennylane and "react" on Ashby's doctolib are two searches. '' for a platform that is one big board (LinkedIn,
+  // Apec) and for what was recorded before this migration, which mixed the boards of a call.
+  `
+  ALTER TABLE search_runs ADD COLUMN board TEXT NOT NULL DEFAULT '';
+  DROP INDEX search_runs_search;
+  CREATE INDEX search_runs_search ON search_runs (platform, board, keywords_key, disallowed_key);
   `,
 ];
 
@@ -961,6 +969,7 @@ export class Store {
   recordSearch(platform: string, search: SearchRecord, now: number): void {
     const keywords = normalizeKeywords(search.keywords);
     const disallowed = normalizeTerms(search.disallowed);
+    const board = (search.board ?? '').slice(0, 120);
     const returned = new Set(search.returned);
     const dropped = new Map(search.excluded.map((entry) => [entry.id, entry] as const));
     const found = [...new Set(search.found)];
@@ -972,11 +981,12 @@ export class Store {
     this.transaction(() => {
       const run = this.db
         .prepare(
-          'INSERT INTO search_runs (ts, platform, query, keywords, keywords_key, disallowed, disallowed_key, found, returned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO search_runs (ts, platform, board, query, keywords, keywords_key, disallowed, disallowed_key, found, returned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         )
         .run(
           now,
           platform,
+          board,
           keywords.join(' | '),
           JSON.stringify(keywords),
           keywordsKey(keywords),
@@ -1004,11 +1014,11 @@ export class Store {
     });
   }
 
-  /** Per search (a platform, its keyword list and its disallowed terms), over [since, until): runs, and the distinct jobs it matched, returned, dropped and found first. */
-  searchStats(filter: { since: number; until: number; platform?: string; limit: number }): SearchStat[] {
+  /** Per search (a platform, its board, its keyword list and its disallowed terms), over [since, until): runs, and the distinct jobs it matched, returned, dropped and found first. */
+  searchStats(filter: { since: number; until: number; platform?: string; board?: string; limit: number }): SearchStat[] {
     const rows = this.db
       .prepare(
-        `SELECT r.platform AS platform, r.keywords_key AS keywords_key, r.disallowed_key AS disallowed_key,
+        `SELECT r.platform AS platform, r.board AS board, r.keywords_key AS keywords_key, r.disallowed_key AS disallowed_key,
                 count(DISTINCT r.id) AS runs, min(r.ts) AS first_run, max(r.ts) AS last_run,
                 count(DISTINCT h.job_id) AS jobs_found,
                 count(DISTINCT CASE WHEN h.returned = 1 THEN h.job_id END) AS jobs_returned,
@@ -1017,16 +1027,24 @@ export class Store {
          FROM search_runs r
          LEFT JOIN search_hits h ON h.run_id = r.id
          LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
-         WHERE r.ts >= ? AND r.ts < ? ${filter.platform === undefined ? '' : 'AND r.platform = ?'}
-         GROUP BY r.platform, r.keywords_key, r.disallowed_key
-         ORDER BY jobs_found DESC, runs DESC, r.platform, r.keywords_key, r.disallowed_key
+         WHERE r.ts >= ? AND r.ts < ? ${filter.platform === undefined ? '' : 'AND r.platform = ?'} ${filter.board === undefined ? '' : 'AND r.board = ?'}
+         GROUP BY r.platform, r.board, r.keywords_key, r.disallowed_key
+         ORDER BY jobs_found DESC, runs DESC, r.platform, r.board, r.keywords_key, r.disallowed_key
          LIMIT ?`,
       )
       .all(
-        ...[filter.since, filter.since, filter.until, ...(filter.platform === undefined ? [] : [filter.platform]), filter.limit],
+        ...[
+          filter.since,
+          filter.since,
+          filter.until,
+          ...(filter.platform === undefined ? [] : [filter.platform]),
+          ...(filter.board === undefined ? [] : [filter.board]),
+          filter.limit,
+        ],
       ) as Rows[];
     return rows.map((row) => ({
       platform: String(row['platform']),
+      board: boardOf(row['board']),
       keywords: parseKeywords(row['keywords_key']),
       disallowed: parseKeywords(row['disallowed_key']),
       runs: Number(row['runs']),
@@ -1043,11 +1061,12 @@ export class Store {
   foundBy(platform: string, ids: readonly string[]): Map<string, SearchRef[]> {
     const out = new Map<string, SearchRef[]>();
     const stmt = this.db.prepare(
-      `SELECT DISTINCT r.keywords_key AS keywords_key, r.disallowed_key AS disallowed_key FROM search_hits h JOIN search_runs r ON r.id = h.run_id
-       WHERE r.platform = ? AND h.job_id = ? ORDER BY r.keywords_key, r.disallowed_key`,
+      `SELECT DISTINCT r.board AS board, r.keywords_key AS keywords_key, r.disallowed_key AS disallowed_key FROM search_hits h JOIN search_runs r ON r.id = h.run_id
+       WHERE r.platform = ? AND h.job_id = ? ORDER BY r.board, r.keywords_key, r.disallowed_key`,
     );
     for (const id of new Set(ids)) {
       const searches = (stmt.all(platform, id) as Rows[]).map((row) => ({
+        board: boardOf(row['board']),
         keywords: parseKeywords(row['keywords_key']),
         disallowed: parseKeywords(row['disallowed_key']),
       }));
@@ -1057,7 +1076,14 @@ export class Store {
   }
 
   /** The counts of one search over a window, or null when it did not run in it. */
-  private searchSummary(platform: string, keywordsK: string, disallowedK: string, since: number, until: number): SearchStat | null {
+  private searchSummary(
+    platform: string,
+    board: string,
+    keywordsK: string,
+    disallowedK: string,
+    since: number,
+    until: number,
+  ): SearchStat | null {
     const row = this.db
       .prepare(
         `SELECT count(DISTINCT r.id) AS runs, min(r.ts) AS first_run, max(r.ts) AS last_run,
@@ -1068,12 +1094,13 @@ export class Store {
          FROM search_runs r
          LEFT JOIN search_hits h ON h.run_id = r.id
          LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
-         WHERE r.platform = ? AND r.keywords_key = ? AND r.disallowed_key = ? AND r.ts >= ? AND r.ts < ?`,
+         WHERE r.platform = ? AND r.board = ? AND r.keywords_key = ? AND r.disallowed_key = ? AND r.ts >= ? AND r.ts < ?`,
       )
-      .get(since, platform, keywordsK, disallowedK, since, until) as Rows | undefined;
+      .get(since, platform, board, keywordsK, disallowedK, since, until) as Rows | undefined;
     if (row === undefined || Number(row['runs']) === 0) return null;
     return {
       platform,
+      board: boardOf(board),
       keywords: parseKeywords(keywordsK),
       disallowed: parseKeywords(disallowedK),
       runs: Number(row['runs']),
@@ -1087,20 +1114,21 @@ export class Store {
   }
 
   /**
-   * One search (a platform, its keywords and its disallowed terms, any order or case): when it ran, what it matched, and the jobs, those
+   * One search (a platform, its board, its keywords and its disallowed terms, any order or case): when it ran, what it matched, and the jobs, those
    * it returned first, then those it dropped (each with the term that did it). `since` and `until` narrow the runs counted.
    */
   searchDetail(
     platform: string,
     keywords: readonly string[],
     disallowed: readonly string[],
-    options: { limit: number; since?: number; until?: number },
+    options: { limit: number; since?: number; until?: number; board?: string | null },
   ): SearchDetail | null {
     const keywordsK = keywordsKey(normalizeKeywords(keywords));
     const disallowedK = keywordsKey(normalizeTerms(disallowed));
     const since = options.since ?? 0;
     const until = options.until ?? Number.MAX_SAFE_INTEGER;
-    const summary = this.searchSummary(platform, keywordsK, disallowedK, since, until);
+    const board = options.board ?? '';
+    const summary = this.searchSummary(platform, board, keywordsK, disallowedK, since, until);
     if (summary === null) return null;
     const rows = this.db
       .prepare(
@@ -1110,12 +1138,12 @@ export class Store {
          FROM search_runs r
          JOIN search_hits h ON h.run_id = r.id
          LEFT JOIN jobs j ON j.platform = r.platform AND j.id = h.job_id
-         WHERE r.platform = ? AND r.keywords_key = ? AND r.disallowed_key = ? AND r.ts >= ? AND r.ts < ?
+         WHERE r.platform = ? AND r.board = ? AND r.keywords_key = ? AND r.disallowed_key = ? AND r.ts >= ? AND r.ts < ?
          GROUP BY h.job_id
          ORDER BY max(h.returned) DESC, max(h.excluded) DESC, max(j.last_seen) DESC, h.job_id
          LIMIT ?`,
       )
-      .all(platform, keywordsK, disallowedK, since, until, options.limit) as Rows[];
+      .all(platform, board, keywordsK, disallowedK, since, until, options.limit) as Rows[];
     const text = (value: unknown): string | null => (value === null || value === undefined ? null : String(value));
     return {
       ...summary,
@@ -1146,17 +1174,24 @@ export class Store {
   jobSearches(platform: string, id: string): JobSearch[] {
     const groups = this.db
       .prepare(
-        `SELECT r.keywords_key AS keywords_key, r.disallowed_key AS disallowed_key, max(h.returned) AS returned, max(h.excluded) AS excluded,
+        `SELECT r.board AS board, r.keywords_key AS keywords_key, r.disallowed_key AS disallowed_key, max(h.returned) AS returned, max(h.excluded) AS excluded,
                 max(h.excluded_reason) AS excluded_reason, max(h.excluded_term) AS excluded_term, max(r.ts) AS last_run
          FROM search_hits h JOIN search_runs r ON r.id = h.run_id
          WHERE r.platform = ? AND h.job_id = ?
-         GROUP BY r.keywords_key, r.disallowed_key
-         ORDER BY last_run DESC, r.keywords_key, r.disallowed_key`,
+         GROUP BY r.board, r.keywords_key, r.disallowed_key
+         ORDER BY last_run DESC, r.board, r.keywords_key, r.disallowed_key`,
       )
       .all(platform, id) as Rows[];
     const out: JobSearch[] = [];
     for (const group of groups) {
-      const stat = this.searchSummary(platform, String(group['keywords_key']), String(group['disallowed_key']), 0, Number.MAX_SAFE_INTEGER);
+      const stat = this.searchSummary(
+        platform,
+        String(group['board']),
+        String(group['keywords_key']),
+        String(group['disallowed_key']),
+        0,
+        Number.MAX_SAFE_INTEGER,
+      );
       if (stat === null) continue;
       const returned = Number(group['returned']) === 1;
       const dropped = !returned && Number(group['excluded']) === 1;
@@ -1318,6 +1353,8 @@ export interface CompanyBoard {
 
 /** A search as a job lists it: its keywords and its disallowed terms, lower case and sorted. */
 export interface SearchRef {
+  /** The company board the search read (an ATS handle, lower case), or null for a platform that is one big board and for searches recorded before boards were kept. */
+  board: string | null;
   keywords: string[];
   disallowed: string[];
 }
@@ -1369,6 +1406,9 @@ export interface SearchDetail extends SearchStat {
 
 /** Most keywords kept for one search. */
 const MAX_SEARCH_KEYWORDS = 20;
+
+/** The board of a search as the API says it: '' is none. */
+const boardOf = (value: unknown): string | null => (value === null || value === undefined || value === '' ? null : String(value));
 
 /** The keywords of a search as stored: trimmed, single-spaced, lower case, capped, no empty entry and no duplicate. The order is kept. */
 export function normalizeKeywords(keywords: readonly string[]): string[] {

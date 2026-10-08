@@ -159,6 +159,7 @@ export function Jobs() {
 
   const filters = {
     q: get('q'),
+    board: get('board'), // set by the link of a search on a company board; shown as a chip that clears it
     source,
     found_by: search.getAll('found_by'),
     no_keywords: search.get('no_keywords') ?? undefined,
@@ -214,6 +215,17 @@ export function Jobs() {
             value={text}
             onChange={(event) => setText(event.target.value)}
           />
+          {get('board') !== '' && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-accent"
+              aria-label="Clear the board filter"
+              title="Only the jobs of this company board. Click to include every board."
+              onClick={() => update({ board: undefined })}
+            >
+              board {get('board')} ×
+            </button>
+          )}
           {hasTermsFilter && (
             <button
               type="button"

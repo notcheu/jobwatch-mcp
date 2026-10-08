@@ -353,7 +353,7 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(all.total).toBe(3);
     expect(all.jobs.map((j: any) => j.id)).toEqual(['2000001', '1000002', '1000001']);
     expect(JSON.stringify(all)).not.toContain('What you');
-    expect(all.jobs.find((j: any) => j.id === '1000001').foundBy).toEqual([{ keywords: ['react'], disallowed: [] }]);
+    expect(all.jobs.find((j: any) => j.id === '1000001').foundBy).toEqual([{ board: null, keywords: ['react'], disallowed: [] }]);
     expect((await json(await t.call('/dashboard/api/v1/jobs?source=teamtailor'))).jobs.map((j: any) => j.id)).toEqual(['2000001']);
     expect((await json(await t.call('/dashboard/api/v1/jobs?q=backend'))).jobs.map((j: any) => j.id)).toEqual(['1000002']);
     expect((await json(await t.call('/dashboard/api/v1/jobs?found_by=REACT'))).total).toBe(2);
@@ -456,6 +456,39 @@ describe('the API in local development mode (no sign-in)', () => {
     const plain = await json(await t.call('/dashboard/api/v1/custom-adapters/sample/http'));
     expect(plain.docs.map((block: any) => block.id)).not.toContain('session'); // no browser, no session
     expect((await t.call('/dashboard/api/v1/custom-adapters/sample/ftp')).status).toBe(400);
+  });
+
+  it('keeps a search for each board: one row each in the list, the board in the detail and in the job, and the other board left out', async () => {
+    const t = await build();
+    const search = (board: string, found: string[]) => ({
+      board,
+      keywords: ['react'],
+      disallowed: [],
+      found,
+      returned: found,
+      excluded: [],
+    });
+    t.deps.store.recordSearch('teamtailor', search('bsport', ['2000001']), NOW - DAY);
+    t.deps.store.recordSearch('teamtailor', search('payfit', ['2000009', '2000010']), NOW - DAY);
+    t.deps.store.recordSearch('teamtailor', search('bsport', ['2000001']), NOW);
+    const list = await json(await t.call('/dashboard/api/v1/searches?source=teamtailor&since=2026-10-01'));
+    expect(list.searches.map((row: any) => [row.source, row.board, row.keywords, row.runs, row.jobsFound])).toEqual([
+      ['teamtailor', 'payfit', ['react'], 1, 2],
+      ['teamtailor', 'bsport', ['react'], 2, 1],
+    ]);
+    const bsport = await json(await t.call('/dashboard/api/v1/searches/teamtailor?board=bsport&keywords=react&since=2026-10-01'));
+    expect(bsport).toMatchObject({ source: 'teamtailor', board: 'bsport', runs: 2, jobsFound: 1 });
+    expect(bsport.jobs.map((job: any) => job.id)).toEqual(['2000001']);
+    expect((await t.call('/dashboard/api/v1/searches/teamtailor?keywords=react&since=2026-10-01')).status).toBe(404); // no board: no such search
+    expect((await t.call('/dashboard/api/v1/searches/teamtailor?board=ghost&keywords=react&since=2026-10-01')).status).toBe(404);
+    const job = await json(await t.call('/dashboard/api/v1/jobs/teamtailor/2000001'));
+    expect(job.foundBy.map((found: any) => [found.board, found.keywords])).toEqual([['bsport', ['react']]]);
+    // a source that is one big board has none
+    expect(
+      (await json(await t.call('/dashboard/api/v1/searches?source=linkedin&since=2026-10-01'))).searches.every(
+        (row: any) => row.board === null,
+      ),
+    ).toBe(true);
   });
 
   it('gives one search with its health, its counts and its jobs, and a 404 for a search that did not run', async () => {
@@ -574,6 +607,7 @@ describe('the API in local development mode (no sign-in)', () => {
     // the searches that found it, each with what it did with this job and no figure of its own
     expect(job.foundBy).toEqual([
       {
+        board: null,
         keywords: ['react'],
         disallowed: [],
         outcome: 'returned',
@@ -590,6 +624,7 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(searches.searches).toEqual([
       {
         source: 'linkedin',
+        board: null,
         keywords: ['react'],
         disallowed: [],
         runs: 1,

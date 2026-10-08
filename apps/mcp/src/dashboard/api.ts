@@ -327,6 +327,8 @@ const searchesQuery = z.object({
 });
 
 const searchDetailQuery = z.object({
+  /** The board of the search (the company handle); absent for a source that is one big board. */
+  board: z.string().trim().max(120).optional(),
   since: z.string().max(32).optional(),
   until: z.string().max(32).optional(),
   keywords: z.union([z.string().trim().max(100), z.array(z.string().trim().max(100)).max(20)]).optional(),
@@ -335,6 +337,7 @@ const searchDetailQuery = z.object({
 
 const toSearchRow = (stat: SearchStat) => ({
   source: stat.platform,
+  board: stat.board,
   keywords: stat.keywords,
   disallowed: stat.disallowed,
   runs: stat.runs,
@@ -349,6 +352,7 @@ const toSearchRow = (stat: SearchStat) => ({
 
 /** One search that listed a job, and what it did with that job. */
 const toJobSearch = (search: JobSearch) => ({
+  board: search.board,
   keywords: search.keywords,
   disallowed: search.disallowed,
   outcome: search.outcome,
@@ -366,7 +370,7 @@ export function listSearches(data: DashboardData, query: unknown): Searches {
 /** The most jobs a search detail lists; the counts are exact whatever is listed. */
 const SEARCH_JOBS_LIMIT = 200;
 
-/** One search (a source and its keyword list), with the jobs it listed and how healthy it is. `undefined` when there is no such search. */
+/** One search (a source, its board, its keyword list), with the jobs it listed and how healthy it is. `undefined` when there is no such search. */
 export function getSearch(data: DashboardData, source: string, query: unknown): SearchDetailInfo | undefined {
   if (!/^[a-z][a-z0-9-]*$/.test(source)) return undefined;
   const q = searchDetailQuery.parse(query);
@@ -374,7 +378,12 @@ export function getSearch(data: DashboardData, source: string, query: unknown): 
   const disallowed = listOf(q.disallowed);
   const until = parseDate('until', q.until, data.clock() + 1);
   const since = parseDate('since', q.since, until - 7 * DAY_MS);
-  const detail = data.store.searchDetail(source, keywords, disallowed, { limit: SEARCH_JOBS_LIMIT + 1, since, until });
+  const detail = data.store.searchDetail(source, keywords, disallowed, {
+    limit: SEARCH_JOBS_LIMIT + 1,
+    since,
+    until,
+    board: q.board === undefined || q.board === '' ? null : q.board,
+  });
   if (detail === null) return undefined;
   const { jobs, ...stat } = detail;
   return checked(searchDetailSchema, {

@@ -308,6 +308,82 @@ describe('searches', () => {
     expect(terms.getByText('intern')).toBeInTheDocument();
   });
 
+  describe('a search for each board', () => {
+    const ats = {
+      searches: [
+        searchRow({ source: 'ashby', board: 'pennylane', keywords: ['react'], runs: 3, jobsFound: 7 }),
+        searchRow({ source: 'ashby', board: 'doctolib', keywords: ['react'], runs: 1, jobsFound: 2 }),
+        searchRow({ source: 'linkedin', keywords: ['react'] }),
+      ],
+    };
+
+    it('has a Board column next to the source, one row for each board, and a dash for a source that is one big board', async () => {
+      mockApi({ ...common, '/searches': ats });
+      renderApp('/searches');
+      const rows = await rowsLoaded(4);
+      const heads = within(at(rows, 0))
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent);
+      expect(heads.slice(0, 3)).toEqual(['Source', 'Board', 'Keywords']);
+      const cells = (row: HTMLElement) =>
+        within(row)
+          .getAllByRole('cell')
+          .map((cell) => cell.textContent);
+      expect(cells(at(rows, 1)).slice(0, 3)).toEqual(['ashby', 'pennylane', 'react']);
+      expect(cells(at(rows, 2)).slice(0, 3)).toEqual(['ashby', 'doctolib', 'react']); // the same keyword on another board is another search
+      expect(cells(at(rows, 3)).slice(0, 3)).toEqual(['linkedin', '–', 'react']);
+    });
+
+    it("opens the search of that board only, asks the router for it, and links to that board's jobs", async () => {
+      const user = userEvent.setup();
+      const seen = mockApi({
+        ...common,
+        '/searches': ats,
+        '/searches/ashby': (url: URL) => searchDetail({ source: 'ashby', board: url.searchParams.get('board'), keywords: ['react'] }),
+      });
+      renderApp('/searches');
+      await user.click(at(await rowsLoaded(4), 2));
+      const panel = await screen.findByRole('complementary', { name: 'ashby · doctolib: react' });
+      expect(
+        new URL(`http://x${seen.find((url) => url.startsWith('/dashboard/api/v1/searches/ashby')) ?? ''}`).searchParams.get('board'),
+      ).toBe('doctolib');
+      expect(within(panel).getByText(/ashby · doctolib · 3 runs|ashby · doctolib · \d+ run/)).toBeInTheDocument();
+      const link = within(panel).getByRole('link', { name: /See all the jobs this search found/ });
+      const href = new URL(link.getAttribute('href') ?? '', 'http://x');
+      expect(href.pathname).toBe('/jobs');
+      expect(href.searchParams.get('board')).toBe('doctolib');
+      expect(href.searchParams.getAll('found_by')).toEqual(['react']);
+      expect(href.searchParams.get('tool')).toBe('ashby');
+    });
+
+    it('selects the row of the board in the URL, not the other board with the same keywords', async () => {
+      mockApi({
+        ...common,
+        '/searches': ats,
+        '/searches/ashby': searchDetail({ source: 'ashby', board: 'pennylane', keywords: ['react'] }),
+      });
+      renderApp('/searches/ashby?b=pennylane&k=react&days=7');
+      const rows = await rowsLoaded(4);
+      expect(at(rows, 1)).toHaveAttribute('data-state', 'selected');
+      expect(at(rows, 2)).not.toHaveAttribute('data-state', 'selected');
+    });
+
+    it('filters the jobs by the board of the link, and shows it as a chip that clears it', async () => {
+      const user = userEvent.setup();
+      const seen = mockApi({ ...common, '/jobs': page([job()]) });
+      renderApp('/jobs?tool=ashby&board=doctolib&found_by=react&no_disallowed=1');
+      await rowsLoaded(2);
+      expect(new URLSearchParams(seen.find((url) => url.startsWith('/dashboard/api/v1/jobs?'))?.split('?')[1]).get('board')).toBe(
+        'doctolib',
+      );
+      await user.click(screen.getByRole('button', { name: 'Clear the board filter' }));
+      await waitFor(() => {
+        const last = [...seen].reverse().find((url) => url.startsWith('/dashboard/api/v1/jobs?')) ?? '';
+        expect(new URLSearchParams(last.split('?')[1]).has('board')).toBe(false);
+      });
+    });
+  });
+
   it('makes every row clickable, the one without keywords too', async () => {
     mockApi({ ...common, '/searches': searches, '/searches/wttj': searchDetail({ source: 'wttj', keywords: [] }) });
     renderApp('/searches');

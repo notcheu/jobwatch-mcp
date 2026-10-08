@@ -32,14 +32,17 @@ export function Searches() {
   });
   const rows = searches.data?.searches ?? [];
   const selected =
-    params['source'] === undefined ? undefined : { source: params['source'], keywords: query.getAll('k'), disallowed: query.getAll('d') };
-  const open = (row: SearchRow): void => void navigate(searchDetailLink(row.source, row.keywords, row.disallowed, days));
+    params['source'] === undefined
+      ? undefined
+      : { source: params['source'], board: query.get('b'), keywords: query.getAll('k'), disallowed: query.getAll('d') };
+  const open = (row: SearchRow): void => void navigate(searchDetailLink(row.source, row.keywords, row.disallowed, days, row.board));
   const close = (): void =>
     void navigate({ pathname: '/searches', search: source === undefined ? '' : `?tool=${encodeURIComponent(source)}` });
   const same = (a: readonly string[], b: readonly string[]): boolean => [...a].sort().join('\u0000') === [...b].sort().join('\u0000');
   const isSelected = (row: SearchRow): boolean =>
     selected !== undefined &&
     selected.source === row.source &&
+    selected.board === row.board &&
     same(row.keywords, selected.keywords) &&
     same(row.disallowed, selected.disallowed);
 
@@ -57,17 +60,27 @@ export function Searches() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                {['Source', 'Keywords', 'Disallowed terms', 'Health', 'Runs', 'Jobs found', 'Discarded', 'Returned', 'New', 'Last run'].map(
-                  (title) => (
-                    <TableHead key={title}>{title}</TableHead>
-                  ),
-                )}
+                {[
+                  'Source',
+                  'Board',
+                  'Keywords',
+                  'Disallowed terms',
+                  'Health',
+                  'Runs',
+                  'Jobs found',
+                  'Discarded',
+                  'Returned',
+                  'New',
+                  'Last run',
+                ].map((title) => (
+                  <TableHead key={title}>{title}</TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
                 <TableRow
-                  key={`${row.source}|${row.keywords.join('\u0000')}|${row.disallowed.join('\u0000')}`}
+                  key={`${row.source}|${row.board ?? ''}|${row.keywords.join('\u0000')}|${row.disallowed.join('\u0000')}`}
                   tabIndex={0}
                   className="cursor-pointer"
                   data-state={isSelected(row) ? 'selected' : undefined}
@@ -76,6 +89,9 @@ export function Searches() {
                 >
                   <TableCell>
                     <Badge variant="secondary">{row.source}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    {row.board === null ? <span className="text-muted-foreground">–</span> : <Badge variant="outline">{row.board}</Badge>}
                   </TableCell>
                   <TableCell className="max-w-80 font-medium">
                     <KeywordBadges keywords={row.keywords} />
@@ -107,7 +123,14 @@ export function Searches() {
         </div>
       </div>
       {selected !== undefined && (
-        <SearchPanel source={selected.source} keywords={selected.keywords} disallowed={selected.disallowed} days={days} onClose={close} />
+        <SearchPanel
+          source={selected.source}
+          board={selected.board}
+          keywords={selected.keywords}
+          disallowed={selected.disallowed}
+          days={days}
+          onClose={close}
+        />
       )}
     </div>
   );
@@ -115,12 +138,14 @@ export function Searches() {
 
 function SearchPanel({
   source,
+  board,
   keywords,
   disallowed,
   days,
   onClose,
 }: {
   source: string;
+  board: string | null;
   keywords: string[];
   disallowed: string[];
   days: number;
@@ -128,11 +153,12 @@ function SearchPanel({
 }) {
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
   const search = useQuery({
-    queryKey: ['search', source, keywords, disallowed, days],
-    queryFn: () => api.search(source, { keywords, disallowed, since }),
+    queryKey: ['search', source, board, keywords, disallowed, days],
+    queryFn: () => api.search(source, { keywords, disallowed, since, ...(board === null ? {} : { board }) }),
     retry: false,
   });
-  const title = keywords.length === 0 ? `${source}: no keywords` : `${source}: ${keywords.join(', ')}`;
+  const where = board === null ? source : `${source} · ${board}`;
+  const title = keywords.length === 0 ? `${where}: no keywords` : `${where}: ${keywords.join(', ')}`;
   return (
     <DetailPanel title={title} onClose={onClose}>
       {search.isError && <p className="text-sm text-muted-foreground">That search did not run in the last {days} days.</p>}
@@ -160,7 +186,9 @@ function SearchBody({ search, days }: { search: SearchDetailInfo; days: number }
           </div>
         )}
         <div className="text-xs text-muted-foreground">
-          {search.source} · {search.runs} run{search.runs === 1 ? '' : 's'} in the last {days} days · last {ago(search.lastRun)}
+          {search.source}
+          {search.board !== null && ` · ${search.board}`} · {search.runs} run{search.runs === 1 ? '' : 's'} in the last {days} days · last{' '}
+          {ago(search.lastRun)}
         </div>
       </div>
 
@@ -212,7 +240,7 @@ function SearchBody({ search, days }: { search: SearchDetailInfo; days: number }
       </section>
 
       <Link
-        to={jobsOfSearch(search.source, search.keywords, search.disallowed)}
+        to={jobsOfSearch(search.source, search.keywords, search.disallowed, search.board)}
         className="inline-block text-sm text-primary hover:underline"
       >
         See all the jobs this search found →

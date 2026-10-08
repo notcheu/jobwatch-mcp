@@ -84,6 +84,7 @@ export const tools = {
 /** One row of the Searches list: a search that is healthy unless the test says otherwise. */
 export const searchRow = (over: Record<string, unknown> = {}) => ({
   source: 'linkedin',
+  board: null,
   keywords: ['react engineer'],
   disallowed: [],
   runs: 4,
@@ -110,10 +111,11 @@ export const badSearchRow = (over: Record<string, unknown> = {}) =>
   });
 
 /** A search as it appears in a job's `foundBy` list on the Jobs table. */
-export const searchRef = (keywords: string[], disallowed: string[] = []) => ({ keywords, disallowed });
+export const searchRef = (keywords: string[], disallowed: string[] = [], board: string | null = null) => ({ board, keywords, disallowed });
 
 /** A search that listed one job, as the job detail gets it: its counts and health, and what it did with that job. */
 export const jobSearch = (over: Record<string, unknown> = {}) => ({
+  board: null,
   keywords: ['react'],
   disallowed: [],
   outcome: 'returned',

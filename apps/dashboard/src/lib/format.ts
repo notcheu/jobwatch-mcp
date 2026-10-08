@@ -55,8 +55,11 @@ export function jobsOfSearch(
   source: string,
   keywords: readonly string[],
   disallowed: readonly string[],
+  board?: string | null,
 ): { pathname: string; search: string } {
   const params = new URLSearchParams();
+  // the jobs of a search on a company board are that board's: the board of a job is the board of the search that found it
+  if (board !== undefined && board !== null) params.set('board', board);
   if (keywords.length === 0) params.set('no_keywords', '1');
   for (const keyword of keywords) params.append('found_by', keyword);
   if (disallowed.length === 0) params.set('no_disallowed', '1');
@@ -65,14 +68,16 @@ export function jobsOfSearch(
   return { pathname: '/jobs', search: `?${params.toString()}` };
 }
 
-/** The detail of a search (its health and its jobs), opened over the Searches page. `days` keeps the window the list was showing. */
+/** The detail of a search (its health and its jobs), opened over the Searches page. `days` keeps the window the list was showing; `board` is the company board of a search on an ATS. */
 export function searchDetailLink(
   source: string,
   keywords: readonly string[],
   disallowed: readonly string[],
   days?: number,
+  board?: string | null,
 ): { pathname: string; search: string } {
   const params = new URLSearchParams();
+  if (board !== undefined && board !== null) params.set('b', board);
   for (const keyword of keywords) params.append('k', keyword);
   for (const term of disallowed) params.append('d', term);
   if (days !== undefined) params.set('days', String(days));
