@@ -97,6 +97,7 @@ export {
   keywordsKey,
   normalizeKeywords,
   normalizeTerms,
+  searchSlug,
 } from './store/store';
 export type {
   AtsLookup,
@@ -116,6 +117,7 @@ export type {
   JobSearch,
   SearchDetail,
   SearchDetailJob,
+  SearchListed,
   SearchRef,
   SearchStat,
   StoredSalary,

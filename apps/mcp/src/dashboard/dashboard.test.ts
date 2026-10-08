@@ -356,9 +356,11 @@ describe('the API in local development mode (no sign-in)', () => {
     expect(all.jobs.find((j: any) => j.id === '1000001').foundBy).toEqual([{ board: null, keywords: ['react'], disallowed: [] }]);
     expect((await json(await t.call('/dashboard/api/v1/jobs?source=teamtailor'))).jobs.map((j: any) => j.id)).toEqual(['2000001']);
     expect((await json(await t.call('/dashboard/api/v1/jobs?q=backend'))).jobs.map((j: any) => j.id)).toEqual(['1000002']);
-    expect((await json(await t.call('/dashboard/api/v1/jobs?found_by=REACT'))).total).toBe(2);
-    expect((await json(await t.call('/dashboard/api/v1/jobs?found_by=react&found_by=vue'))).total).toBe(0); // the whole list is the search
-    expect((await json(await t.call('/dashboard/api/v1/jobs?no_keywords=1'))).total).toBe(0);
+    const react = (await json(await t.call('/dashboard/api/v1/search-options'))).searches.find(
+      (search: any) => search.keywords[0] === 'react',
+    );
+    expect((await json(await t.call(`/dashboard/api/v1/jobs?search=${react.slug}`))).total).toBe(2);
+    expect((await json(await t.call('/dashboard/api/v1/jobs?search=no-such-search-00000000'))).total).toBe(0); // a slug nobody ran lists nothing
     expect((await json(await t.call('/dashboard/api/v1/jobs?sort=title&dir=asc'))).jobs.map((j: any) => j.title)).toEqual([
       'Backend Engineer',
       'Frontend Engineer',
@@ -547,7 +549,7 @@ describe('the API in local development mode (no sign-in)', () => {
     expect((await t.call('/dashboard/api/v1/searches/Bad%20Source?keywords=x')).status).toBe(404);
   });
 
-  it('filters the jobs by the exact search: its keywords, and its disallowed terms or none', async () => {
+  it('names each search by a slug, lists the searches that ran, and filters the jobs by that slug', async () => {
     const t = await build();
     t.deps.store.recordSearch(
       'linkedin',
@@ -560,37 +562,38 @@ describe('the API in local development mode (no sign-in)', () => {
       },
       NOW - DAY,
     );
-    const total = async (query: string) => (await json(await t.call(`/dashboard/api/v1/jobs?${query}`))).total;
-    expect(await total('found_by=react')).toBe(2); // whatever the terms
-    expect(await total('found_by=react&no_disallowed=1')).toBe(2); // the search with no terms listed both
-    expect(await total('found_by=react&disallowed=Backend')).toBe(2);
-    expect(await total('found_by=react&disallowed=frontend')).toBe(0);
+    t.deps.store.recordSearch(
+      'linkedin',
+      { keywords: ['Svelte', 'Vue'], disallowed: [], found: ['1000001'], returned: ['1000001'], excluded: [] },
+      NOW,
+    );
+    const options = (await json(await t.call('/dashboard/api/v1/search-options'))).searches;
+    // each search once, the one that ran last first, each with a slug of its own that does not depend on case or order
+    expect(options.map((o: any) => [o.keywords, o.disallowed])).toEqual([
+      [['svelte', 'vue'], []],
+      [['react'], ['backend']],
+      [['react'], []],
+    ]);
+    expect(new Set(options.map((o: any) => o.slug)).size).toBe(3);
+    expect(options.every((o: any) => /^[a-z0-9-]+-[0-9a-f]{8}$/.test(o.slug))).toBe(true);
+    const slugOf = (keywords: string[], disallowed: string[]) =>
+      options.find((o: any) => o.keywords.join() === keywords.join() && o.disallowed.join() === disallowed.join()).slug;
+    const total = async (slug: string) => (await json(await t.call(`/dashboard/api/v1/jobs?search=${slug}`))).total;
+    expect(await total(slugOf(['react'], ['backend']))).toBe(2); // the search with those terms listed both
+    expect(await total(slugOf(['react'], []))).toBe(2); // the same keywords with no terms is another search, which also listed both
+    expect(await total(slugOf(['svelte', 'vue'], []))).toBe(1);
+    // the slug of a search is the one the Searches page carries for it
+    const rows = (await json(await t.call('/dashboard/api/v1/searches'))).searches;
+    expect(rows.map((r: any) => r.slug).sort()).toEqual(options.map((o: any) => o.slug).sort());
+    // a source tab narrows the list
+    expect((await json(await t.call('/dashboard/api/v1/search-options?source=apec'))).searches).toEqual([]);
+    expect((await t.call('/dashboard/api/v1/search-options?source=Bad%20Source')).status).toBe(400);
+    expect((await t.call('/dashboard/api/v1/jobs?search=Bad%20Slug')).status).toBe(400);
     const one = (await json(await t.call('/dashboard/api/v1/jobs/linkedin/1000002'))).foundBy;
     expect(one.map((search: any) => [search.disallowed, search.outcome, search.excludedBy])).toEqual([
       [['backend'], 'excluded', { reason: 'title', term: 'backend' }],
       [[], 'other', null],
     ]);
-  });
-
-  it('filters the jobs by disallowed terms alone, and lists every keyword and term used for the filters', async () => {
-    const t = await build();
-    t.deps.store.recordSearch(
-      'linkedin',
-      { keywords: ['Svelte', 'Vue'], disallowed: ['Intern', 'senior'], found: ['1000002'], returned: ['1000002'], excluded: [] },
-      NOW - DAY,
-    );
-    const total = async (query: string) => (await json(await t.call(`/dashboard/api/v1/jobs?${query}`))).total;
-    expect(await total('disallowed=intern&disallowed=senior')).toBe(1); // no keywords given: whatever the keywords
-    expect(await total('disallowed=intern')).toBe(0); // the terms are the whole list of the search
-    expect(await total('found_by=svelte&found_by=vue&disallowed=intern&disallowed=senior')).toBe(1);
-    const terms = await json(await t.call('/dashboard/api/v1/search-terms'));
-    expect(terms.keywords).toEqual(expect.arrayContaining(['svelte', 'vue']));
-    expect(terms.disallowed).toEqual(expect.arrayContaining(['intern', 'senior']));
-    expect([...terms.keywords].sort()).toEqual(terms.keywords); // sorted, each once
-    expect(new Set(terms.keywords).size).toBe(terms.keywords.length);
-    const none = await json(await t.call('/dashboard/api/v1/search-terms?source=apec'));
-    expect(none.keywords).not.toContain('svelte');
-    expect((await t.call('/dashboard/api/v1/search-terms?source=Bad%20Source')).status).toBe(400);
   });
 
   it('puts the searches in bad health on the overview: nothing found at all, or most of it discarded', async () => {
@@ -644,6 +647,7 @@ describe('the API in local development mode (no sign-in)', () => {
     const searches = await json(await t.call('/dashboard/api/v1/searches?since=2026-10-01'));
     expect(searches.searches).toEqual([
       {
+        slug: expect.stringMatching(/^linkedin-react-[0-9a-f]{8}$/),
         source: 'linkedin',
         board: null,
         keywords: ['react'],

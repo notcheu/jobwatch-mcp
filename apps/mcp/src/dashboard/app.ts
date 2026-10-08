@@ -24,7 +24,7 @@ import {
   listSavedPlaces,
   listCompanyBoards,
   listSearches,
-  listSearchTerms,
+  listSearchOptions,
   type DashboardData,
 } from './api';
 import type { Oidc } from './oidc';
@@ -283,8 +283,8 @@ export function createDashboardApp(deps: DashboardDeps): Express {
     wrap((req) => listSearches(deps, req.query)),
   );
   api.get(
-    '/search-terms',
-    wrap((req) => listSearchTerms(deps, req.query)),
+    '/search-options',
+    wrap((req) => listSearchOptions(deps, req.query)),
   );
   api.get(
     '/searches/:source',
