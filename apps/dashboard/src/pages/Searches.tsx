@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { SearchDetailInfo, SearchJob, SearchRow } from '@jobwatch/dashboard-api';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { DetailPanel, Field } from '@/components/DetailPanel';
 import { DisallowedBadges, KeywordBadges } from '@/components/KeywordBadges';
@@ -30,7 +30,11 @@ export function Searches() {
     queryKey: ['searches', source, days],
     queryFn: () => api.searches({ since, ...(source === undefined ? {} : { source }) }),
   });
-  const rows = searches.data?.searches ?? [];
+  // the searches that ran most recently come first
+  const rows = useMemo(
+    () => [...(searches.data?.searches ?? [])].sort((a, b) => Date.parse(b.lastRun) - Date.parse(a.lastRun)),
+    [searches.data],
+  );
   const selected =
     params['source'] === undefined
       ? undefined
@@ -239,10 +243,7 @@ function SearchBody({ search, days }: { search: SearchDetailInfo; days: number }
         </dl>
       </section>
 
-      <Link
-        to={jobsOfSearch(search.source, search.keywords, search.disallowed, search.board)}
-        className="inline-block text-sm text-primary hover:underline"
-      >
+      <Link to={jobsOfSearch(search.source, search.keywords, search.board)} className="inline-block text-sm text-primary hover:underline">
         See all the jobs this search found →
       </Link>
 

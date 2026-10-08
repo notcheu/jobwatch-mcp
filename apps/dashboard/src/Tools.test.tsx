@@ -156,11 +156,15 @@ describe('tools and status', () => {
     expect(screen.queryByText(/is set by ADAPTERS/)).not.toBeInTheDocument(); // nothing on the cards any more
   });
 
-  it('locks enable / disable of a module the engine manages', async () => {
-    mockApi({ '/me': me, '/tools': tools(adapter({ managed: true }), utility()) });
+  it('shows a module the engine manages in its own section, with nothing to configure', async () => {
+    mockApi({ '/me': me, '/tools': tools(adapter({ id: 'ats', displayName: 'Any ATS', managed: true, enabled: true }), utility()) });
     renderApp('/settings?view=tools');
-    const user = userEvent.setup();
-    expect(await toggleItem(user, await screen.findByLabelText('Teamtailor'))).toHaveAttribute('aria-disabled', 'true');
+    const section = await screen.findByRole('region', { name: 'Aggregated adapter' });
+    const card = within(section).getByLabelText('Any ATS');
+    expect(within(card).getByText('aggregated')).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: /^Settings of / })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Enabled adapters' })).not.toHaveTextContent('Any ATS');
+    expect(screen.getByRole('region', { name: 'Disabled adapters' })).not.toHaveTextContent('Any ATS');
   });
 
   it('warns about UTILITIES the same way', async () => {

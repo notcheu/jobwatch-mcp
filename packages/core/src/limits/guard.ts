@@ -6,6 +6,7 @@ import type { RateLimiter, UsageTicket } from './ratelimit';
 
 /**
  * The two protections around every call, in the order that protects the platform best:
+ * A module that delegates (a gateway) is let through with no breaker and no budget.
  *  1. the circuit breaker, so a platform that asked for a login or a verification is never touched (and no budget is spent);
  *  2. the rate limiter, which takes the tool's cost from the platform's budget.
  * When the handler later reports a lost session or a checkpoint, the breaker opens.
@@ -13,6 +14,8 @@ import type { RateLimiter, UsageTicket } from './ratelimit';
 export function createGuard(limiter: RateLimiter, breaker: CircuitBreaker): CallGuard {
   return {
     admit(adapter: McpModule, tool: ErasedTool<BaseContext>, args: unknown): Admission {
+      // A gateway reaches no site and has no budget: what it reads is charged to the modules it calls, in their own calls.
+      if (adapter.delegates !== undefined) return { reserved: 0, settle: () => undefined };
       breaker.check(adapter.platform);
       const keys = budgetKeys(tool, args);
       // The platform budget and one budget per company board, all or nothing: a board that is out of room refuses the call and

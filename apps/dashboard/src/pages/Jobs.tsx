@@ -122,19 +122,28 @@ const columns = [
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
+/** The periods of the Last seen select; no choice means all time. */
+const SEEN_WITHIN = [
+  { value: 'day', label: 'last 24 hours', ms: 86_400_000 },
+  { value: 'week', label: 'last week', ms: 7 * 86_400_000 },
+  { value: 'month', label: 'last month', ms: 30 * 86_400_000 },
+] as const;
+
 export function Jobs() {
   const source = usePlatform();
   const params = useParams();
   const navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
   const get = (key: string): string => search.get(key) ?? '';
-  // the disallowed terms of that search, set by the link of a search (not typed): shown as a chip that clears them
-  const terms = search.get('no_disallowed') === '1' ? [] : search.getAll('disallowed');
-  const hasTermsFilter = search.get('no_disallowed') === '1' || terms.length > 0;
   const [text, setText] = useState(get('q'));
   const q = useDebounced(text);
   const page = Math.max(1, Number(get('page')) || 1);
   const pageSize = PAGE_SIZES.includes(Number(get('pageSize'))) ? Number(get('pageSize')) : 25;
+  const seenWithin = SEEN_WITHIN.find((option) => option.value === get('seen'));
+  const seenFrom = useMemo(
+    () => (seenWithin === undefined ? undefined : new Date(Math.floor((Date.now() - seenWithin.ms) / 60_000) * 60_000).toISOString()),
+    [seenWithin],
+  );
   const sortName = get('sort');
   const sorting: SortingState =
     SORT_COLUMNS[sortName] === undefined ? [] : [{ id: SORT_COLUMNS[sortName] ?? '', desc: get('dir') !== 'asc' }];
@@ -163,10 +172,9 @@ export function Jobs() {
     source,
     found_by: search.getAll('found_by'),
     no_keywords: search.get('no_keywords') ?? undefined,
-    disallowed: search.getAll('disallowed'),
-    no_disallowed: search.get('no_disallowed') ?? undefined,
-    from: get('from'),
-    to: get('to'),
+    // the jobs seen again within the chosen period (the last run of a search that still lists them), all time when none is chosen
+    dateField: seenWithin === undefined ? undefined : 'last_seen',
+    from: seenFrom,
     sort: sortName || undefined,
     dir: sortName ? get('dir') || 'desc' : undefined,
     page,
@@ -226,37 +234,19 @@ export function Jobs() {
               board {get('board')} ×
             </button>
           )}
-          {hasTermsFilter && (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-accent"
-              aria-label="Clear the disallowed terms filter"
-              title="Only the search with exactly these disallowed terms. Click to include the same keywords whatever the terms."
-              onClick={() => {
-                const next = new URLSearchParams(search);
-                next.delete('disallowed');
-                next.delete('no_disallowed');
-                next.delete('page');
-                setSearch(next, { replace: true });
-              }}
-            >
-              {terms.length === 0 ? 'without terms' : `without ${terms.join(', ')}`} ×
-            </button>
-          )}
-          <Input
-            aria-label="From date"
-            type="date"
-            className="w-36"
-            value={get('from')}
-            onChange={(event) => update({ from: event.target.value })}
-          />
-          <Input
-            aria-label="To date"
-            type="date"
-            className="w-36"
-            value={get('to')}
-            onChange={(event) => update({ to: event.target.value })}
-          />
+          <select
+            aria-label="Last seen"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={seenWithin?.value ?? ''}
+            onChange={(event) => update({ seen: event.target.value })}
+          >
+            <option value="">Last seen: all time</option>
+            {SEEN_WITHIN.map((option) => (
+              <option key={option.value} value={option.value}>
+                Last seen: {option.label}
+              </option>
+            ))}
+          </select>
           <details className="relative ml-auto">
             <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border border-input px-3 text-sm hover:bg-accent">
               <Columns3 className="size-4" /> Columns

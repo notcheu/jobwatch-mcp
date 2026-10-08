@@ -48,22 +48,16 @@ export function formatSalary(salary: { min: number; max: number; currency: strin
 }
 
 /**
- * The jobs a search listed: `/jobs` filtered by the keywords of the search (or by "no keyword") and by its disallowed terms (or by
- * "no term"), so the list is that search and no other, plus its source.
+ * The jobs of a search: `/jobs` filtered by its keywords (or by "no keyword") and its source, and by its board on a company board.
+ * Its disallowed terms are not part of the link: a list filtered by terms would show a filter nobody chose, so the list shows every
+ * job found by these keywords, including those another search with other terms found.
  */
-export function jobsOfSearch(
-  source: string,
-  keywords: readonly string[],
-  disallowed: readonly string[],
-  board?: string | null,
-): { pathname: string; search: string } {
+export function jobsOfSearch(source: string, keywords: readonly string[], board?: string | null): { pathname: string; search: string } {
   const params = new URLSearchParams();
   // the jobs of a search on a company board are that board's: the board of a job is the board of the search that found it
   if (board !== undefined && board !== null) params.set('board', board);
   if (keywords.length === 0) params.set('no_keywords', '1');
   for (const keyword of keywords) params.append('found_by', keyword);
-  if (disallowed.length === 0) params.set('no_disallowed', '1');
-  for (const term of disallowed) params.append('disallowed', term);
   params.set('tool', source);
   return { pathname: '/jobs', search: `?${params.toString()}` };
 }

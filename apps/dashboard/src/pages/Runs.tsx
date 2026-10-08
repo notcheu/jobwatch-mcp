@@ -25,7 +25,14 @@ function outcomeBadge(row: Pick<CallRow, 'state' | 'code'>) {
 
 const column = createColumnHelper<CallRow>();
 const columns = [
-  column.accessor('startedAt', { header: 'Time', cell: (c) => <span className="tabular-nums">{clock(c.getValue())}</span> }),
+  column.accessor('startedAt', {
+    header: 'Time',
+    cell: (c) => (
+      <span className="tabular-nums">
+        {new Date(c.getValue()).toLocaleDateString()} {clock(c.getValue())}
+      </span>
+    ),
+  }),
   column.accessor('tool', { header: 'Tool', cell: (c) => <span className="font-medium">{c.getValue()}</span> }),
   column.accessor('keywords', {
     header: 'Keywords',
@@ -85,9 +92,6 @@ export function Runs() {
               {value === 'all' ? 'All' : value === 'running' ? 'Running' : value === 'ok' ? 'Succeeded' : 'Failed'}
             </Button>
           ))}
-          <span className="ml-auto text-xs text-muted-foreground">
-            The most recent calls, kept with their parameters and loaded again after a restart
-          </span>
         </div>
         <div className="flex-1 overflow-auto">
           <Table>

@@ -552,18 +552,21 @@ export async function getTools(data: DashboardData): Promise<Tools> {
     const catalog = buildCatalog(module);
     const isOn = enabled.has(entry.id);
     const platform = entry.summary.platform;
-    const rate = isOn ? data.limiter.status(platform) : undefined;
+    const managed = entry.id in (data.managed ?? {});
+    // a managed gateway has no budget of its own: its usage is the usage of the adapters it calls
+    const rate = isOn && !managed ? data.limiter.status(platform) : undefined;
     const open = isOn ? data.breaker.state(platform) : undefined;
-    const boards = isOn
-      ? data.store
-          .usageKeys(platform, now - DAY_MS)
-          .map((board) => {
-            const status = data.limiter.status(`${platform}#${board}`);
-            return { board, rateHour: status.hour, rateDay: status.day };
-          })
-          .sort((a, b) => b.rateDay.used - a.rateDay.used || a.board.localeCompare(b.board))
-          .slice(0, 25)
-      : [];
+    const boards =
+      isOn && !managed
+        ? data.store
+            .usageKeys(platform, now - DAY_MS)
+            .map((board) => {
+              const status = data.limiter.status(`${platform}#${board}`);
+              return { board, rateHour: status.hour, rateDay: status.day };
+            })
+            .sort((a, b) => b.rateDay.used - a.rateDay.used || a.board.localeCompare(b.board))
+            .slice(0, 25)
+        : [];
     adapters.push({
       id: entry.id,
       displayName: entry.summary.displayName,
@@ -572,7 +575,7 @@ export async function getTools(data: DashboardData): Promise<Tools> {
       kind: entry.summary.kind,
       enabled: isOn,
       pinned: entry.summary.role === 'utility' ? data.pinned.utilities : data.pinned.adapters,
-      managed: entry.id in (data.managed ?? {}),
+      managed,
       hosts: [...entry.summary.allowedHosts],
       tools: catalog.map((tool) => ({
         name: tool.name,
