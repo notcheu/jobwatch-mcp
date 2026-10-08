@@ -164,6 +164,22 @@ describe('ats_jobs routing', () => {
     expect(calls[0]?.args).not.toHaveProperty('ats');
   });
 
+  it('keeps at most max_per_company jobs of each company, so a large board cannot crowd out a small one', async () => {
+    const big = Array.from({ length: 5 }, (_, i) => job(`g${i}`, 'greenhouse', `2026-03-0${i + 1}`));
+    const { run, calls } = setup({
+      greenhouse_jobs: () => answer('greenhouse', 'big', ...big),
+      ashby_jobs: () => answer('ashby', 'small', job('a1', 'ashby', '2026-01-01')),
+    });
+    const out = await run({
+      boards: ['https://boards.greenhouse.io/big', 'https://jobs.ashbyhq.com/small'],
+      max_per_company: 2,
+      max_results: 3,
+    });
+    expect(out.jobs.map((entry) => entry.id)).toEqual(['g4', 'g3', 'a1']);
+    expect(out.not_returned_ids.sort()).toEqual(['g0', 'g1', 'g2']);
+    expect(calls.every((call) => !('max_per_company' in call.args))).toBe(true);
+  });
+
   it('merges the ATS newest first, caps at max_results and keeps going when one ATS fails', async () => {
     const { run } = setup({
       lever_jobs: () => answer('lever', 'a', job('l1', 'lever', '2026-03-01'), job('l2', 'lever', '2026-01-01')),

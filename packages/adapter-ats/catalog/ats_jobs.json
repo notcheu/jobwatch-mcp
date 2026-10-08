@@ -104,6 +104,12 @@
         "maxItems": 20,
         "type": "array"
       },
+      "max_per_company": {
+        "description": "Most jobs kept from any one company (the newest), so a large board cannot crowd out a small one in the merged list. Default: no per-company limit; max_results alone applies.",
+        "maximum": 200,
+        "minimum": 1,
+        "type": "integer"
+      },
       "max_results": {
         "default": 50,
         "description": "Most jobs returned.",

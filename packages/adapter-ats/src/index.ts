@@ -47,6 +47,15 @@ const atsJobs = defineHttpTool({
         MAX_BOARDS,
       ),
       ats: z.array(z.enum(ATS_IDS)).min(1).max(ATS_IDS.length).optional().describe('Only look on these ATS. Default: every enabled one.'),
+      max_per_company: z
+        .number()
+        .int()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe(
+          'Most jobs kept from any one company (the newest), so a large board cannot crowd out a small one in the merged list. Default: no per-company limit; max_results alone applies.',
+        ),
       ...boardFilters,
     })
     .strict(),
@@ -120,7 +129,7 @@ const atsJobs = defineHttpTool({
       routes.set(route.ats, group);
     }
 
-    const { boards: _boards, ats: _ats, ...filters } = args;
+    const { boards: _boards, ats: _ats, max_per_company: perCompany, ...filters } = args;
     const results = await Promise.all(
       [...routes].map(async ([ats, boards]) => {
         try {
@@ -158,11 +167,21 @@ const atsJobs = defineHttpTool({
     // newest first, undated last; what does not fit goes to not_returned_ids, as the ATS tools do
     jobs.sort((a, b) => (b.posted_at ?? '').localeCompare(a.posted_at ?? ''));
     const kept: Job[] = [];
+    const perBoard = new Map<string, number>();
     let size = 0;
     for (const job of jobs) {
+      const key = `${job.source}/${job.board}`;
+      const taken = perBoard.get(key) ?? 0;
+      // a company over its share is set aside before it can use any of the size budget
+      if (perCompany !== undefined && taken >= perCompany) {
+        notReturned.push(job.id);
+        continue;
+      }
       size += JSON.stringify(job).length;
-      if (kept.length < args.max_results && size <= JOBS_JSON_BUDGET) kept.push(job);
-      else notReturned.push(job.id);
+      if (kept.length < args.max_results && size <= JOBS_JSON_BUDGET) {
+        kept.push(job);
+        perBoard.set(key, taken + 1);
+      } else notReturned.push(job.id);
     }
     return {
       data: { jobs: kept, not_returned_ids: notReturned, excluded, boards: reports },
