@@ -52,10 +52,11 @@ import {
   type ContextProvider,
   type ContextProviderDeps,
   type InstalledModules,
+  type ManagedModules,
   type RuntimeBackend,
   type RuntimeHooks,
 } from '@jobwatch/core';
-import { budgetDefaults, installedModules } from '@jobwatch/mcp-modules';
+import { budgetDefaults, installedModules, managedModules } from '@jobwatch/mcp-modules';
 import { forgetLocation, formatViolations, roleOf, saveLocation, savedLocation, validateAdapter, type McpModule } from '@jobwatch/sdk';
 import { createApp, type AppDeps } from './app';
 import { toCompanyBoard, toSavedPlace } from './dashboard/api';
@@ -117,6 +118,8 @@ export interface StartOptions {
   sandboxSpawner?: SandboxSpawner;
   /** Default budgets per module id (`budgets.json` of mcp-modules). Tests that inject `installed` get none unless they pass some. */
   budgetDefaults?: BudgetDefaults;
+  /** Gateways enabled by the engine, with the modules each follows. Tests that inject `installed` get none unless they pass some. */
+  managed?: ManagedModules;
 }
 
 const listen = (server: HttpServer, port: number, host: string): Promise<void> =>
@@ -158,6 +161,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   // The installed modules, plus the adapters written on the dashboard (CUSTOM_ADAPTERS=on), which are rebuilt from the database at every
   // load and reload: `table` is the one object everything reads, so a created or changed adapter is seen without a restart.
   const table: Record<string, () => Promise<McpModule>> = { ...(options.installed ?? installedModules) };
+  const managed: ManagedModules = options.managed ?? (options.installed === undefined ? managedModules : {});
   const sandbox =
     options.sandboxSpawner ?? (config.customAdaptersSandbox === 'docker' ? dockerSpawner(config.customAdaptersImage) : processSpawner());
   /** Why an enabled custom adapter is not loaded, by handle: shown on the dashboard instead of stopping the router. */
@@ -191,7 +195,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   }
   const customIds = syncCustomAdapters();
 
-  const enabledFromConfig = await resolveEnabledModules(config);
+  const enabledFromConfig = await resolveEnabledModules(config, managed);
   const enabled = { ...enabledFromConfig, ids: [...enabledFromConfig.ids, ...customIds] };
   // Two passes: the ops tools need the limiter, breaker and runtime, which are built from the enabled adapters.
   const enabledOnly = await loadModules(enabled.ids, table);
@@ -441,7 +445,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
   const pinnedByEnv = config.adaptersFromEnv !== undefined || config.utilitiesFromEnv !== undefined;
   const reloadAdapters = async (): Promise<ReloadResult> => {
     // A list set by ADAPTERS or UTILITIES stays as the variable says; the other one is re-read from the file.
-    const wanted = await resolveEnabledModules(config);
+    const wanted = await resolveEnabledModules(config, managed);
     const result = await holder.reload([...wanted.ids, ...syncCustomAdapters()]);
     logger.info({ enabled: result.enabled, added: result.addedAdapters, removed: result.removedAdapters }, 'adapters_reloaded');
     return result;
@@ -477,6 +481,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     custom: { available: config.customAdapters, sandbox: config.customAdaptersSandbox, problems: () => customProblems },
     budgets,
     pinned: { adapters: isPinned(config, 'adapters'), utilities: isPinned(config, 'utilities') },
+    managed,
     runtime: () => runtime,
     sessionStates: () => sessionCache,
     settings: {
@@ -517,6 +522,12 @@ export async function start(options: StartOptions): Promise<RunningServer> {
             setAdapter: async (id, enabled) => {
               const load = (table as Readonly<Record<string, (() => Promise<McpModule>) | undefined>>)[id];
               if (load === undefined) throw new ChangeRefused(404, 'not_found', 'No such adapter or utility is installed.');
+              if (id in managed)
+                throw new ChangeRefused(
+                  409,
+                  'managed',
+                  `It is on while one of ${(managed[id] ?? []).join(', ')} is enabled, and cannot be set by hand.`,
+                );
               const group = roleOf(await load()) === 'utility' ? 'utilities' : 'adapters';
               if (isPinned(config, group))
                 throw new ChangeRefused(409, 'pinned', `${pinVariable(group)} sets the enabled list; unset it to change it from here.`);

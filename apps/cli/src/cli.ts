@@ -13,7 +13,7 @@ import {
 } from '@jobwatch/core';
 import { describeInstalledAdapters, describeInstalledUtilities, type ModuleEntry } from '@jobwatch/mcp-modules';
 import { buildCatalog, type CatalogEntry, type ModuleRole } from '@jobwatch/sdk';
-import type { DockerRunner, InstalledAdapters, InstalledModules, InstalledUtilities } from '@jobwatch/core';
+import type { DockerRunner, InstalledAdapters, InstalledModules, InstalledUtilities, ManagedModules } from '@jobwatch/core';
 import { clearData } from './clearData';
 import { dashboard } from './dashboard';
 import { doctor } from './doctor';
@@ -32,6 +32,8 @@ export interface Deps {
   /** The installed adapters (modules that fetch jobs) and utilities (helper modules), listed apart. */
   adapters: InstalledAdapters;
   utilities: InstalledUtilities;
+  /** Gateways the engine enables by itself (`managedModules`): listed as enabled while one of their modules is, never toggled by hand. */
+  managed?: ManagedModules;
   version: string;
   /** Runs `docker <args>`; commands that need the daemon (login, doctor) fail cleanly without it. */
   docker?: DockerRunner;
@@ -154,7 +156,7 @@ async function list(deps: Deps, args: string[], role: ModuleRole): Promise<numbe
   }
   const kit = kitOf(deps, role);
   const settings = loadStorageSettings(deps.env);
-  const enabled = await resolveEnabledModules(settings);
+  const enabled = await resolveEnabledModules(settings, deps.managed);
   const all = await kit.describe();
   const entries = positionals.length === 0 ? all : all.filter((entry) => positionals.includes(entry.id));
   const strays = enabled[GROUP[role]].filter((id) => !(id in kit.map));
@@ -271,7 +273,7 @@ async function toggle(deps: Deps, args: string[], enable: boolean, role: ModuleR
   const settings = loadStorageSettings(deps.env);
   const before = (await readEnabledFile(settings.dataDir)) ?? { adapters: [], utilities: [] };
   const group = GROUP[role];
-  const { ids, changed } = await setModulesEnabled(settings, checked.ids.sort(), positionals, enable, group);
+  const { ids, changed } = await setModulesEnabled(settings, checked.ids.sort(), positionals, enable, group, deps.managed);
   const unchanged = [...new Set(positionals)].filter((id) => !changed.includes(id));
   if (changed.length > 0) deps.io.out(`${enable ? 'Enabled' : 'Disabled'}: ${changed.join(', ')}\n`);
   if (unchanged.length > 0) deps.io.out(`Already ${enable ? 'enabled' : 'disabled'}: ${unchanged.join(', ')}\n`);

@@ -270,3 +270,22 @@ describe('type-level guarantees (checked by `tsc`, not at runtime)', () => {
     });
   });
 });
+
+describe('validateAdapter: gateways', () => {
+  const gateway: AdapterModule = { ...httpAdapter, allowedHosts: [], delegates: { to: ['other'] } };
+
+  it('accepts a module that delegates and reaches no host itself', () => {
+    expect(validateAdapter(gateway)).toEqual([]);
+  });
+
+  it('refuses a module with no host that does not delegate', () => {
+    expect(rules({ ...httpAdapter, allowedHosts: [] })).toContain('hosts');
+  });
+
+  it('refuses a gateway with hosts of its own, an empty or self-referencing target list, and a browser gateway', () => {
+    expect(rules({ ...gateway, allowedHosts: ['api.example.com'] })).toContain('delegates');
+    expect(rules({ ...gateway, delegates: { to: [] } })).toContain('delegates');
+    expect(rules({ ...gateway, delegates: { to: [httpAdapter.id] } })).toContain('delegates');
+    expect(rules({ ...browserAdapter, allowedHosts: [], delegates: { to: ['other'] } })).toContain('delegates');
+  });
+});

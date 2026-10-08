@@ -27,6 +27,20 @@ const fileSchema = z
   .refine((value) => new Set(value.enabled).size === value.enabled.length, { message: 'enabled lists an adapter twice' })
   .refine((value) => new Set(value.utilities).size === value.utilities.length, { message: 'utilities lists a utility twice' });
 
+/**
+ * Gateway modules the engine enables by itself: the gateway's id to the ids of the modules it reads through. A gateway is on while
+ * at least one of them is, and is never written to `adapters.json` nor toggled by hand. The map is data kept next to the installed
+ * lists (`managedModules` in `@jobwatch/mcp-modules`), because core cannot load a module just to read what it delegates to.
+ */
+export type ManagedModules = Readonly<Record<string, readonly string[]>>;
+
+/** The gateways that follow the enabled list: those with at least one of their modules enabled. */
+export const activeManaged = (managed: ManagedModules, enabled: readonly string[]): string[] =>
+  Object.entries(managed)
+    .filter(([, follows]) => follows.some((id) => enabled.includes(id)))
+    .map(([id]) => id)
+    .sort();
+
 export type EnabledSource = 'env' | 'file' | 'default';
 
 export interface EnabledModules {
@@ -67,13 +81,15 @@ export async function readEnabledFile(dataDir: string): Promise<EnabledLists | u
 type EnvLists = Pick<Config, 'adaptersFromEnv' | 'dataDir'> & Partial<Pick<Config, 'utilitiesFromEnv'>>;
 
 /** Resolve the effective lists: ADAPTERS and UTILITIES win over the file, the file over the empty default. */
-export async function resolveEnabledModules(config: EnvLists): Promise<EnabledModules> {
+export async function resolveEnabledModules(config: EnvLists, managed: ManagedModules = {}): Promise<EnabledModules> {
   const fromFile =
     config.adaptersFromEnv !== undefined && config.utilitiesFromEnv !== undefined ? undefined : await readEnabledFile(config.dataDir);
-  const adapters = config.adaptersFromEnv !== undefined ? [...config.adaptersFromEnv] : (fromFile?.adapters ?? []);
+  const chosen = config.adaptersFromEnv !== undefined ? [...config.adaptersFromEnv] : (fromFile?.adapters ?? []);
   const utilities = config.utilitiesFromEnv !== undefined ? [...config.utilitiesFromEnv] : (fromFile?.utilities ?? []);
   const source: EnabledSource =
     config.adaptersFromEnv !== undefined || config.utilitiesFromEnv !== undefined ? 'env' : fromFile === undefined ? 'default' : 'file';
+  // a gateway is never chosen: it follows the modules it reads through
+  const adapters = [...chosen.filter((id) => !(id in managed)), ...activeManaged(managed, [...chosen, ...utilities])];
   return { ids: [...new Set([...adapters, ...utilities])], adapters, utilities, source };
 }
 
@@ -114,7 +130,16 @@ export async function setModulesEnabled(
   requested: readonly string[],
   enable: boolean,
   group: ModuleGroup = 'adapters',
+  managed: ManagedModules = {},
 ): Promise<ToggleResult> {
+  const followed = requested.filter((id) => id in managed);
+  if (followed.length > 0) {
+    throw new ConfigError(
+      followed.map(
+        (id) => `${id} is managed: it is on while one of ${(managed[id] ?? []).join(', ')} is enabled, and cannot be set by hand`,
+      ),
+    );
+  }
   if (isPinned(config, group)) {
     throw new ConfigError([
       `${pinVariable(group)} is set in the environment and overrides ${ADAPTERS_FILE}: unset it, or edit ${pinVariable(group)} instead`,

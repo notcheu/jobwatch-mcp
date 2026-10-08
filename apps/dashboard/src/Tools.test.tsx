@@ -20,6 +20,7 @@ const adapter = (over: Record<string, unknown> = {}) => ({
   kind: 'http',
   enabled: true,
   pinned: false,
+  managed: false,
   hosts: ['*.teamtailor.com'],
   tools: [{ name: 'teamtailor_jobs', title: 'Teamtailor jobs', costMax: 10, params: ['boards', 'title_any'] }],
   rateHour: { used: 4, limit: 600 },
@@ -153,6 +154,13 @@ describe('tools and status', () => {
     );
     expect(await toggleItem(user, screen.getByLabelText('ATS discovery'))).not.toHaveAttribute('aria-disabled'); // UTILITIES is not set
     expect(screen.queryByText(/is set by ADAPTERS/)).not.toBeInTheDocument(); // nothing on the cards any more
+  });
+
+  it('locks enable / disable of a module the engine manages', async () => {
+    mockApi({ '/me': me, '/tools': tools(adapter({ managed: true }), utility()) });
+    renderApp('/settings?view=tools');
+    const user = userEvent.setup();
+    expect(await toggleItem(user, await screen.findByLabelText('Teamtailor'))).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('warns about UTILITIES the same way', async () => {

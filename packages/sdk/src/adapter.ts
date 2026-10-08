@@ -45,6 +45,13 @@ export interface ModuleBase {
   keyRate?: RatePolicy;
   /** Pause `ctx.pace()` waits. Omit for the engine default (browser: 2500 to 5000 ms, http: none; HTTP is paced per host by the client). */
   pacing?: Pacing;
+  /**
+   * Makes this module a gateway: it fetches nothing itself (`allowedHosts` empty) and reads through the tools of the modules in `to`,
+   * with `ctx.callTool`. Each delegated call goes through the engine like any client call, so the budget is charged to the module
+   * that owns the tool, never to the gateway. A gateway is enabled by the engine while one of `to` is (`managedModules` in
+   * `@jobwatch/mcp-modules`), and an operator cannot enable or disable it by hand.
+   */
+  delegates?: { to: readonly string[] };
 }
 
 /** An adapter that needs the leased, single-tab Chrome of its platform. */

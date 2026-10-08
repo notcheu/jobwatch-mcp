@@ -222,6 +222,14 @@ export interface BaseContext {
    * automatically; do not report those. The count is what a failed call is charged, so report BEFORE the request can fail.
    */
   spend(units?: number): void;
+  /**
+   * Call the tool of another module and get its output, validated by that tool's own schema. Only a module that declares `delegates`
+   * has it, and only for tools of the modules in `delegates.to` that are enabled. The call is a full tool call: arguments checked,
+   * budget of the OWNING module charged (platform and boards), timeout, output size cap. Throws a `JobwatchError` with the tool's
+   * error code when the call fails (`rate_limited`, `invalid_arguments`...), and `invalid_arguments` for a tool that is not reachable.
+   * A delegated tool cannot delegate again.
+   */
+  callTool?(name: string, args: unknown): Promise<unknown>;
 }
 
 /** Context of a `kind: "http"` adapter: no browser, no container. */
