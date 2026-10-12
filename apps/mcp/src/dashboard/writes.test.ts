@@ -297,6 +297,22 @@ describe('custom adapters', () => {
     script: 'async function read() { return { postings: [] }; }',
   };
 
+  it('takes a script longer than the 4 kB of the other changes, up to the 60 000 characters it is allowed', async () => {
+    const t = await setup();
+    const script = `async function read() {\n${'  // a long comment that makes the script long\n'.repeat(1200)}  return { postings: [] };\n}`;
+    expect(script.length).toBeGreaterThan(50_000);
+    const created = await t.send('POST', '/custom-adapters', { ...body, script });
+    expect(created.status).toBe(201);
+    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith({ ...body, script }, 'create', 'me@example.com');
+  });
+
+  it('still keeps the other changes to a few kilobytes', async () => {
+    const t = await setup();
+    const answer = await t.send('PUT', '/adapters/apec', { enabled: true, filler: 'x'.repeat(5000) });
+    expect(answer.status).not.toBe(200);
+    expect(t.changes.setAdapter).not.toHaveBeenCalled();
+  });
+
   it('creates one, replaces one by its handle, and says who did it without putting the script in the log', async () => {
     const t = await setup();
     const created = await t.send('POST', '/custom-adapters', body);

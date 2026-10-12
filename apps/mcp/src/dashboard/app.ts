@@ -380,6 +380,8 @@ export function createDashboardApp(deps: DashboardDeps): Express {
 
   app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
     if (error instanceof ZodError) return sendError(res, 400, 'invalid_request', 'The query is not valid.');
+    if ((error as { type?: unknown } | null)?.type === 'entity.too.large')
+      return sendError(res, 413, 'too_large', 'The request is too large.');
     deps.logger.error({ err: error, path: req.path }, 'dashboard_request_failed');
     sendError(res, 500, 'internal', 'Something went wrong.');
   });
