@@ -12,6 +12,7 @@ import {
   USAGE_RETENTION_MS,
   type CallRecord,
   type NewJobRow,
+  searchSlug,
 } from './store';
 
 let dir: string;
@@ -1347,5 +1348,31 @@ describe('searches as keyword lists', () => {
         await rm(dir, { recursive: true, force: true });
       }
     });
+  });
+});
+
+describe('searchSlug', () => {
+  it('is the same for the same search, whatever the case, the order or the spacing of its terms', () => {
+    const slug = searchSlug('linkedin', null, ['React', 'Vue'], ['Intern']);
+    expect(searchSlug('linkedin', null, ['vue', ' react '], ['intern'])).toBe(slug);
+    expect(slug).toMatch(/^linkedin-react-vue-without-intern-[0-9a-f]{8}$/);
+  });
+
+  it('differs when the source, the board, the keywords or the disallowed terms differ', () => {
+    const slugs = [
+      searchSlug('ashby', 'doctolib', ['react'], []),
+      searchSlug('ashby', 'pennylane', ['react'], []),
+      searchSlug('lever', 'doctolib', ['react'], []),
+      searchSlug('ashby', 'doctolib', ['react', 'vue'], []),
+      searchSlug('ashby', 'doctolib', ['react'], ['senior']),
+      searchSlug('ashby', 'doctolib', [], []),
+    ];
+    expect(new Set(slugs).size).toBe(slugs.length);
+  });
+
+  it('stays short and URL-safe for a very long or unusual search', () => {
+    const slug = searchSlug('wttj', 'Société Générale', ['développeur très long '.repeat(10)], ['a/b?c=d&e'.repeat(10)]);
+    expect(slug).toMatch(/^[a-z0-9-]+$/);
+    expect(slug.length).toBeLessThanOrEqual(70);
   });
 });

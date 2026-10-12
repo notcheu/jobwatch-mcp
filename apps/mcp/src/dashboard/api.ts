@@ -18,6 +18,7 @@ import {
   overviewSchema,
   searchDetailSchema,
   searchesSchema,
+  searchOptionsSchema,
   settingsSchema,
   toolsSchema,
   usageSchemaResponse,
@@ -39,6 +40,7 @@ import {
   type Overview,
   type SearchDetailInfo,
   type Searches,
+  type SearchOptions,
   type Settings,
   type Tools,
   type Usage,
@@ -64,6 +66,7 @@ import {
   type RateLimiter,
   type StoredSalary,
   type Registry,
+  searchSlug,
   type ManagedModules,
   type RuntimeManager,
   type JobSearch,
@@ -189,22 +192,6 @@ export function getCall(data: DashboardData, id: number): CallDetail | undefined
 const listOf = (value: string | string[] | undefined): string[] =>
   (typeof value === 'string' ? [value] : (value ?? [])).filter((entry) => entry !== '');
 
-/**
- * The search a jobs query asks for, or undefined when it does not filter by search. An empty keyword list (`no_keywords=1`) is the
- * searches with no keyword. Disallowed terms narrow it to one exact search; without them it is any search with these keywords.
- */
-function searchFilter(q: {
-  found_by?: string | string[] | undefined;
-  no_keywords?: '1' | undefined;
-  disallowed?: string | string[] | undefined;
-  no_disallowed?: '1' | undefined;
-}): { keywords: string[]; disallowed?: string[] } | undefined {
-  const keywords = q.no_keywords === '1' ? [] : listOf(q.found_by);
-  if (q.no_keywords !== '1' && keywords.length === 0) return undefined;
-  const disallowed = q.no_disallowed === '1' ? [] : listOf(q.disallowed);
-  return q.no_disallowed === '1' || disallowed.length > 0 ? { keywords, disallowed } : { keywords };
-}
-
 const jobsQuery = z.object({
   q: z.string().trim().max(120).optional(),
   source: z
@@ -213,13 +200,12 @@ const jobsQuery = z.object({
     .regex(/^[a-z][a-z0-9-]*$/)
     .optional(),
   board: z.string().max(120).optional(),
-  /** Repeated: one entry per keyword of the search (`found_by=react&found_by=vue`). */
-  found_by: z.union([z.string().trim().max(100), z.array(z.string().trim().max(100)).max(20)]).optional(),
-  /** The searches that had no keyword (a whole company board, the WTTJ matches). */
-  no_keywords: z.enum(['1']).optional(),
-  /** With found_by: only the search that also had exactly these disallowed terms (repeated, one per term); `no_disallowed=1` for a search with none. */
-  disallowed: z.union([z.string().trim().max(100), z.array(z.string().trim().max(100)).max(60)]).optional(),
-  no_disallowed: z.enum(['1']).optional(),
+  /** The slug of one search (`SearchRow.slug`): only the jobs that search listed. */
+  search: z
+    .string()
+    .max(120)
+    .regex(/^[a-z0-9-]+$/)
+    .optional(),
   from: z.string().max(32).optional(),
   to: z.string().max(32).optional(),
   dateField: z.enum(['first_seen', 'last_seen', 'fetched_at']).default('first_seen'),
@@ -246,14 +232,19 @@ export function listJobs(data: DashboardData, query: unknown): JobsPage {
   const q = jobsQuery.parse(query);
   const since = parseDate('from', q.from, 0);
   const until = parseDate('to', q.to, data.clock() + DAY_MS);
+  // a slug names a search of one source: the jobs are that search's, whatever source the page asked for. One nobody ran lists nothing.
+  const named = q.search === undefined ? undefined : data.store.searchBySlug(q.search);
+  if (q.search !== undefined && named === null) {
+    return checked(jobsPageSchema, { jobs: [], total: 0, page: q.page, pageSize: q.pageSize });
+  }
   const { rows, total } = data.store.listJobs({
     field: q.dateField,
     since,
     until,
-    sources: q.source === undefined ? [] : [q.source],
+    sources: named ? [named.platform] : q.source === undefined ? [] : [q.source],
     boards: q.board === undefined || q.board === '' ? [] : [q.board],
     ...(q.q === undefined || q.q === '' ? {} : { q: q.q }),
-    ...(searchFilter(q) === undefined ? {} : { search: searchFilter(q) as NonNullable<ReturnType<typeof searchFilter>> }),
+    ...(named ? { search: { keywords: named.keywords, disallowed: named.disallowed, board: named.board } } : {}),
     ...(q.sort === undefined ? {} : { sort: q.sort }),
     dir: q.dir,
     offset: (q.page - 1) * q.pageSize,
@@ -319,6 +310,14 @@ export function getJob(data: DashboardData, source: string, id: string): JobDeta
 
 // ------------------------------------------------------------------------------------------------------- searches
 
+const searchOptionsQuery = z.object({
+  source: z
+    .string()
+    .max(32)
+    .regex(/^[a-z][a-z0-9-]*$/)
+    .optional(),
+});
+
 const searchesQuery = z.object({
   since: z.string().max(32).optional(),
   until: z.string().max(32).optional(),
@@ -339,6 +338,7 @@ const searchDetailQuery = z.object({
 });
 
 const toSearchRow = (stat: SearchStat) => ({
+  slug: searchSlug(stat.platform, stat.board, stat.keywords, stat.disallowed),
   source: stat.platform,
   board: stat.board,
   keywords: stat.keywords,
@@ -368,6 +368,22 @@ export function listSearches(data: DashboardData, query: unknown): Searches {
   const since = parseDate('since', q.since, until - 7 * DAY_MS);
   const rows = data.store.searchStats({ since, until, ...(q.source === undefined ? {} : { platform: q.source }), limit: 200 });
   return checked(searchesSchema, { searches: rows.map(toSearchRow) });
+}
+
+/** Every search that ever ran, newest first, for the Search filter of the jobs list. */
+export function listSearchOptions(data: DashboardData, query: unknown): SearchOptions {
+  const q = searchOptionsQuery.parse(query);
+  return checked(searchOptionsSchema, {
+    searches: data.store.searchList(q.source).map((search) => ({
+      slug: search.slug,
+      source: search.platform,
+      board: search.board,
+      keywords: search.keywords,
+      disallowed: search.disallowed,
+      runs: search.runs,
+      lastRun: iso(search.lastRun),
+    })),
+  });
 }
 
 /** The most jobs a search detail lists; the counts are exact whatever is listed. */
@@ -552,18 +568,21 @@ export async function getTools(data: DashboardData): Promise<Tools> {
     const catalog = buildCatalog(module);
     const isOn = enabled.has(entry.id);
     const platform = entry.summary.platform;
-    const rate = isOn ? data.limiter.status(platform) : undefined;
+    const managed = entry.id in (data.managed ?? {});
+    // a managed gateway has no budget of its own: its usage is the usage of the adapters it calls
+    const rate = isOn && !managed ? data.limiter.status(platform) : undefined;
     const open = isOn ? data.breaker.state(platform) : undefined;
-    const boards = isOn
-      ? data.store
-          .usageKeys(platform, now - DAY_MS)
-          .map((board) => {
-            const status = data.limiter.status(`${platform}#${board}`);
-            return { board, rateHour: status.hour, rateDay: status.day };
-          })
-          .sort((a, b) => b.rateDay.used - a.rateDay.used || a.board.localeCompare(b.board))
-          .slice(0, 25)
-      : [];
+    const boards =
+      isOn && !managed
+        ? data.store
+            .usageKeys(platform, now - DAY_MS)
+            .map((board) => {
+              const status = data.limiter.status(`${platform}#${board}`);
+              return { board, rateHour: status.hour, rateDay: status.day };
+            })
+            .sort((a, b) => b.rateDay.used - a.rateDay.used || a.board.localeCompare(b.board))
+            .slice(0, 25)
+        : [];
     adapters.push({
       id: entry.id,
       displayName: entry.summary.displayName,
@@ -572,7 +591,7 @@ export async function getTools(data: DashboardData): Promise<Tools> {
       kind: entry.summary.kind,
       enabled: isOn,
       pinned: entry.summary.role === 'utility' ? data.pinned.utilities : data.pinned.adapters,
-      managed: entry.id in (data.managed ?? {}),
+      managed,
       hosts: [...entry.summary.allowedHosts],
       tools: catalog.map((tool) => ({
         name: tool.name,

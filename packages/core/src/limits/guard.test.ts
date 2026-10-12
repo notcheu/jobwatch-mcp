@@ -122,6 +122,13 @@ describe('rate limiting around calls', () => {
     expect(handlerRuns.count).toBe(3);
   });
 
+  it('lets a gateway through with no budget and no usage of its own', async () => {
+    const gate: AdapterModule = { ...adapterOf('gate', 'gate', { perHour: 1, perDay: 1 }), allowedHosts: [], delegates: { to: ['alpha'] } };
+    const { deps, limiter } = await setup([gate]);
+    for (let i = 0; i < 5; i += 1) expect(await code(deps, 'gate_run')).toBe('ok');
+    expect(limiter.status('gate').hour.used).toBe(0);
+  });
+
   it('takes the tool cost from the platform budget', async () => {
     const { deps, limiter } = await setup([adapterOf('alpha', 'alpha', { perHour: 10, perDay: 100 }, 4)]);
     await code(deps, 'alpha_run');

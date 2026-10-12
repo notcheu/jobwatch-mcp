@@ -47,25 +47,9 @@ export function formatSalary(salary: { min: number; max: number; currency: strin
   return salary.variable === null ? fixed : `${fixed} + ${money(salary.variable)} variable`;
 }
 
-/**
- * The jobs a search listed: `/jobs` filtered by the keywords of the search (or by "no keyword") and by its disallowed terms (or by
- * "no term"), so the list is that search and no other, plus its source.
- */
-export function jobsOfSearch(
-  source: string,
-  keywords: readonly string[],
-  disallowed: readonly string[],
-  board?: string | null,
-): { pathname: string; search: string } {
-  const params = new URLSearchParams();
-  // the jobs of a search on a company board are that board's: the board of a job is the board of the search that found it
-  if (board !== undefined && board !== null) params.set('board', board);
-  if (keywords.length === 0) params.set('no_keywords', '1');
-  for (const keyword of keywords) params.append('found_by', keyword);
-  if (disallowed.length === 0) params.set('no_disallowed', '1');
-  for (const term of disallowed) params.append('disallowed', term);
-  params.set('tool', source);
-  return { pathname: '/jobs', search: `?${params.toString()}` };
+/** The jobs one search found: `/jobs` with that search chosen in its Search select (by slug) and its source's tab. */
+export function jobsOfSearch(source: string, slug: string): { pathname: string; search: string } {
+  return { pathname: '/jobs', search: `?${new URLSearchParams({ search: slug, tool: source }).toString()}` };
 }
 
 /** The detail of a search (its health and its jobs), opened over the Searches page. `days` keeps the window the list was showing; `board` is the company board of a search on an ATS. */

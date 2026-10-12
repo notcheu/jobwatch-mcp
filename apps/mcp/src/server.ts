@@ -552,6 +552,8 @@ export async function start(options: StartOptions): Promise<RunningServer> {
               }
             },
             setBudget: async (id, change) => {
+              if (id in managed)
+                throw new ChangeRefused(409, 'managed', 'It has no budget: what it reads is charged to the adapters it calls.');
               const load = (table as Readonly<Record<string, (() => Promise<McpModule>) | undefined>>)[id];
               if (load === undefined) throw new ChangeRefused(404, 'not_found', 'No such adapter or utility is installed.');
               try {
@@ -562,6 +564,7 @@ export async function start(options: StartOptions): Promise<RunningServer> {
               }
             },
             clearData: async (id) => {
+              if (id in managed) throw new ChangeRefused(409, 'managed', 'It stores nothing itself: clear the adapters it reads through.');
               const { jobs, searches } = await clearAdapterData(id);
               return { jobs, searches };
             },

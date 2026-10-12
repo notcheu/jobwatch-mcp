@@ -34,7 +34,25 @@ const detail = (over: Record<string, unknown> = {}) => ({
 });
 
 const page = (jobs: unknown[], total = jobs.length) => ({ jobs, total, page: 1, pageSize: 25 });
-const common = { '/me': me, '/tools': tools };
+const option = (over: Record<string, unknown> = {}) => ({
+  slug: 'linkedin-react-1a2b3c4d',
+  source: 'linkedin',
+  board: null,
+  keywords: ['react'],
+  disallowed: [],
+  runs: 3,
+  lastRun: NOW,
+  ...over,
+});
+const searchesRan = {
+  searches: [
+    option(),
+    option({ slug: 'linkedin-react-vue-without-intern-5e6f7a8b', keywords: ['react', 'vue'], disallowed: ['intern'] }),
+    option({ slug: 'ashby-doctolib-react-9c0d1e2f', source: 'ashby', board: 'doctolib' }),
+    option({ slug: 'wttj-any-3a4b5c6d', source: 'wttj', keywords: [] }),
+  ],
+};
+const common = { '/me': me, '/tools': tools, '/search-options': searchesRan };
 const rowsLoaded = async (count: number) => {
   await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(count));
   return screen.getAllByRole('row');
@@ -80,20 +98,130 @@ describe('jobs table', () => {
 
   it('sends the filters of the URL to the server: tool tab, text, keyword, dates and page', async () => {
     const seen = mockApi({ ...common, '/jobs': page([job()], 80) });
-    renderApp('/jobs?tool=linkedin&q=react&found_by=react&from=2026-10-01&to=2026-10-09&page=2&pageSize=10&sort=title&dir=asc');
+    renderApp('/jobs?tool=linkedin&q=react&search=linkedin-react-1a2b3c4d&seen=week&page=2&pageSize=10&sort=title&dir=asc');
     await rowsLoaded(2);
     const call = seen.find((url) => url.startsWith('/dashboard/api/v1/jobs?')) ?? '';
     const query = new URLSearchParams(call.split('?')[1]);
     expect(Object.fromEntries(query)).toMatchObject({
       source: 'linkedin',
       q: 'react',
-      found_by: 'react',
-      from: '2026-10-01',
-      to: '2026-10-09',
+      search: 'linkedin-react-1a2b3c4d',
+      dateField: 'last_seen',
       page: '2',
       pageSize: '10',
       sort: 'title',
       dir: 'asc',
+    });
+  });
+
+  it('has a Search select listing every search that ran, each by its keywords, terms, board and source', async () => {
+    mockApi({ ...common, '/jobs': page([job()], 1) });
+    renderApp('/jobs');
+    await rowsLoaded(2);
+    const select = screen.getByRole('combobox', { name: 'Search' });
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((entry) => entry.textContent),
+    ).toEqual(['Search: all', 'linkedin: react', 'linkedin: react, vue · without intern', 'ashby · doctolib: react', 'wttj: no keywords']);
+  });
+
+  it('lists only the searches of the source tab, without repeating the source, from one request for all of them', async () => {
+    const seen = mockApi({ ...common, '/jobs': page([job()], 1) });
+    renderApp('/jobs?tool=ashby');
+    await rowsLoaded(2);
+    const select = screen.getByRole('combobox', { name: 'Search' });
+    await waitFor(() =>
+      expect(
+        within(select)
+          .getAllByRole('option')
+          .map((entry) => entry.textContent),
+      ).toEqual(['Search: all', 'doctolib: react']),
+    );
+    expect(seen.filter((url) => url.startsWith('/dashboard/api/v1/search-options')).every((url) => !url.includes('source='))).toBe(true);
+  });
+
+  it('filters the jobs by the slug of the chosen search, and clears it with "all"', async () => {
+    const seen = mockApi({ ...common, '/jobs': page([job()], 1) });
+    renderApp('/jobs?tool=linkedin');
+    await rowsLoaded(2);
+    const user = userEvent.setup();
+    const lastQuery = () =>
+      new URLSearchParams((seen.filter((url) => url.startsWith('/dashboard/api/v1/jobs?')).at(-1) ?? '').split('?')[1]);
+    expect(lastQuery().has('search')).toBe(false);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Search' }), 'linkedin-react-vue-without-intern-5e6f7a8b');
+    await waitFor(() => expect(lastQuery().get('search')).toBe('linkedin-react-vue-without-intern-5e6f7a8b'));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Search' }), '');
+    await waitFor(() => expect(lastQuery().has('search')).toBe(false));
+  });
+
+  it('shows the search a link points at as chosen, and an unknown slug as such', async () => {
+    mockApi({ ...common, '/jobs': page([job()], 1) });
+    renderApp('/jobs?tool=ashby&search=ashby-doctolib-react-9c0d1e2f');
+    await rowsLoaded(2);
+    expect(screen.getByRole('combobox', { name: 'Search' })).toHaveValue('ashby-doctolib-react-9c0d1e2f');
+  });
+
+  it('keeps an unknown slug in the select instead of silently showing everything', async () => {
+    mockApi({ ...common, '/jobs': page([], 0) });
+    renderApp('/jobs?search=gone-00000000');
+    const select = await screen.findByRole('combobox', { name: 'Search' });
+    await waitFor(() => expect(select).toHaveValue('gone-00000000'));
+    expect(within(select).getByRole('option', { name: 'Unknown search' })).toBeInTheDocument();
+  });
+
+  describe('switching the source tab', () => {
+    const slug = 'linkedin-react-1a2b3c4d';
+    const tab = async (user: ReturnType<typeof userEvent.setup>, name: string) =>
+      user.click(within(await screen.findByRole('tablist', { name: 'Tool' })).getByRole('tab', { name }));
+
+    it('keeps the chosen search on All and on the tab of its own source, with no flash of "Unknown search"', async () => {
+      const seen = mockApi({ ...common, '/jobs': page([job()], 1) });
+      renderApp(`/jobs?search=${slug}`);
+      await rowsLoaded(2);
+      const user = userEvent.setup();
+      const select = () => screen.getByRole('combobox', { name: 'Search' });
+      await waitFor(() => expect(select()).toHaveValue(slug));
+      await tab(user, 'linkedin');
+      expect(select()).toHaveValue(slug); // at once: nothing is refetched for a tab
+      expect(within(select()).queryByRole('option', { name: 'Unknown search' })).not.toBeInTheDocument();
+      await tab(user, 'All');
+      expect(select()).toHaveValue(slug);
+      expect(seen.filter((url) => url.startsWith('/dashboard/api/v1/search-options'))).toHaveLength(1);
+    });
+
+    it('drops the search on the tab of another source, where it cannot apply', async () => {
+      const seen = mockApi({ ...common, '/jobs': page([job()], 1) });
+      renderApp(`/jobs?search=${slug}`);
+      await rowsLoaded(2);
+      const user = userEvent.setup();
+      await waitFor(() => expect(screen.getByRole('combobox', { name: 'Search' })).toHaveValue(slug));
+      await tab(user, 'apec');
+      await waitFor(() => expect(screen.getByRole('combobox', { name: 'Search' })).toHaveValue(''));
+      const last = new URLSearchParams((seen.filter((url) => url.startsWith('/dashboard/api/v1/jobs?')).at(-1) ?? '').split('?')[1]);
+      expect(last.get('source')).toBe('apec');
+      expect(last.has('search')).toBe(false); // the jobs are the apec tab's, not the linkedin search's
+    });
+  });
+
+  it('filters by when the job was last seen with one select, all time by default', async () => {
+    const seen = mockApi({ ...common, '/jobs': page([job()], 1) });
+    renderApp('/jobs?tool=linkedin');
+    await rowsLoaded(1);
+    const first = new URLSearchParams((seen.find((url) => url.startsWith('/dashboard/api/v1/jobs?')) ?? '').split('?')[1]);
+    expect(first.has('from')).toBe(false);
+    expect(first.has('to')).toBe(false);
+    const select = screen.getByRole('combobox', { name: 'Last seen' });
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Last seen: all time', 'Last seen: last 24 hours', 'Last seen: last week', 'Last seen: last month']);
+    await userEvent.setup().selectOptions(select, 'month');
+    await waitFor(() => {
+      const last = new URLSearchParams((seen.filter((url) => url.startsWith('/dashboard/api/v1/jobs?')).at(-1) ?? '').split('?')[1]);
+      expect(last.get('dateField')).toBe('last_seen');
+      expect(Date.parse(last.get('from') ?? '')).toBeLessThan(Date.now() - 29 * 86_400_000);
     });
   });
 
@@ -234,6 +362,27 @@ describe('searches', () => {
       searchRow({ keywords: ['react', 'vue', 'svelte'], runs: 1 }),
     ],
   };
+  it('lists the searches that ran most recently first', async () => {
+    const day = (n: number) => new Date(Date.parse(NOW) - n * 86_400_000).toISOString();
+    mockApi({
+      ...common,
+      '/searches': {
+        searches: [
+          searchRow({ keywords: ['old'], lastRun: day(5) }),
+          searchRow({ keywords: ['newest'], lastRun: day(0) }),
+          searchRow({ keywords: ['middle'], lastRun: day(2) }),
+        ],
+      },
+    });
+    renderApp('/searches');
+    await screen.findByText('newest');
+    const order = screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => ['newest', 'middle', 'old'].find((word) => row.textContent?.includes(word)));
+    expect(order).toEqual(['newest', 'middle', 'old']);
+  });
+
   const searchDetail = (over: Record<string, unknown> = {}) => ({
     ...searchRow(),
     jobs: [
@@ -339,7 +488,13 @@ describe('searches', () => {
       const seen = mockApi({
         ...common,
         '/searches': ats,
-        '/searches/ashby': (url: URL) => searchDetail({ source: 'ashby', board: url.searchParams.get('board'), keywords: ['react'] }),
+        '/searches/ashby': (url: URL) =>
+          searchDetail({
+            slug: 'ashby-doctolib-react-9c0d1e2f',
+            source: 'ashby',
+            board: url.searchParams.get('board'),
+            keywords: ['react'],
+          }),
       });
       renderApp('/searches');
       await user.click(at(await rowsLoaded(4), 2));
@@ -351,8 +506,7 @@ describe('searches', () => {
       const link = within(panel).getByRole('link', { name: /See all the jobs this search found/ });
       const href = new URL(link.getAttribute('href') ?? '', 'http://x');
       expect(href.pathname).toBe('/jobs');
-      expect(href.searchParams.get('board')).toBe('doctolib');
-      expect(href.searchParams.getAll('found_by')).toEqual(['react']);
+      expect(href.searchParams.get('search')).toBe('ashby-doctolib-react-9c0d1e2f');
       expect(href.searchParams.get('tool')).toBe('ashby');
     });
 
@@ -436,16 +590,20 @@ describe('searches', () => {
     const link = await screen.findByRole('link', { name: /See all the jobs this search found/ });
     const href = new URL(link.getAttribute('href') ?? '', 'http://x');
     expect(href.pathname).toBe('/jobs');
-    expect(href.searchParams.getAll('found_by')).toEqual(['react', 'vue']);
-    expect(href.searchParams.get('no_disallowed')).toBe('1'); // exactly this search: it had no disallowed terms
+    expect(href.searchParams.get('search')).toBe('linkedin-react-engineer-1a2b3c4d'); // the slug names exactly this search
+    expect(href.searchParams.has('found_by')).toBe(false);
     expect(href.searchParams.get('tool')).toBe('linkedin');
   });
 
-  it('links a search without keywords to the jobs found by no keyword', async () => {
-    mockApi({ ...common, '/searches': searches, '/searches/wttj': searchDetail({ source: 'wttj', keywords: [] }) });
+  it('links a search without keywords to its jobs by its slug too', async () => {
+    mockApi({
+      ...common,
+      '/searches': searches,
+      '/searches/wttj': searchDetail({ slug: 'wttj-any-3a4b5c6d', source: 'wttj', keywords: [] }),
+    });
     renderApp('/searches/wttj?days=7');
     const link = await screen.findByRole('link', { name: /See all the jobs this search found/ });
-    expect(new URL(link.getAttribute('href') ?? '', 'http://x').searchParams.get('no_keywords')).toBe('1');
+    expect(new URL(link.getAttribute('href') ?? '', 'http://x').searchParams.get('search')).toBe('wttj-any-3a4b5c6d');
   });
 
   it('explains a search in bad health, and lists the discarded jobs as such', async () => {
@@ -474,7 +632,7 @@ describe('searches', () => {
     expect(seen.some((url) => url.startsWith('/dashboard/api/v1/searches') && url.includes('source=wttj'))).toBe(true);
   });
 
-  it('links the search with its disallowed terms to exactly the jobs it found', async () => {
+  it('links the search to its jobs by slug, whatever its keywords and terms', async () => {
     mockApi({
       ...common,
       '/searches': searches,
@@ -483,8 +641,8 @@ describe('searches', () => {
     renderApp('/searches/linkedin?k=react&d=intern&d=senior&days=7');
     const link = await screen.findByRole('link', { name: /See all the jobs this search found/ });
     const href = new URL(link.getAttribute('href') ?? '', 'http://x');
-    expect(href.searchParams.getAll('disallowed')).toEqual(['intern', 'senior']);
-    expect(href.searchParams.get('no_disallowed')).toBeNull();
+    expect(href.searchParams.get('search')).toBe('linkedin-react-engineer-1a2b3c4d');
+    expect(href.searchParams.has('disallowed')).toBe(false);
   });
 
   it('cuts a keyword that is too long inside its badge, and puts the searches that differ by terms on one line of the job table', async () => {

@@ -105,12 +105,8 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
               label: adapter.enabled ? 'Disable' : 'Enable',
               icon: <Power className="size-4" />,
               // ADAPTERS or UTILITIES sets the list: the page already says so at the top
-              disabled: adapter.pinned || adapter.managed || toggle.isPending,
-              hint: adapter.managed
-                ? 'On while an ATS adapter is enabled'
-                : adapter.pinned
-                  ? `Set by ${adapter.role === 'adapter' ? 'ADAPTERS' : 'UTILITIES'}`
-                  : undefined,
+              disabled: adapter.pinned || toggle.isPending,
+              hint: adapter.pinned ? `Set by ${adapter.role === 'adapter' ? 'ADAPTERS' : 'UTILITIES'}` : undefined,
               onSelect: () => toggle.mutate(!adapter.enabled),
             },
             { id: 'budget', label: 'Budget…', icon: <Gauge className="size-4" />, onSelect: () => setBudgetOpen(true) },
@@ -211,6 +207,28 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
   );
 }
 
+/** A gateway: on by itself while an adapter it reads through is. Nothing to configure, so no menu, no budget and no data to clear. */
+function AggregatedCard({ adapter }: { adapter: ToolState }) {
+  return (
+    <Card aria-label={adapter.displayName} className={cn(!adapter.enabled && 'opacity-80')}>
+      <CardHeader className="space-y-0">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <CardTitle className="mr-1 text-sm normal-case tracking-normal text-foreground">{adapter.displayName}</CardTitle>
+          <Badge variant="secondary">aggregated</Badge>
+          <Badge variant={adapter.enabled ? 'success' : 'outline'}>{adapter.enabled ? 'enabled' : 'disabled'}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2 text-xs text-muted-foreground">
+        <p>
+          Reads through the ATS adapters, so it has no budget and stores nothing of its own. It is enabled while one of them is, and
+          disabled when none is.
+        </p>
+        <p>Tools: {adapter.tools.map((tool) => tool.name).join(', ')}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function Tools() {
   const client = useQueryClient();
   const tools = useQuery({ queryKey: ['tools'], queryFn: api.tools, refetchInterval: 10_000 });
@@ -236,8 +254,9 @@ export function Tools() {
   });
 
   const adapters = tools.data?.adapters ?? [];
-  const on = adapters.filter((adapter) => adapter.role === 'adapter' && adapter.enabled);
-  const off = adapters.filter((adapter) => adapter.role === 'adapter' && !adapter.enabled);
+  const aggregated = adapters.filter((adapter) => adapter.managed);
+  const on = adapters.filter((adapter) => adapter.role === 'adapter' && !adapter.managed && adapter.enabled);
+  const off = adapters.filter((adapter) => adapter.role === 'adapter' && !adapter.managed && !adapter.enabled);
   const utilities = adapters.filter((adapter) => adapter.role === 'utility');
   const runtime = tools.data?.runtime;
   // ADAPTERS and UTILITIES each pin one list: say which, once, at the top, instead of on every card
@@ -345,6 +364,16 @@ export function Tools() {
           ))}
         </div>
       </section>
+      {aggregated.length > 0 && (
+        <section aria-label="Aggregated adapter" className="space-y-3">
+          <h2 className="text-sm font-semibold">Aggregated adapter ({aggregated.length})</h2>
+          <div className="grid gap-4 xl:grid-cols-2">
+            {aggregated.map((adapter) => (
+              <AggregatedCard key={adapter.id} adapter={adapter} />
+            ))}
+          </div>
+        </section>
+      )}
       <section aria-label="Utilities" className="space-y-3">
         <h2 className="text-sm font-semibold">Utilities ({utilities.length})</h2>
         <p className="text-xs text-muted-foreground">Helper tools that fetch no jobs. Each has its own budget.</p>

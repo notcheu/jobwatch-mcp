@@ -142,8 +142,12 @@ describe('describeInstalledUtilities and describeInstalledModules', () => {
 });
 
 describe('the default budgets', () => {
-  it('have an entry for every installed module and none for a module that is not installed', () => {
-    expect(Object.keys(budgetDefaults).sort()).toEqual(Object.keys(installedModules).sort());
+  it('have an entry for every installed module except the gateways (which have no budget) and none for a module that is not installed', () => {
+    expect(Object.keys(budgetDefaults).sort()).toEqual(
+      Object.keys(installedModules)
+        .filter((id) => !(id in managedModules))
+        .sort(),
+    );
   });
 
   it('are whole numbers from 0 to 1000000, hourly and daily', () => {
@@ -155,6 +159,7 @@ describe('the default budgets', () => {
 
   it('leave room for the most expensive call of every tool, so no default makes a tool unrunnable', async () => {
     for (const [id, load] of Object.entries(installedModules)) {
+      if (id in managedModules) continue;
       const budget = budgetDefaults[id];
       for (const tool of (await load()).tools) {
         expect(tool.limits.cost, `${id}/${tool.name} against hourly`).toBeLessThanOrEqual(budget?.hourly ?? 0);

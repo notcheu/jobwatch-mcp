@@ -26,6 +26,7 @@ import {
   restartSchema,
   searchDetailSchema,
   searchesSchema,
+  searchOptionsSchema,
   settingsSchema,
   toolsSchema,
   usageSchemaResponse,
@@ -52,6 +53,7 @@ import {
   type Restart,
   type SearchDetailInfo,
   type Searches,
+  type SearchOptions,
   type Settings,
   type Tools,
   type Usage,
@@ -132,6 +134,7 @@ export const api = {
     request(jobDetailSchema, `/jobs/${encodeURIComponent(source)}/${encodeURIComponent(id)}`),
   searches: (params: { since?: string; until?: string; source?: string }): Promise<Searches> =>
     request(searchesSchema, `/searches${query(params)}`),
+  searchOptions: (params: { source?: string }): Promise<SearchOptions> => request(searchOptionsSchema, `/search-options${query(params)}`),
   search: (
     source: string,
     params: { keywords: readonly string[]; disallowed: readonly string[]; board?: string; since?: string; until?: string },

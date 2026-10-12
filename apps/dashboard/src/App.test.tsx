@@ -197,6 +197,16 @@ describe('runs', () => {
     next: null,
   };
 
+  it('shows the date and the time of a call in the same cell, and no explanatory sentence above the table', async () => {
+    mockApi({ '/me': me, '/tools': tools, '/calls': calls });
+    renderApp('/runs');
+    await screen.findByText('apec_search');
+    const cell = screen.getAllByRole('row')[1]?.querySelector('td');
+    expect(cell?.textContent).toContain(new Date(NOW).toLocaleDateString());
+    expect(cell?.textContent).toContain(new Date(NOW).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    expect(screen.queryByText(/kept with their parameters/)).not.toBeInTheDocument();
+  });
+
   it('lists the calls with their outcome, units, size and estimated tokens', async () => {
     mockApi({ '/me': me, '/tools': tools, '/calls': calls });
     renderApp('/runs');

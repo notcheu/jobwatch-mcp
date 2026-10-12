@@ -86,6 +86,7 @@ export const tools = {
 
 /** One row of the Searches list: a search that is healthy unless the test says otherwise. */
 export const searchRow = (over: Record<string, unknown> = {}) => ({
+  slug: 'linkedin-react-engineer-1a2b3c4d',
   source: 'linkedin',
   board: null,
   keywords: ['react engineer'],

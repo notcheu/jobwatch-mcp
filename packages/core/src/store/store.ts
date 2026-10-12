@@ -915,14 +915,15 @@ export class Store {
       params.push(like, like, like);
     }
     if (filter.search !== undefined) {
-      const exactTerms = filter.search.disallowed !== undefined;
+      const { keywords, disallowed, board } = filter.search;
       where.push(
         `EXISTS (SELECT 1 FROM search_hits h JOIN search_runs r ON r.id = h.run_id WHERE h.job_id = jobs.id AND r.platform = jobs.platform AND r.keywords_key = ?${
-          exactTerms ? ' AND r.disallowed_key = ?' : ''
-        })`,
+          disallowed === undefined ? '' : ' AND r.disallowed_key = ?'
+        }${board === undefined ? '' : ' AND r.board = ?'})`,
       );
-      params.push(keywordsKey(normalizeKeywords(filter.search.keywords)));
-      if (filter.search.disallowed !== undefined) params.push(keywordsKey(normalizeTerms(filter.search.disallowed)));
+      params.push(keywordsKey(normalizeKeywords(keywords)));
+      if (disallowed !== undefined) params.push(keywordsKey(normalizeTerms(disallowed)));
+      if (board !== undefined) params.push(board ?? '');
     }
     if (filter.boards.length > 0) {
       where.push(`board IN (${filter.boards.map(() => '?').join(', ')})`);
@@ -1012,6 +1013,39 @@ export class Store {
         );
       }
     });
+  }
+
+  /** Every search ever run (a platform, its board, its keywords and its disallowed terms), once each, the one that ran last first: what the jobs filter offers. */
+  searchList(platform?: string, limit = 1000): SearchListed[] {
+    const rows = this.db
+      .prepare(
+        `SELECT platform, board, keywords_key, disallowed_key, count(*) AS runs, max(ts) AS last_run
+         FROM search_runs ${platform === undefined ? '' : 'WHERE platform = ?'}
+         GROUP BY platform, board, keywords_key, disallowed_key
+         ORDER BY last_run DESC, platform, board, keywords_key, disallowed_key
+         LIMIT ?`,
+      )
+      .all(...(platform === undefined ? [] : [platform]), limit) as Rows[];
+    return rows.map((row) => {
+      const keywords = parseKeywords(row['keywords_key']);
+      const disallowed = parseKeywords(row['disallowed_key']);
+      const board = boardOf(row['board']);
+      const platformName = String(row['platform']);
+      return {
+        slug: searchSlug(platformName, board, keywords, disallowed),
+        platform: platformName,
+        board,
+        keywords,
+        disallowed,
+        runs: Number(row['runs']),
+        lastRun: Number(row['last_run']),
+      };
+    });
+  }
+
+  /** The search a slug names, or null when no run has that slug (a link to a search that was evicted, or a made-up one). */
+  searchBySlug(slug: string): SearchListed | null {
+    return this.searchList(undefined, 100_000).find((search) => search.slug === slug) ?? null;
   }
 
   /** Per search (a platform, its board, its keyword list and its disallowed terms), over [since, until): runs, and the distinct jobs it matched, returned, dropped and found first. */
@@ -1365,6 +1399,39 @@ export interface ExcludedBy {
   term: string;
 }
 
+/** One search as the jobs filter lists it. */
+export interface SearchListed extends SearchRef {
+  /** The URL-safe name of the search: see `searchSlug`. */
+  slug: string;
+  platform: string;
+  runs: number;
+  lastRun: number;
+}
+
+/**
+ * The name of a search in a URL: readable (its source, board, keywords and disallowed terms, cut short) and a short hash of the whole
+ * search, so two searches never share a slug and a long one stays short. The same search always has the same slug.
+ */
+export function searchSlug(platform: string, board: string | null, keywords: readonly string[], disallowed: readonly string[]): string {
+  const words = normalizeKeywords(keywords).sort();
+  const terms = normalizeTerms(disallowed).sort();
+  const key = `${platform}\u0000${board ?? ''}\u0000${keywordsKey(words)}\u0000${keywordsKey(terms)}`;
+  const hash = createHash('sha1').update(key).digest('hex').slice(0, 8);
+  const readable = [
+    platform,
+    board ?? '',
+    words.length === 0 ? 'any' : words.join(' '),
+    terms.length === 0 ? '' : `without ${terms.join(' ')}`,
+  ]
+    .join(' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/, '');
+  return `${readable}-${hash}`;
+}
+
 export interface SearchStat extends SearchRef {
   platform: string;
   runs: number;
@@ -1527,9 +1594,10 @@ export interface JobListFilter {
   offset?: number;
   /**
    * Only jobs a search with exactly these keywords (any order, case-insensitive) listed; an empty list is the searches with no keyword.
-   * With `disallowed`, only the search that also had exactly these disallowed terms (an empty list: none); without it, whatever its terms.
+   * With `disallowed`, only the search that also had exactly these disallowed terms (an empty list: none), and with `board` only the one of
+   * that company board (`null`: a source with no boards); without them, whatever its terms and board. The platform comes from `sources`.
    */
-  search?: { keywords: readonly string[]; disallowed?: readonly string[] };
+  search?: { keywords: readonly string[]; disallowed?: readonly string[]; board?: string | null };
   /** Most rows returned; `total` still counts them all. */
   limit: number;
   withDescription: boolean;

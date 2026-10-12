@@ -155,6 +155,8 @@ export type JobDetail = z.infer<typeof jobDetailSchema>;
 
 export const searchRowSchema = z
   .object({
+    /** The name of the search in a URL (`/jobs?search=<slug>`): the same search always has the same slug. */
+    slug: z.string(),
     source: z.string(),
     /** The company board the search read (an ATS handle), one search for each board; null when the source is one big board. */
     board: z.string().nullable(),
@@ -205,6 +207,22 @@ export const searchDetailSchema = searchRowSchema
 export type SearchDetailInfo = z.infer<typeof searchDetailSchema>;
 export const searchesSchema = z.object({ searches: z.array(searchRowSchema) }).strict();
 export type Searches = z.infer<typeof searchesSchema>;
+
+/** One search that ever ran, as the Search filter of the jobs list offers it. */
+export const searchOptionSchema = z
+  .object({
+    slug: z.string(),
+    source: z.string(),
+    board: z.string().nullable(),
+    keywords: z.array(z.string()),
+    disallowed: z.array(z.string()),
+    runs: z.number(),
+    lastRun: iso,
+  })
+  .strict();
+export const searchOptionsSchema = z.object({ searches: z.array(searchOptionSchema) }).strict();
+export type SearchOption = z.infer<typeof searchOptionSchema>;
+export type SearchOptions = z.infer<typeof searchOptionsSchema>;
 
 // ------------------------------------------------------------------------------------------------------ tools and status
 

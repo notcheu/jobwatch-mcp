@@ -7,7 +7,7 @@ import {
   type SortingState,
   type VisibilityState,
 } from '@tanstack/react-table';
-import type { JobDetail, JobRow } from '@jobwatch/dashboard-api';
+import type { JobDetail, JobRow, SearchOption } from '@jobwatch/dashboard-api';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, ExternalLink } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
@@ -122,19 +122,46 @@ const columns = [
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
+/** How a search reads in the Search select: its keywords and what it left out, with its source and board when several sources are listed. */
+function searchLabel(search: SearchOption, withSource: boolean): string {
+  const where = [withSource ? search.source : undefined, search.board ?? undefined].filter((part) => part !== undefined).join(' · ');
+  const what = search.keywords.length === 0 ? 'no keywords' : search.keywords.join(', ');
+  const without = search.disallowed.length === 0 ? '' : ` · without ${search.disallowed.join(', ')}`;
+  return `${where === '' ? '' : `${where}: `}${what}${without}`;
+}
+
+/** The periods of the Last seen select; no choice means all time. */
+const SEEN_WITHIN = [
+  { value: 'day', label: 'last 24 hours', ms: 86_400_000 },
+  { value: 'week', label: 'last week', ms: 7 * 86_400_000 },
+  { value: 'month', label: 'last month', ms: 30 * 86_400_000 },
+] as const;
+
 export function Jobs() {
   const source = usePlatform();
   const params = useParams();
   const navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
   const get = (key: string): string => search.get(key) ?? '';
-  // the disallowed terms of that search, set by the link of a search (not typed): shown as a chip that clears them
-  const terms = search.get('no_disallowed') === '1' ? [] : search.getAll('disallowed');
-  const hasTermsFilter = search.get('no_disallowed') === '1' || terms.length > 0;
   const [text, setText] = useState(get('q'));
   const q = useDebounced(text);
   const page = Math.max(1, Number(get('page')) || 1);
   const pageSize = PAGE_SIZES.includes(Number(get('pageSize'))) ? Number(get('pageSize')) : 25;
+  // the search whose jobs to list, by its slug: set by the Search select or by the link of a search
+  // every search, fetched once: switching the source tab only filters this list, so the select never reloads or loses its choice
+  const searches = useQuery({ queryKey: ['search-options'], queryFn: () => api.searchOptions({}), staleTime: 60_000 });
+  const allSearches = useMemo(() => searches.data?.searches ?? [], [searches.data]);
+  const offered = useMemo(
+    () => (source === undefined ? allSearches : allSearches.filter((option) => option.source === source)),
+    [allSearches, source],
+  );
+  const searchSlug = get('search');
+  const chosen = allSearches.find((option) => option.slug === searchSlug);
+  const seenWithin = SEEN_WITHIN.find((option) => option.value === get('seen'));
+  const seenFrom = useMemo(
+    () => (seenWithin === undefined ? undefined : new Date(Math.floor((Date.now() - seenWithin.ms) / 60_000) * 60_000).toISOString()),
+    [seenWithin],
+  );
   const sortName = get('sort');
   const sorting: SortingState =
     SORT_COLUMNS[sortName] === undefined ? [] : [{ id: SORT_COLUMNS[sortName] ?? '', desc: get('dir') !== 'asc' }];
@@ -152,6 +179,10 @@ export function Jobs() {
     if (!('page' in changes)) next.delete('page');
     setSearch(next, { replace: true });
   };
+  // a search belongs to one source: on the tab of another source it cannot apply, so it is dropped there (and kept on its own tab and on All)
+  useEffect(() => {
+    if (chosen !== undefined && source !== undefined && chosen.source !== source) update({ search: undefined });
+  }, [chosen, source]);
   // the search box writes to the URL once the typist stops
   useEffect(() => {
     if (q !== get('q')) update({ q });
@@ -161,12 +192,10 @@ export function Jobs() {
     q: get('q'),
     board: get('board'), // set by the link of a search on a company board; shown as a chip that clears it
     source,
-    found_by: search.getAll('found_by'),
-    no_keywords: search.get('no_keywords') ?? undefined,
-    disallowed: search.getAll('disallowed'),
-    no_disallowed: search.get('no_disallowed') ?? undefined,
-    from: get('from'),
-    to: get('to'),
+    search: searchSlug,
+    // the jobs seen again within the chosen period (the last run of a search that still lists them), all time when none is chosen
+    dateField: seenWithin === undefined ? undefined : 'last_seen',
+    from: seenFrom,
     sort: sortName || undefined,
     dir: sortName ? get('dir') || 'desc' : undefined,
     page,
@@ -226,37 +255,34 @@ export function Jobs() {
               board {get('board')} ×
             </button>
           )}
-          {hasTermsFilter && (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-accent"
-              aria-label="Clear the disallowed terms filter"
-              title="Only the search with exactly these disallowed terms. Click to include the same keywords whatever the terms."
-              onClick={() => {
-                const next = new URLSearchParams(search);
-                next.delete('disallowed');
-                next.delete('no_disallowed');
-                next.delete('page');
-                setSearch(next, { replace: true });
-              }}
-            >
-              {terms.length === 0 ? 'without terms' : `without ${terms.join(', ')}`} ×
-            </button>
-          )}
-          <Input
-            aria-label="From date"
-            type="date"
-            className="w-36"
-            value={get('from')}
-            onChange={(event) => update({ from: event.target.value })}
-          />
-          <Input
-            aria-label="To date"
-            type="date"
-            className="w-36"
-            value={get('to')}
-            onChange={(event) => update({ to: event.target.value })}
-          />
+          <select
+            aria-label="Search"
+            className="h-9 max-w-96 rounded-md border border-input bg-background px-2 text-sm"
+            title="Only the jobs one search found"
+            value={searchSlug}
+            onChange={(event) => update({ search: event.target.value })}
+          >
+            <option value="">Search: all</option>
+            {searchSlug !== '' && searches.isSuccess && chosen === undefined && <option value={searchSlug}>Unknown search</option>}
+            {offered.map((option) => (
+              <option key={option.slug} value={option.slug}>
+                {searchLabel(option, source === undefined)}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Last seen"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            value={seenWithin?.value ?? ''}
+            onChange={(event) => update({ seen: event.target.value })}
+          >
+            <option value="">Last seen: all time</option>
+            {SEEN_WITHIN.map((option) => (
+              <option key={option.value} value={option.value}>
+                Last seen: {option.label}
+              </option>
+            ))}
+          </select>
           <details className="relative ml-auto">
             <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border border-input px-3 text-sm hover:bg-accent">
               <Columns3 className="size-4" /> Columns
