@@ -995,7 +995,9 @@ describe('custom adapters', () => {
       old.saveCustomAdapter({ ...entry, handle: 'other' }, { create: true, actor: 'x' }, 1);
       old.close();
       const raw = new DatabaseSync(path);
-      raw.exec('ALTER TABLE custom_adapters DROP COLUMN filters; PRAGMA user_version = 16;'); // a version 16 database
+      raw.exec(
+        'DROP INDEX custom_adapters_module_id; ALTER TABLE custom_adapters DROP COLUMN module_id; ALTER TABLE custom_adapters DROP COLUMN filters; PRAGMA user_version = 16;',
+      ); // a version 16 database
       raw.close();
       const upgraded = Store.open(path);
       expect(upgraded.schemaVersion).toBe(SCHEMA_VERSION);
@@ -1011,6 +1013,44 @@ describe('custom adapters', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it('names a new adapter by its handle alone, and keeps the id of the older ones, from before ids were stored', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'jw-ids-'));
+    try {
+      const path = join(dir, 'old.sqlite');
+      const old = Store.open(path);
+      old.saveCustomAdapter({ ...entry, handle: 'deezer' }, { create: true, actor: 'x' }, 1);
+      old.close();
+      const raw = new DatabaseSync(path);
+      raw.exec('DROP INDEX custom_adapters_module_id; ALTER TABLE custom_adapters DROP COLUMN module_id; PRAGMA user_version = 17;'); // before module ids
+      raw.close();
+      const store = Store.open(path);
+      expect(store.getCustomAdapter('deezer')?.moduleId).toBe('custom-deezer'); // the id it always had, so its jobs and searches stay with it
+      expect(store.saveCustomAdapter({ ...entry, handle: 'bpce-adapter' }, { create: true, actor: 'x' }, 2)).toBe(true);
+      expect(store.getCustomAdapter('bpce-adapter')?.moduleId).toBe('bpce-adapter'); // no prefix
+      // a new adapter may be called like an old one without its prefix: they are different ids
+      expect(store.saveCustomAdapter({ ...entry, handle: 'deezer-adapter' }, { create: true, actor: 'x' }, 3)).toBe(true);
+      expect(store.listCustomAdapters().map((row) => [row.handle, row.moduleId])).toEqual([
+        ['bpce-adapter', 'bpce-adapter'],
+        ['deezer', 'custom-deezer'],
+        ['deezer-adapter', 'deezer-adapter'],
+      ]);
+      // but not the id of an old one
+      expect(store.saveCustomAdapter({ ...entry, handle: 'custom-deezer' }, { create: true, actor: 'x' }, 4)).toBe(false);
+      store.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a new handle of 3 to 32 letters, digits and single hyphens, and refuses any other', () => {
+    const store = Store.open(':memory:');
+    const create = (handle: string) => store.saveCustomAdapter({ ...entry, handle }, { create: true, actor: 'x' }, 1);
+    for (const ok of ['abc', 'acme-adapter', 'a1-b2-c3', 'a'.repeat(32)]) expect(create(ok), ok).toBe(true);
+    for (const bad of ['ab', 'a'.repeat(33), 'acme-', '-acme', 'acme--adapter', 'Acme', '1acme', 'acme_adapter', 'acme adapter'])
+      expect(() => create(bad), bad).toThrow(/handle/);
+    store.close();
   });
 
   it('shows a change of filters alone in the history: the hash covers the script and its filters', () => {

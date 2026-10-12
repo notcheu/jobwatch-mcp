@@ -26,6 +26,7 @@ export const tools = {
       enabled: true,
       pinned: false,
       managed: false,
+      custom: false,
       hosts: [],
       tools: [],
       rateHour: null,
@@ -47,6 +48,7 @@ export const tools = {
       enabled: true,
       pinned: false,
       managed: false,
+      custom: false,
       hosts: [],
       tools: [],
       rateHour: null,
@@ -68,6 +70,7 @@ export const tools = {
       enabled: false,
       pinned: false,
       managed: false,
+      custom: false,
       hosts: [],
       tools: [],
       rateHour: null,
@@ -82,6 +85,26 @@ export const tools = {
     },
   ],
   runtime: { enabled: true, state: 'cold', platform: null, peakMb: null, waiting: 0 },
+};
+
+/**
+ * The tools of the fixture plus a custom adapter, `bpce-adapter`, whose name carries no mark: the lists know it from the `custom` flag.
+ * Its tool is `bpce_adapter`.
+ */
+export const toolsWithCustom = {
+  ...tools,
+  adapters: [
+    ...tools.adapters,
+    {
+      ...(tools.adapters[0] as object),
+      id: 'bpce-adapter',
+      displayName: 'BPCE careers',
+      platform: 'bpce-adapter',
+      kind: 'http',
+      custom: true,
+      tools: [{ name: 'bpce_adapter', title: 'BPCE careers (read-only)', costMax: 90, params: ['boards'] }],
+    },
+  ],
 };
 
 /** One row of the Searches list: a search that is healthy unless the test says otherwise. */

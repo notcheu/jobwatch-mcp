@@ -21,6 +21,7 @@ const adapter = (over: Record<string, unknown> = {}) => ({
   enabled: true,
   pinned: false,
   managed: false,
+  custom: false,
   hosts: ['*.teamtailor.com'],
   tools: [{ name: 'teamtailor_jobs', title: 'Teamtailor jobs', costMax: 10, params: ['boards', 'title_any'] }],
   rateHour: { used: 4, limit: 600 },

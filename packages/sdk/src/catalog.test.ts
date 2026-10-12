@@ -63,8 +63,14 @@ describe('catalogFileName and summarizeAdapter', () => {
       kind: 'browser',
       allowedHosts: ['www.example.com'],
       openHttps: false,
+      custom: false,
       tools: [{ name: 'page_title', title: 'Page title (read-only)' }],
     });
+  });
+
+  it('says when an adapter is a custom one', () => {
+    expect(summarizeAdapter({ ...httpAdapter, custom: true }).custom).toBe(true);
+    expect(summarizeAdapter(httpAdapter).custom).toBe(false);
   });
 });
 

@@ -52,6 +52,11 @@ export interface ModuleBase {
    * `@jobwatch/mcp-modules`), and an operator cannot enable or disable it by hand.
    */
   delegates?: { to: readonly string[] };
+  /**
+   * True for an adapter an operator wrote on the dashboard (a custom adapter), false or left out for the ones shipped with the router. The
+   * name of a custom adapter carries no mark, so this is how a list tells them apart.
+   */
+  custom?: boolean;
 }
 
 /** An adapter that needs the leased, single-tab Chrome of its platform. */
@@ -125,6 +130,8 @@ interface SummaryBase {
   kind: AdapterKind;
   allowedHosts: readonly string[];
   openHttps: boolean;
+  /** An adapter written on the dashboard (`ModuleBase.custom`). */
+  custom: boolean;
   tools: readonly { name: string; title: string }[];
 }
 
@@ -150,6 +157,7 @@ const summaryOf = (module: McpModule): SummaryBase => ({
   kind: module.kind,
   allowedHosts: module.allowedHosts,
   openHttps: module.kind === 'http' && module.openHttps === true,
+  custom: module.custom === true,
   tools: module.tools.map((tool) => ({ name: tool.name, title: tool.title })),
 });
 

@@ -4,6 +4,7 @@ import {
   customAdapterRemovedSchema,
   customAdapterSchema,
   customHandleSchema,
+  newCustomHandleSchema,
   adapterToggleSchema,
   companyBoardRemovedSchema,
   companyBoardSchema,
@@ -214,7 +215,7 @@ export function registerWrites(router: Router, changes: Changes, logger: EngineL
 
   router.post('/custom-adapters', async (req, res, next) => {
     try {
-      const body = customBody.extend({ handle: customHandleSchema }).strict().parse(req.body);
+      const body = customBody.extend({ handle: newCustomHandleSchema }).strict().parse(req.body);
       const saved = await changes.saveCustomAdapter(body, 'create', actor(res));
       logger.info({ actor: actor(res), handle: saved.handle, kind: saved.kind, host: saved.host }, 'dashboard_custom_adapter_created');
       res.status(201).json(checked(customAdapterDetailSchema, saved));

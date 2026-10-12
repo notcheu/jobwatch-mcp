@@ -22,6 +22,7 @@ import { useState } from 'react';
 import { NavLink, Outlet, useLocation, useSearchParams } from 'react-router';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { CustomMark } from '@/components/CustomMark';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
 import { useTheme } from '@/lib/theme';
@@ -115,10 +116,10 @@ export function Shell() {
   const tools = useQuery({ queryKey: ['tools'], queryFn: api.tools, refetchInterval: 15_000 });
   const section = SECTIONS.find((s) => (s.end ? location.pathname === s.to : location.pathname.startsWith(s.to)));
   // a utility fetches no jobs: it has no tab on the pages that list jobs and searches
-  const platforms = (tools.data?.adapters ?? [])
-    .filter((adapter) => adapter.enabled && adapter.role === 'adapter')
-    .map((adapter) => adapter.platform);
-  const unique = [...new Set(platforms)];
+  const enabledAdapters = (tools.data?.adapters ?? []).filter((adapter) => adapter.enabled && adapter.role === 'adapter');
+  const unique = [...new Set(enabledAdapters.map((adapter) => adapter.platform))];
+  // the tab of a custom adapter carries a mark: its name has none
+  const customPlatforms = new Set(enabledAdapters.filter((adapter) => adapter.custom).map((adapter) => adapter.platform));
   // the utility tab is offered where the numbers of the utilities are shown, and only when one is enabled
   const hasUtility = (tools.data?.adapters ?? []).some((adapter) => adapter.enabled && adapter.role === 'utility');
   const utilityTab = hasUtility && (section?.to === '/runs' || section?.to === '/analytics');
@@ -213,8 +214,9 @@ export function Shell() {
               <TabsList aria-label="Tool">
                 <TabsTrigger value="all">All</TabsTrigger>
                 {unique.map((platform) => (
-                  <TabsTrigger key={platform} value={platform}>
+                  <TabsTrigger key={platform} value={platform} className="relative">
                     {platform}
+                    {customPlatforms.has(platform) && <CustomMark />}
                   </TabsTrigger>
                 ))}
                 {utilityTab && <TabsTrigger value={UTILITY_TAB}>Utility</TabsTrigger>}

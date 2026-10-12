@@ -23,7 +23,10 @@ import { SANDBOX_LIMITS, runInSandbox, type SandboxSpawner } from './sandbox';
 const MAX_BOARDS = 3;
 
 /** The id of the module built from a handle. */
-export const customId = (handle: string): string => `custom-${handle}`;
+export const customId = (row: { moduleId: string }): string => row.moduleId;
+
+/** The tool of a custom adapter: its id with underscores, as tool names have (`bpce-adapter` is `bpce_adapter`, `custom-deezer` is `custom_deezer`). */
+export const customToolName = (moduleId: string): string => moduleId.replaceAll('-', '_');
 
 /** The one https address a custom adapter may reach, checked: https, no credentials, no port, a public name. Returns its URL and host, or a reason. */
 export function checkTargetUrl(input: string): { url: string; host: string } | { error: string } {
@@ -69,7 +72,7 @@ export interface CustomModuleDeps {
 }
 
 /**
- * The module of a custom adapter: one tool, \`custom_<handle>\`, with the input and the output of every company-board tool (boards,
+ * The module of a custom adapter: one tool, named after its id (\`customToolName\`), with the input and the output of every company-board tool (boards,
  * the same filters, the same jobs), whose \`read\` is the operator's script running in the sandbox. The host of the URL target is the
  * only host its requests may reach. Throws when the row cannot make a valid module (a bad URL), so the registry reports it by name.
  */
@@ -82,8 +85,8 @@ export function buildCustomModule(row: CustomAdapterRow, deps: CustomModuleDeps)
     const issue = declared.error.issues[0];
     throw new Error(`custom adapter "${row.handle}": filters${issue ? `.${issue.path.join('.')}: ${issue.message}` : ' are not valid'}`);
   }
-  const id = customId(row.handle);
-  const toolName = `custom_${row.handle}`;
+  const id = customId(row);
+  const toolName = customToolName(id);
   const labelOf = (input: string): string => slugify(input) || 'default';
   const input = z
     .object({
@@ -148,6 +151,7 @@ export function buildCustomModule(row: CustomAdapterRow, deps: CustomModuleDeps)
     description: `Custom adapter written on the dashboard (${target.host}), read-only. Its script runs in a sandbox with no network of its own.`,
     sdkApi: SDK_API_VERSION,
     platform: id,
+    custom: true,
     allowedHosts: [target.host],
     // a script may take as long as it likes within its limits, but the platform is shared by every board: a modest budget of its own
     rate: { perHour: 120, perDay: 600 },

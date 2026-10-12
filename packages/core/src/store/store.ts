@@ -284,6 +284,13 @@ const MIGRATIONS: readonly string[] = [
   `
   ALTER TABLE custom_adapters ADD COLUMN filters TEXT NOT NULL DEFAULT '[]';
   `,
+  // 18: the id of a custom adapter's module is stored, not derived from the handle. The ones made before this migration keep the id
+  // they have (`custom-<handle>`), and so every job, search and budget kept under it; the ones made after it are named by their handle alone.
+  `
+  ALTER TABLE custom_adapters ADD COLUMN module_id TEXT NOT NULL DEFAULT '';
+  UPDATE custom_adapters SET module_id = 'custom-' || handle;
+  CREATE UNIQUE INDEX custom_adapters_module_id ON custom_adapters (module_id);
+  `,
 ];
 
 /** Days of per-tool daily totals kept (docs/plans/17-dashboard.md, D8). */
@@ -646,11 +653,15 @@ export class Store {
     now: number,
   ): boolean {
     if (!CUSTOM_HANDLE.test(entry.handle)) throw new StoreError('invalid custom adapter handle');
+    if (options.create && !isNewCustomHandle(entry.handle)) throw new StoreError('invalid custom adapter handle');
     if (entry.name.trim() === '' || entry.name.length > 60) throw new StoreError('the name is 1 to 60 characters');
     if (entry.script.length > MAX_CUSTOM_SCRIPT_CHARS) throw new StoreError('the script is too long');
     return this.transaction(() => {
       const exists = this.getCustomAdapter(entry.handle) !== null;
       if (options.create === exists) return false;
+      // a new adapter is named by its handle alone; that id may already be taken by an older one (`custom-<handle>`)
+      if (options.create && this.db.prepare('SELECT 1 FROM custom_adapters WHERE module_id = ?').get(entry.handle) !== undefined)
+        return false;
       const filters = JSON.stringify(entry.filters ?? []);
       if (exists)
         this.db
@@ -659,9 +670,9 @@ export class Store {
       else
         this.db
           .prepare(
-            'INSERT INTO custom_adapters (handle, name, kind, url, script, filters, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)',
+            'INSERT INTO custom_adapters (handle, module_id, name, kind, url, script, filters, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
           )
-          .run(entry.handle, entry.name.trim(), entry.kind, entry.url, entry.script, filters, now, now);
+          .run(entry.handle, entry.handle, entry.name.trim(), entry.kind, entry.url, entry.script, filters, now, now);
       // the hash of what the adapter runs: the script, and its filters when it has some (so a change of filters alone shows in the history)
       this.logCustomEvent(
         entry.handle,
@@ -1320,13 +1331,23 @@ export const MAX_MEMORY_ENTRIES = 1000;
 /** Ids kept per search: a board listing can hold thousands of postings, and the counts stay exact whatever is kept. */
 const MAX_SEARCH_HITS = 1000;
 
-/** The handle of a custom adapter; its module id is `custom-<handle>`. */
-export const CUSTOM_HANDLE = /^[a-z][a-z0-9]{1,23}$/;
+/**
+ * The handle of a custom adapter, as it can be stored: the ones made before module ids were stored are 2 to 24 letters and digits, the
+ * newer ones 3 to 32 letters, digits and hyphens (`NEW_CUSTOM_HANDLE`).
+ */
+export const CUSTOM_HANDLE = /^[a-z][a-z0-9-]{1,31}$/;
+/** What a new custom adapter may be called: its whole name, which is its module id and the source of its jobs, with no prefix added. */
+export const NEW_CUSTOM_HANDLE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+export const NEW_CUSTOM_HANDLE_LENGTH = { min: 3, max: 32 } as const;
+export const isNewCustomHandle = (handle: string): boolean =>
+  NEW_CUSTOM_HANDLE.test(handle) && handle.length >= NEW_CUSTOM_HANDLE_LENGTH.min && handle.length <= NEW_CUSTOM_HANDLE_LENGTH.max;
 export const MAX_CUSTOM_SCRIPT_CHARS = 60_000;
 
 /** An adapter written on the dashboard. */
 export interface CustomAdapterRow {
   handle: string;
+  /** The id of its module, the platform of its jobs and its budget: `custom-<handle>` for the first ones, the handle itself for the others. */
+  moduleId: string;
   name: string;
   kind: 'http' | 'browser';
   /** The one https address the script may reach; its host is the adapter's allowed host. */
@@ -1348,6 +1369,7 @@ export interface CustomAdapterEvent {
 
 const toCustomAdapter = (row: Rows): CustomAdapterRow => ({
   handle: String(row['handle']),
+  moduleId: String(row['module_id'] ?? '') || `custom-${String(row['handle'])}`,
   name: String(row['name']),
   kind: row['kind'] === 'browser' ? 'browser' : 'http',
   url: String(row['url']),

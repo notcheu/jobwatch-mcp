@@ -1,11 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   MAX_ADAPTER_FILE_BYTES,
+  NEW_CUSTOM_HANDLE_LENGTH,
+  SUGGESTED_HANDLE_SUFFIX,
   adapterFileName,
   adapterFileText,
   customFilterSchema,
   filterDocItems,
+  customToolName,
   filterProblems,
+  isNewCustomHandle,
   parseAdapterFile,
   type CustomAdapter,
   type CustomAdapterFile,
@@ -37,8 +41,6 @@ const KINDS: { value: Kind; label: string; hint: string }[] = [
     hint: 'The script also gets session: the page of its own Chrome (goto, text, evaluate...). It shares the one-browser-at-a-time budget with the other browser adapters.',
   },
 ];
-
-const HANDLE = /^[a-z][a-z0-9]{1,23}$/;
 
 /** Dialog content, mounted only while it is open, so every opening starts from what the router says now. */
 function AdapterForm({
@@ -161,7 +163,7 @@ function AdapterForm({
   }, [sample.data, filters, builtin]);
   const valid =
     name.trim() !== '' &&
-    (editing || HANDLE.test(newHandle.trim())) &&
+    (editing || isNewCustomHandle(newHandle.trim())) &&
     /^https:\/\/[^\s/]+/.test(url.trim()) &&
     script.trim() !== '' &&
     problems.size === 0;
@@ -262,14 +264,16 @@ function AdapterForm({
                 id="custom-handle"
                 value={editing ? handle : newHandle}
                 disabled={editing}
-                maxLength={24}
-                placeholder="acmejobs"
-                aria-invalid={!editing && newHandle !== '' && !HANDLE.test(newHandle) ? true : undefined}
+                maxLength={NEW_CUSTOM_HANDLE_LENGTH.max}
+                placeholder={`acme${SUGGESTED_HANDLE_SUFFIX}`}
+                aria-invalid={!editing && newHandle !== '' && !isNewCustomHandle(newHandle) ? true : undefined}
                 onChange={(event) => setNewHandle(event.target.value.toLowerCase())}
               />
               <p className="text-xs text-muted-foreground">
-                {editing ? 'It cannot change.' : '2 to 24 lower-case letters and digits.'} The tool is{' '}
-                <code>custom_{(editing ? handle : newHandle) || 'handle'}</code>.
+                {editing
+                  ? 'It cannot change.'
+                  : `The whole name of the adapter, with nothing added to it: ${NEW_CUSTOM_HANDLE_LENGTH.min} to ${NEW_CUSTOM_HANDLE_LENGTH.max} lower-case letters, digits and hyphens. We suggest ending it with ${SUGGESTED_HANDLE_SUFFIX}, as in acme${SUGGESTED_HANDLE_SUFFIX}.`}{' '}
+                The tool is <code>{editing ? (existing.data?.tool ?? '…') : customToolName(newHandle) || 'name'}</code>.
               </p>
             </div>
           </div>
