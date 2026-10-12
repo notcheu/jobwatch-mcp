@@ -157,6 +157,102 @@ describe('tools and status', () => {
     expect(screen.queryByText(/is set by ADAPTERS/)).not.toBeInTheDocument(); // nothing on the cards any more
   });
 
+  describe('custom adapters', () => {
+    const bpce = (over: Record<string, unknown> = {}) =>
+      adapter({
+        id: 'bpce-adapter',
+        displayName: 'BPCE careers',
+        platform: 'bpce-adapter',
+        custom: true,
+        hosts: ['recrutement.bpce.fr'],
+        tools: [{ name: 'bpce_adapter', title: 'BPCE careers', costMax: 90, params: ['boards'] }],
+        boards: [],
+        ...over,
+      });
+    const open = async (...cards: unknown[]) => {
+      mockApi({ '/me': me, '/tools': tools(...cards), '/custom-adapters': { available: true, sandbox: 'docker', items: [] } });
+      renderApp('/settings?view=tools');
+      return userEvent.setup();
+    };
+    const menu = async (user: ReturnType<typeof userEvent.setup>, card: HTMLElement) => {
+      await user.click(within(card).getByRole('button', { name: /^Settings of / }));
+      return within(card)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent);
+    };
+
+    it('lists them in a section of their own, whether they are on or off, and not with the adapters of the router', async () => {
+      await open(
+        adapter(),
+        linkedin,
+        bpce(),
+        bpce({ id: 'idle-adapter', displayName: 'Idle one', platform: 'idle-adapter', enabled: false }),
+      );
+      await screen.findByLabelText('BPCE careers'); // the section is there before the tools are
+      const section = screen.getByRole('region', { name: 'Custom adapters' });
+      expect(within(section).getByRole('heading', { name: 'Custom adapters (2)' })).toBeInTheDocument();
+      expect(within(section).getByLabelText('BPCE careers')).toBeInTheDocument();
+      expect(within(section).getByLabelText('Idle one')).toBeInTheDocument();
+      expect(within(section).queryByLabelText('Teamtailor')).not.toBeInTheDocument();
+      // and they are in neither of the two lists of the adapters of the router
+      for (const name of ['Enabled adapters', 'Disabled adapters']) {
+        const list = screen.getByRole('region', { name });
+        expect(within(list).queryByLabelText('BPCE careers')).not.toBeInTheDocument();
+        expect(within(list).queryByLabelText('Idle one')).not.toBeInTheDocument();
+      }
+      expect(screen.getByRole('heading', { name: 'Adapters enabled (1)' })).toBeInTheDocument(); // teamtailor only
+      expect(screen.getByRole('heading', { name: 'Adapters disabled (1)' })).toBeInTheDocument(); // linkedin only
+    });
+
+    it('is there, empty, with a way to the page that makes them, when there is none', async () => {
+      await open(adapter());
+      await screen.findByLabelText('Teamtailor'); // the tools are loaded
+      const section = screen.getByRole('region', { name: 'Custom adapters' });
+      expect(within(section).getByRole('heading', { name: 'Custom adapters (0)' })).toBeInTheDocument();
+      expect(within(section).getByText('No custom adapter yet.')).toBeInTheDocument();
+      expect(within(section).getByRole('link', { name: 'Custom adapters' })).toHaveAttribute('href', '/custom-adapters');
+    });
+
+    it('has no enable or disable in the menu of a card, whatever its state, and See adapter first', async () => {
+      const user = await open(bpce(), bpce({ id: 'off-adapter', displayName: 'Off one', platform: 'off-adapter', enabled: false }));
+      const on = await screen.findByLabelText('BPCE careers');
+      expect(await menu(user, on)).toEqual(['See adapter', 'Budget…', 'Clear stored data…']);
+      const off = screen.getByLabelText('Off one');
+      expect(await menu(user, off)).toEqual(['See adapter', 'Budget…', 'Clear stored data…']);
+      expect(screen.queryByRole('menuitem', { name: /^(Enable|Disable)$/ })).not.toBeInTheDocument();
+    });
+
+    it('keeps enable and disable for the adapters of the router and for the utilities', async () => {
+      const user = await open(adapter(), bpce(), utility());
+      expect(await menu(user, await screen.findByLabelText('Teamtailor'))).toEqual(['Disable', 'Budget…', 'Clear stored data…']);
+      expect(await menu(user, screen.getByLabelText('ATS discovery'))).toEqual(['Disable', 'Budget…']);
+      expect(screen.queryByRole('menuitem', { name: 'See adapter' })).not.toBeInTheDocument(); // only a custom adapter has it
+    });
+
+    it('takes See adapter to the table of custom adapters', async () => {
+      const user = await open(bpce());
+      const card = await screen.findByLabelText('BPCE careers');
+      await user.click(within(card).getByRole('button', { name: /^Settings of / }));
+      await user.click(within(card).getByRole('menuitem', { name: 'See adapter' }));
+      expect(await screen.findByRole('button', { name: /Create adapter/ })).toBeInTheDocument(); // the custom adapters page
+      expect(screen.queryByRole('region', { name: 'Custom adapters' })).not.toBeInTheDocument();
+    });
+
+    it('does not switch it from here: the Disable item is gone, so nothing calls the adapters endpoint', async () => {
+      const calls: string[] = [];
+      const user = await open(bpce());
+      const real = globalThis.fetch;
+      vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method && init.method !== 'GET') calls.push(`${init.method} ${String(input)}`);
+        return real(input, init);
+      });
+      const card = await screen.findByLabelText('BPCE careers');
+      await menu(user, card);
+      await user.keyboard('{Escape}');
+      expect(calls).toEqual([]);
+    });
+  });
+
   it('shows a module the engine manages in its own section, with nothing to configure', async () => {
     mockApi({ '/me': me, '/tools': tools(adapter({ id: 'ats', displayName: 'Any ATS', managed: true, enabled: true }), utility()) });
     renderApp('/settings?view=tools');
