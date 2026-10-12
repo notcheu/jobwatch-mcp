@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { API_PREFIX, callDetailSchema, callRowSchema, jobDetailSchema, jobRowSchema, meSchema } from './index';
+import {
+  API_PREFIX,
+  CUSTOM_ADAPTER_FILE_FORMAT,
+  MAX_ADAPTER_FILE_BYTES,
+  adapterFileName,
+  adapterFileText,
+  callDetailSchema,
+  callRowSchema,
+  jobDetailSchema,
+  jobRowSchema,
+  meSchema,
+  parseAdapterFile,
+} from './index';
 
 const row = {
   id: 1,
@@ -85,5 +97,69 @@ describe('the response types', () => {
         hints: { years: [], remote: [], salary: null },
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('the file of an exported custom adapter', () => {
+  const entry = {
+    handle: 'bpce',
+    name: 'BPCE careers',
+    kind: 'http' as const,
+    url: 'https://recrutement.bpce.fr',
+    script: 'async function read(board, filters) {\n  return { postings: [] };\n}',
+    filters: [
+      {
+        name: 'contract',
+        description: 'The contract.',
+        type: 'multiselect' as const,
+        options: [{ value: 'cdi', label: 'CDI' }, { value: 'cdd' }],
+      },
+      { name: 'remote', description: 'Remote only.', type: 'boolean' as const, default: true },
+    ],
+  };
+
+  it('is named after the handle', () => {
+    expect(adapterFileName('bpce')).toBe('bpce.adapter.json');
+  });
+
+  it('holds what is typed in the modal and nothing else, readable, with a final line break', () => {
+    const text = adapterFileText(entry);
+    expect(text.endsWith('}\n')).toBe(true);
+    expect(Object.keys(JSON.parse(text))).toEqual(['format', 'version', 'handle', 'name', 'kind', 'url', 'script', 'filters']);
+    expect(JSON.parse(text)).toMatchObject({ format: CUSTOM_ADAPTER_FILE_FORMAT, version: 1, handle: 'bpce' });
+    expect(text).toContain('\n  "handle": "bpce"'); // indented
+  });
+
+  it('reads back as the adapter it was made from', () => {
+    expect(parseAdapterFile(adapterFileText(entry))).toEqual({ file: { format: CUSTOM_ADAPTER_FILE_FORMAT, version: 1, ...entry } });
+  });
+
+  it.each([
+    ['text that is not JSON', 'nope', /not JSON/],
+    ['JSON that is not an adapter', '{"a":1}', /not an exported custom adapter/],
+    ['an array', '[]', /not an exported custom adapter/],
+    ['another format', JSON.stringify({ format: 'other', version: 1 }), /not an exported custom adapter/],
+    [
+      'a version this dashboard does not know',
+      JSON.stringify({ format: CUSTOM_ADAPTER_FILE_FORMAT, version: 2 }),
+      /version 2; this dashboard reads version 1/,
+    ],
+    ['a missing field', JSON.stringify({ format: CUSTOM_ADAPTER_FILE_FORMAT, version: 1, handle: 'bpce' }), /not valid \(name/],
+    ['a handle that is not one', adapterFileText({ ...entry, handle: 'Bad-Handle' }), /not valid \(handle/],
+    ['an address that is too short', adapterFileText({ ...entry, url: 'x' }), /not valid \(url/],
+    [
+      'a filter that breaks the rules',
+      adapterFileText({ ...entry, filters: [{ name: 'x', description: 'x', type: 'select', options: [{ value: 'a' }] }] }),
+      /not valid \(filters/,
+    ],
+    ['more than the file may hold', 'x'.repeat(MAX_ADAPTER_FILE_BYTES + 1), /too large/],
+  ])('refuses %s, with a sentence', (_what, text, message) => {
+    const result = parseAdapterFile(text);
+    expect('error' in result && result.error).toMatch(message);
+  });
+
+  it('refuses a field it does not know, so a file cannot carry more than the form takes', () => {
+    const text = JSON.stringify({ ...JSON.parse(adapterFileText(entry)), enabled: true });
+    expect('error' in parseAdapterFile(text)).toBe(true);
   });
 });

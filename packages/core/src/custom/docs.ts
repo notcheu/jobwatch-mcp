@@ -153,7 +153,8 @@ export function scriptDocs(kind: 'http' | 'browser'): DocBlock[] {
     {
       id: 'filters',
       title: 'Filters',
-      summary: 'The second argument of `read`: the other arguments of the tool. The router applies them again to what you return.',
+      summary:
+        'The second argument of `read`: the other arguments of the tool. The router applies the built-in ones again to what you return; the filters added to this adapter (listed after them) are only handed to the script.',
       items: [
         {
           name: 'title_any',
@@ -181,6 +182,39 @@ export function scriptDocs(kind: 'http' | 'browser'): DocBlock[] {
           name: 'max_results',
           type: 'number',
           description: 'The most jobs the caller wants back (1 to 200). You may return more: the router cuts.',
+        },
+        {
+          name: 'disallowed_scope',
+          type: 'string',
+          fullType: "'title' | 'title_then_description'",
+          description: 'Where the router looks for disallowed_terms: the title only, or the title and then the description.',
+        },
+        {
+          name: 'min_salary',
+          type: 'number',
+          description: 'Yearly salary floor in whole currency units, 0 for none. The router drops a job whose stated salary is below it.',
+        },
+        {
+          name: 'salary_currency',
+          type: 'string',
+          optional: true,
+          description: 'ISO 4217 code of min_salary ("EUR"). Left out when there is no floor.',
+        },
+        {
+          name: 'detail',
+          type: 'string',
+          fullType: "'summary' | 'full' | 'none'",
+          description: 'How much of each job the caller gets back. The router stores the whole text you return whatever this is.',
+        },
+        {
+          name: 'description_max_chars',
+          type: 'number',
+          description: 'With detail "full": characters of description returned for each job (500 to 6,000).',
+        },
+        {
+          name: 'hint_terms',
+          type: 'string[]',
+          description: 'Words the caller cares about. The router lists the ones each job text contains; nothing to do in the script.',
         },
       ],
     },

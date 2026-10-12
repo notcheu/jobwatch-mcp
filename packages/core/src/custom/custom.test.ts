@@ -1,4 +1,4 @@
-import { HostNotAllowedError, JobwatchError } from '@jobwatch/sdk';
+import { HostNotAllowedError, JobwatchError, boardFilters, z } from '@jobwatch/sdk';
 import {
   FakeJobStore,
   FakeCompanyBoards,
@@ -261,11 +261,18 @@ describe('the reference shown beside the editor', () => {
 
   it('documents the filters the script really receives', async () => {
     const received = await run('async function read(board, filters) { return { name: Object.keys(filters).join(","), postings: [] }; }', {
-      filters: { title_any: [], location_any: [], posted_within: 'any', disallowed_terms: [], only_new: false, max_results: 50 },
+      filters: z.object(boardFilters).parse({}), // what a call that names no filter hands the script: every default
     });
     const given = (received.name ?? '').split(',');
-    for (const item of scriptDocs('http').find((block) => block.id === 'filters')?.items ?? []) expect(given).toContain(item.name);
+    // a filter with no default (salary_currency) is documented as optional and only there when the caller gave it
+    for (const item of scriptDocs('http').find((block) => block.id === 'filters')?.items ?? [])
+      if (item.optional !== true) expect(given).toContain(item.name);
   }, 20_000);
+
+  it('documents every built-in filter of the tool, none missing and none made up', () => {
+    const documented = (scriptDocs('http').find((block) => block.id === 'filters')?.items ?? []).map((item) => item.name).sort();
+    expect(documented).toEqual(Object.keys(boardFilters).sort());
+  });
 });
 
 describe('the bare-process sandbox', () => {
@@ -322,6 +329,7 @@ describe('the module built from a row', () => {
     kind: 'http',
     url: 'https://careers.acme.com/api',
     script: `async function read(board) { const r = (await http.get('https://careers.acme.com/api/' + board)).json(); return { name: board, postings: r.map((j) => ({ id: j.id, title: j.title, url: 'https://careers.acme.com/j/' + j.id, locations: [j.city], description: j.text })) }; }`,
+    filters: [],
     enabled: true,
     createdAt: 1,
     updatedAt: 1,

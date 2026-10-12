@@ -1,8 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CustomAdapter } from '@jobwatch/dashboard-api';
-import { AlertTriangle, BookOpen, Maximize2, Minimize2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import {
+  MAX_ADAPTER_FILE_BYTES,
+  adapterFileName,
+  adapterFileText,
+  customFilterSchema,
+  filterDocItems,
+  filterProblems,
+  parseAdapterFile,
+  type CustomAdapter,
+  type CustomAdapterFile,
+  type CustomFilter,
+} from '@jobwatch/dashboard-api';
+import { AlertTriangle, BookOpen, Download, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { CodeEditor } from '@/components/CodeEditor';
+import { CustomFilters } from '@/components/CustomFilters';
 import { ScriptDocs } from '@/components/ScriptDocs';
 import { useChangeError } from '@/components/Discovery';
 import { Badge } from '@/components/ui/badge';
@@ -12,8 +24,8 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, navigation } from '@/lib/api';
+import { downloadText, readTextFile } from '@/lib/download';
 import { ago } from '@/lib/format';
-import { cn } from '@/lib/utils';
 
 type Kind = 'http' | 'browser';
 
@@ -31,15 +43,14 @@ const HANDLE = /^[a-z][a-z0-9]{1,23}$/;
 /** Dialog content, mounted only while it is open, so every opening starts from what the router says now. */
 function AdapterForm({
   handle,
-  expanded,
-  onToggleExpanded,
+  initial,
   onClose,
   onReauth,
   onNotice,
 }: {
   handle: string | undefined;
-  expanded: boolean;
-  onToggleExpanded: () => void;
+  /** An adapter read from a file on the page: it fills the form of a new adapter when it opens. */
+  initial?: { file: CustomAdapterFile; fileName: string };
   onClose: () => void;
   onReauth: () => void;
   onNotice: (message: string) => void;
@@ -52,7 +63,11 @@ function AdapterForm({
   const [kind, setKind] = useState<Kind>('http');
   const [url, setUrl] = useState('https://');
   const [script, setScript] = useState('');
-  const untouched = useRef(true); // the script is still a sample: changing the context may swap it for the other sample
+  const [filters, setFilters] = useState<CustomFilter[]>([]);
+  const untouched = useRef(initial === undefined); // the script is still a sample: changing the context may swap it for the other sample
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [imported, setImported] = useState<string | undefined>(initial?.fileName);
+  const [importError, setImportError] = useState<string>();
   const loaded = useRef(false);
   // the sample gives a new adapter its script; the reference of the context is shown whether the adapter is new or not
   const sample = useQuery({
@@ -76,20 +91,51 @@ function AdapterForm({
     setKind(found.kind);
     setUrl(found.url);
     setScript(found.script);
+    setFilters(found.filters);
   }, [existing.data]);
   useEffect(() => {
     if (!editing && untouched.current && sample.data !== undefined) setScript(sample.data.script);
   }, [editing, sample.data]);
 
+  /** Puts an adapter read from a file into the form. Nothing is saved: the person reads it and presses Create or Save. */
+  const apply = (file: CustomAdapterFile, fileName: string): void => {
+    untouched.current = false;
+    if (!editing) setNewHandle(file.handle); // an adapter that is edited keeps its own handle, which cannot change
+    setName(file.name);
+    setKind(file.kind);
+    setUrl(file.url);
+    setScript(file.script);
+    setFilters(file.filters);
+    setImported(fileName);
+    setImportError(undefined);
+  };
+  useEffect(() => {
+    if (initial !== undefined) apply(initial.file, initial.fileName);
+    // once, when the form opens on a file
+  }, []);
+  const importFile = async (file: File | undefined): Promise<void> => {
+    if (file === undefined) return;
+    const read = await readTextFile(file, MAX_ADAPTER_FILE_BYTES);
+    if ('error' in read) return setImportError(read.error);
+    const parsed = parseAdapterFile(read.text);
+    if ('error' in parsed) return setImportError(parsed.error);
+    apply(parsed.file, file.name);
+  };
+
   const save = useMutation({
     mutationFn: () =>
       editing
-        ? api.updateCustomAdapter(handle, { name: name.trim(), kind, url: url.trim(), script })
-        : api.createCustomAdapter({ handle: newHandle.trim(), name: name.trim(), kind, url: url.trim(), script }),
+        ? api.updateCustomAdapter(handle, { name: name.trim(), kind, url: url.trim(), script, filters })
+        : api.createCustomAdapter({ handle: newHandle.trim(), name: name.trim(), kind, url: url.trim(), script, filters }),
     onSuccess: (saved) => {
       onNotice(
         editing
-          ? `${saved.name} saved.${saved.enabled ? ' The new script applies to the next call.' : ''}`
+          ? `${saved.name} saved.${saved.enabled ? ' The new script applies to the next call.' : ''}${
+              // the filters are part of the tool's schema, which the connector lists once: a change of them needs a reconnect
+              saved.enabled && JSON.stringify(saved.filters) !== JSON.stringify(existing.data?.filters ?? [])
+                ? ' Reconnect the Claude connector to see the new tool list.'
+                : ''
+            }`
           : `${saved.name} created. Turn it on to list its tool.`,
       );
       void client.invalidateQueries({ queryKey: ['custom-adapters'] });
@@ -99,9 +145,33 @@ function AdapterForm({
     },
     onError: (failure) => fail(failure, 'The adapter could not be saved.'),
   });
+  // the built-in filters are what the router's reference lists for the Filters table: they are locked here, and their names are taken
+  const builtin = useMemo(() => sample.data?.docs.find((block) => block.id === 'filters')?.items ?? [], [sample.data]);
+  const problems = useMemo(() => filterProblems(filters, ['boards', ...builtin.map((item) => item.name)]), [filters, builtin]);
+  // the reference follows the filters as they are typed: a filter shows in the Filters table as soon as it is complete
+  const docs = useMemo(() => {
+    if (sample.data === undefined) return undefined;
+    const complete = filters.flatMap((filter) => {
+      const parsed = customFilterSchema.safeParse(filter);
+      return parsed.success && !builtin.some((item) => item.name === parsed.data.name) ? [parsed.data] : [];
+    });
+    return sample.data.docs.map((block) =>
+      block.id === 'filters' ? { ...block, items: [...block.items, ...filterDocItems(complete)] } : block,
+    );
+  }, [sample.data, filters, builtin]);
   const valid =
-    name.trim() !== '' && (editing || HANDLE.test(newHandle.trim())) && /^https:\/\/[^\s/]+/.test(url.trim()) && script.trim() !== '';
+    name.trim() !== '' &&
+    (editing || HANDLE.test(newHandle.trim())) &&
+    /^https:\/\/[^\s/]+/.test(url.trim()) &&
+    script.trim() !== '' &&
+    problems.size === 0;
   const kindHint = KINDS.find((entry) => entry.value === kind)?.hint;
+  // the file for what is in the form now (saved or not), only when it would be read back as a valid adapter
+  const exportHandle = editing ? handle : newHandle.trim();
+  const exportText = useMemo(() => {
+    const text = adapterFileText({ handle: exportHandle, name: name.trim(), kind, url: url.trim(), script, filters });
+    return 'file' in parseAdapterFile(text) ? text : undefined;
+  }, [exportHandle, name, kind, url, script, filters]);
 
   return (
     <form
@@ -114,24 +184,62 @@ function AdapterForm({
       <DialogHeader className="shrink-0">
         <div className="flex items-start justify-between gap-3">
           <DialogTitle>{editing ? `Edit ${existing.data?.name ?? handle}` : 'Create a custom adapter'}</DialogTitle>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="-mt-1 -mr-2 size-8 shrink-0"
-            aria-label={expanded ? 'Shrink the window' : 'Expand the window'}
-            aria-pressed={expanded}
-            onClick={onToggleExpanded}
-          >
-            {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-          </Button>
+          <div className="-mt-1 flex shrink-0 items-center gap-2">
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".json,application/json"
+              aria-label="Adapter file to import"
+              className="hidden"
+              onChange={(event) => {
+                void importFile(event.target.files?.[0]);
+                event.target.value = ''; // the same file can be chosen again
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={editing && existing.data === undefined}
+              title="Fill the form from an exported adapter file. Nothing is created until you press Create."
+              onClick={() => fileInput.current?.click()}
+            >
+              <Upload className="size-4" /> Import
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={exportText === undefined}
+              title={
+                exportText === undefined
+                  ? 'Fill in the name, the handle, the address and the script first.'
+                  : `Save ${adapterFileName(exportHandle)}, to share this adapter. It holds what is in the form now.`
+              }
+              onClick={() => exportText !== undefined && downloadText(adapterFileName(exportHandle), exportText)}
+            >
+              <Download className="size-4" /> Export
+            </Button>
+          </div>
         </div>
         <DialogDescription>
           Its script runs in a sandbox with no network of its own and reads one site: what it finds goes through the same filters and
           storage as the other company-board tools. It never changes anything on a site.
         </DialogDescription>
       </DialogHeader>
-      <div className="grid min-h-0 flex-1 gap-4 overflow-auto md:grid-cols-[minmax(15rem,21rem)_minmax(0,1fr)] md:overflow-hidden">
+      {importError !== undefined && (
+        <p role="alert" className="shrink-0 text-xs text-destructive">
+          {importError}
+        </p>
+      )}
+      {imported !== undefined && importError === undefined && (
+        <p role="status" className="shrink-0 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
+          Filled in from <code>{imported}</code>. Nothing is saved yet. Read the script before you {editing ? 'save' : 'create'} it: it will
+          run on this router, in the sandbox
+          {editing ? ', and it replaces the script of this adapter' : ''}.
+        </p>
+      )}
+      <div className="grid min-h-0 flex-1 gap-4 overflow-auto md:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)_minmax(20rem,28rem)] md:overflow-hidden">
         <div className="min-h-0 space-y-4 md:overflow-auto md:pr-1">
           <div className="space-y-4">
             <div className="space-y-1">
@@ -231,9 +339,7 @@ function AdapterForm({
               <BookOpen className="size-4" />
             </Button>
           </div>
-          {docsOpen && sample.data !== undefined && (
-            <ScriptDocs id={docsId} blocks={sample.data.docs} className="max-h-80 shrink-0 md:max-h-[45%]" />
-          )}
+          {docsOpen && docs !== undefined && <ScriptDocs id={docsId} blocks={docs} className="max-h-80 shrink-0 md:max-h-[45%]" />}
           {docsOpen && sample.data === undefined && (
             <p id={docsId} className="text-xs text-muted-foreground">
               {sample.isError ? 'The documentation could not be loaded.' : 'Loading the documentation…'}
@@ -249,6 +355,7 @@ function AdapterForm({
             }}
           />
         </div>
+        <CustomFilters builtin={builtin} filters={filters} problems={problems} onChange={setFilters} />
       </div>
       {error !== undefined && (
         <p role="alert" className="text-xs text-destructive">
@@ -271,8 +378,9 @@ function AdapterForm({
 export function CustomAdapters() {
   const client = useQueryClient();
   const list = useQuery({ queryKey: ['custom-adapters'], queryFn: api.customAdapters, refetchInterval: 10_000 });
-  const [form, setForm] = useState<{ handle?: string } | undefined>();
-  const [expanded, setExpanded] = useState(false);
+  const [form, setForm] = useState<{ handle?: string; initial?: { file: CustomAdapterFile; fileName: string } } | undefined>();
+  const pageFile = useRef<HTMLInputElement>(null);
+  const [pageImportError, setPageImportError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [reauth, setReauth] = useState(false);
   const [removing, setRemoving] = useState<CustomAdapter>();
@@ -338,19 +446,44 @@ export function CustomAdapters() {
           {error}
         </p>
       )}
+      {pageImportError !== undefined && (
+        <p role="alert" className="border-b px-5 py-2 text-sm text-destructive">
+          {pageImportError}
+        </p>
+      )}
       <div className="flex items-center gap-2 border-b px-5 py-2">
         <span className="text-xs text-muted-foreground">
           An adapter is code you write: it runs only in the sandbox, reads one site and changes nothing on it.
         </span>
+        <input
+          ref={pageFile}
+          type="file"
+          accept=".json,application/json"
+          aria-label="Adapter file to open"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file === undefined) return;
+            void readTextFile(file, MAX_ADAPTER_FILE_BYTES).then((read) => {
+              const parsed = 'error' in read ? read : parseAdapterFile(read.text);
+              if ('error' in parsed) return setPageImportError(parsed.error);
+              setPageImportError(undefined);
+              setForm({ initial: { file: parsed.file, fileName: file.name } });
+            });
+          }}
+        />
         <Button
           size="sm"
+          variant="outline"
           className="ml-auto"
           disabled={!available}
-          onClick={() => {
-            setExpanded(false);
-            setForm({});
-          }}
+          title="Open the form filled in from an exported adapter file"
+          onClick={() => pageFile.current?.click()}
         >
+          <Upload className="size-4" /> Import adapter
+        </Button>
+        <Button size="sm" disabled={!available} onClick={() => setForm({})}>
           <Plus className="size-4" /> Create adapter
         </Button>
       </div>
@@ -399,10 +532,7 @@ export function CustomAdapters() {
                       size="icon"
                       className="size-7"
                       aria-label={`Edit ${adapter.name}`}
-                      onClick={() => {
-                        setExpanded(false);
-                        setForm({ handle: adapter.handle });
-                      }}
+                      onClick={() => setForm({ handle: adapter.handle })}
                     >
                       <Pencil className="size-4" />
                     </Button>
@@ -430,19 +560,12 @@ export function CustomAdapters() {
         {list.isError && <p className="p-8 text-center text-sm text-destructive">Could not load the custom adapters.</p>}
       </div>
       <Dialog open={form !== undefined} onOpenChange={(next) => !next && setForm(undefined)}>
-        <DialogContent
-          data-expanded={expanded}
-          className={cn(
-            'flex max-w-none flex-col',
-            // the window leaves a margin all round when it is expanded, so it still reads as a window
-            expanded ? 'h-[calc(100vh-2rem)] w-[calc(100vw-2rem)]' : 'h-[min(46rem,92vh)] w-[min(72rem,94vw)]',
-          )}
-        >
+        {/* always the whole window, with a margin all round so it still reads as a window: the settings, the script and the filters side by side */}
+        <DialogContent className="flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col">
           {form !== undefined && (
             <AdapterForm
               handle={form.handle}
-              expanded={expanded}
-              onToggleExpanded={() => setExpanded((value) => !value)}
+              {...(form.initial ? { initial: form.initial } : {})}
               onClose={() => setForm(undefined)}
               onReauth={() => setReauth(true)}
               onNotice={setNotice}

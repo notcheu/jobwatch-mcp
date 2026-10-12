@@ -3,6 +3,7 @@ import { createServer, request as httpRequest, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
 import { createHash } from 'node:crypto';
+import express from 'express';
 import {
   Budgets,
   CallLog,
@@ -252,7 +253,7 @@ async function build(over: Partial<DashboardDeps> = {}, authRequired = false, oi
   // node:http, not fetch: fetch cannot set the Host header, and the Host check is part of what is tested
   const call = (
     path: string,
-    init: { method?: string; cookie?: string; host?: string; headers?: Record<string, string> } = {},
+    init: { method?: string; cookie?: string; host?: string; headers?: Record<string, string>; body?: string } = {},
   ): Promise<Response> =>
     new Promise((resolve, reject) => {
       const req = httpRequest(
@@ -277,7 +278,7 @@ async function build(over: Partial<DashboardDeps> = {}, authRequired = false, oi
         },
       );
       req.on('error', reject);
-      req.end();
+      req.end(init.body);
     });
   return { call, deps, clock, activity: () => activity, port, store };
 }
@@ -966,6 +967,26 @@ describe('the Origin of a change in local development', () => {
     expect((await put(t, 'http://evil.example')).status).toBe(403);
     expect((await put(t, 'http://127.0.0.1:9999')).status).toBe(403); // another port is another origin
     expect((await put(t, undefined)).status).toBe(403);
+  });
+
+  it('answers 413 when a change is larger than its router reads, not a generic 500', async () => {
+    const t = await build(
+      {
+        writes: (router) => {
+          router.use(express.json({ limit: '1kb' }));
+          router.post('/_probe', (_req, res) => void res.json({ changed: true }));
+        },
+      },
+      false,
+    );
+    const big = await t.call('/dashboard/api/v1/_probe', {
+      method: 'POST',
+      host: '127.0.0.1:18933',
+      headers: { 'x-jw-csrf': '1', origin: 'http://127.0.0.1:18933', 'content-type': 'application/json' },
+      body: JSON.stringify({ filler: 'x'.repeat(2000) }),
+    });
+    expect(big.status).toBe(413);
+    expect(await json(big)).toEqual({ error: 'too_large', message: 'The request is too large.' });
   });
 
   it('with sign-in required, only the public origin is accepted, whatever the Host', async () => {

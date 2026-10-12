@@ -1,6 +1,7 @@
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -967,6 +968,64 @@ describe('custom adapters', () => {
     ]);
     expect(events[2]?.sha256).toMatch(/^[0-9a-f]{64}$/); // the script is identified, not copied into the log
     expect(JSON.stringify(events)).not.toContain('v2');
+    store.close();
+  });
+
+  it('keeps the filters of an adapter, none for one saved without, and takes a damaged column for none', () => {
+    const store = Store.open(':memory:');
+    const filters = [
+      { name: 'contract', description: 'The contract.', type: 'multiselect' as const, options: [{ value: 'cdi' }, { value: 'cdd' }] },
+      { name: 'remote', description: 'Remote only.', type: 'boolean' as const },
+    ];
+    store.saveCustomAdapter(entry, { create: true, actor: 'x' }, 1);
+    expect(store.getCustomAdapter('acmejobs')?.filters).toEqual([]);
+    store.saveCustomAdapter({ ...entry, filters }, { create: false, actor: 'x' }, 2);
+    expect(store.getCustomAdapter('acmejobs')?.filters).toEqual(filters);
+    store.saveCustomAdapter({ ...entry, filters: [] }, { create: false, actor: 'x' }, 3);
+    expect(store.getCustomAdapter('acmejobs')?.filters).toEqual([]);
+    store.close();
+  });
+
+  it('upgrades a database from before the filters, and reads a damaged column as no filters', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'jw-filters-'));
+    try {
+      const path = join(dir, 'old.sqlite');
+      const old = Store.open(path);
+      old.saveCustomAdapter(entry, { create: true, actor: 'x' }, 1);
+      old.saveCustomAdapter({ ...entry, handle: 'other' }, { create: true, actor: 'x' }, 1);
+      old.close();
+      const raw = new DatabaseSync(path);
+      raw.exec('ALTER TABLE custom_adapters DROP COLUMN filters; PRAGMA user_version = 16;'); // a version 16 database
+      raw.close();
+      const upgraded = Store.open(path);
+      expect(upgraded.schemaVersion).toBe(SCHEMA_VERSION);
+      expect(upgraded.getCustomAdapter('acmejobs')).toMatchObject({ script: entry.script, filters: [] });
+      upgraded.close();
+      const damage = new DatabaseSync(path);
+      damage.exec("UPDATE custom_adapters SET filters = 'not json' WHERE handle = 'acmejobs'");
+      damage.exec('UPDATE custom_adapters SET filters = \'[{"name":"x"}]\' WHERE handle = \'other\'');
+      damage.close();
+      const again = Store.open(path);
+      expect(again.listCustomAdapters().map((row) => row.filters)).toEqual([[], []]);
+      again.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shows a change of filters alone in the history: the hash covers the script and its filters', () => {
+    const store = Store.open(':memory:');
+    const filters = [{ name: 'remote', description: 'Remote only.', type: 'boolean' as const }];
+    store.saveCustomAdapter(entry, { create: true, actor: 'x' }, 1);
+    store.saveCustomAdapter({ ...entry, filters }, { create: false, actor: 'x' }, 2);
+    store.saveCustomAdapter(
+      { ...entry, filters: [{ name: 'remote', description: 'Only remote jobs.', type: 'boolean' as const }] },
+      { create: false, actor: 'x' },
+      3,
+    );
+    const hashes = store.customAdapterEvents('acmejobs', 10).map((event) => event.sha256);
+    expect(new Set(hashes).size).toBe(3); // the same script, three different adapters
+    expect(hashes[2]).toBe(createHash('sha256').update(entry.script).digest('hex')); // no filters: the hash of the script, as before
     store.close();
   });
 

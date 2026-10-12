@@ -16,6 +16,7 @@ import {
   type HttpAdapterContext,
 } from '@jobwatch/sdk';
 import type { CustomAdapterRow } from '../store/store';
+import { customFiltersSchema, filterShape } from './filters';
 import { SANDBOX_LIMITS, runInSandbox, type SandboxSpawner } from './sandbox';
 
 /** Boards (companies, sites) one call may ask a custom adapter for: each can cost a run of the script, up to `maxUnits` requests. */
@@ -75,6 +76,12 @@ export interface CustomModuleDeps {
 export function buildCustomModule(row: CustomAdapterRow, deps: CustomModuleDeps): AdapterModule {
   const target = checkTargetUrl(row.url);
   if ('error' in target) throw new Error(`custom adapter "${row.handle}": ${target.error}`);
+  // a list that breaks the rules (a built-in name, an option twice) would shadow a built-in filter: it makes no module at all
+  const declared = customFiltersSchema.safeParse(row.filters);
+  if (!declared.success) {
+    const issue = declared.error.issues[0];
+    throw new Error(`custom adapter "${row.handle}": filters${issue ? `.${issue.path.join('.')}: ${issue.message}` : ' are not valid'}`);
+  }
   const id = customId(row.handle);
   const toolName = `custom_${row.handle}`;
   const labelOf = (input: string): string => slugify(input) || 'default';
@@ -85,6 +92,8 @@ export function buildCustomModule(row: CustomAdapterRow, deps: CustomModuleDeps)
         MAX_BOARDS,
       ),
       ...boardFilters,
+      // the filters the operator declared: not applied by the router, handed to the script as part of its `filters`
+      ...filterShape(declared.data),
     })
     .strict();
   const limits = {

@@ -536,6 +536,7 @@ export function getCustomAdapter(data: DashboardData, handle: string): CustomAda
   return checked(customAdapterDetailSchema, {
     ...toCustomAdapter(data, row),
     script: row.script,
+    filters: row.filters,
     events: data.store
       .customAdapterEvents(handle, 50)
       .map((event) => ({ at: iso(event.ts), actor: event.actor, action: event.action, sha256: event.sha256 })),

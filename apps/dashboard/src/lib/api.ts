@@ -35,6 +35,7 @@ import {
   type CustomAdapter,
   type CustomAdapterDetail,
   type CustomAdapterSample,
+  type CustomFilter,
   type CustomAdapters,
   type PlaceLookups,
   type SavedPlace,
@@ -166,11 +167,12 @@ export const api = {
     kind: 'http' | 'browser';
     url: string;
     script: string;
+    filters: CustomFilter[];
   }): Promise<CustomAdapterDetail> =>
     request(customAdapterDetailSchema, '/custom-adapters', { method: 'POST', body: JSON.stringify(entry) }),
   updateCustomAdapter: (
     handle: string,
-    entry: { name: string; kind: 'http' | 'browser'; url: string; script: string },
+    entry: { name: string; kind: 'http' | 'browser'; url: string; script: string; filters: CustomFilter[] },
   ): Promise<CustomAdapterDetail> =>
     request(customAdapterDetailSchema, `/custom-adapters/${encodeURIComponent(handle)}`, { method: 'PUT', body: JSON.stringify(entry) }),
   setCustomAdapterEnabled: (handle: string, enabled: boolean): Promise<CustomAdapter> =>

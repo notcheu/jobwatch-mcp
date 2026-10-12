@@ -102,6 +102,68 @@ describe('custom adapters', () => {
     expect(http.requests.map((request) => request.url)).toEqual(['https://careers.acme.com/api/acme']);
   }, 30_000);
 
+  it('take the filters their operator declared: listed in the schema, handed to the script as given, and refused when outside the options', async () => {
+    const filters = [
+      {
+        name: 'contract',
+        description: 'The type of contract.',
+        type: 'multiselect' as const,
+        options: [{ value: 'CDI' }, { value: 'CDD' }, { value: 'Stage' }],
+      },
+      { name: 'sector', description: 'The job sector.', type: 'select' as const, options: [{ value: 'commercial' }, { value: 'it' }] },
+    ];
+    // the script asks the site for what the caller chose, as the real one does with the site's own filters
+    const withFilters = {
+      ...row,
+      filters,
+      script: `async function read(board, filters) {
+  const query = 'contract=' + filters.contract.join(',') + '&sector=' + (filters.sector || '');
+  const list = (await http.get('https://careers.acme.com/api/' + board + '?' + query)).json();
+  return { name: board, postings: list.map((j) => ({ id: j.id, title: j.title, url: 'https://careers.acme.com/j/' + j.id, description: j.text })) };
+}`,
+    };
+    seed([withFilters]);
+    const http = new FakeHttpClient(
+      ['careers.acme.com'],
+      [
+        {
+          url: 'https://careers.acme.com/api/acme?contract=CDI,Stage&sector=it',
+          body: [{ id: 'j1', title: 'Data Engineer', text: 'Data.' }],
+        },
+      ],
+    );
+    const { url } = await boot(ON, http);
+    const client = await connectClient(url);
+    const listed = (await client.listTools()).tools.find((tool) => tool.name === 'custom_acme');
+    const properties = (listed?.inputSchema as { properties: Record<string, { items?: { enum?: string[] }; enum?: string[] }> }).properties;
+    expect(properties['contract']?.items?.enum).toEqual(['CDI', 'CDD', 'Stage']);
+    expect(properties['sector']?.enum).toEqual(['commercial', 'it']);
+    const refused = await client.callTool({ name: 'custom_acme', arguments: { boards: ['acme'], sector: 'finance' } });
+    expect(refused.isError).toBe(true);
+    expect(http.requests).toEqual([]); // refused before the script ran
+    const result = await client.callTool({
+      name: 'custom_acme',
+      arguments: { boards: ['acme'], contract: ['CDI', 'Stage'], sector: 'it' },
+    });
+    await client.close();
+    expect(result.isError).not.toBe(true);
+    expect((result.structuredContent as { jobs: { id: string }[] }).jobs.map((job) => job.id)).toEqual(['j1']);
+    // the route only answers the full query, so the job proves the script sent the caller's choice; the log keeps no query string
+    expect(http.requests.map((request) => request.url)).toEqual(['https://careers.acme.com/api/acme']);
+  }, 30_000);
+
+  it('read a stored list that breaks the rules as no filter, so the adapter still loads and no built-in filter is shadowed', async () => {
+    const store = Store.open(join(dir, 'jobwatch.sqlite'));
+    store.saveCustomAdapter({ ...row, filters: [] }, { create: true, actor: 'test' }, 1);
+    store.setCustomAdapterEnabled('acme', true, 'test', 2);
+    store.close();
+    const raw = new (await import('node:sqlite')).DatabaseSync(join(dir, 'jobwatch.sqlite'));
+    raw.exec(`UPDATE custom_adapters SET filters = '[{"name":"max_results","description":"x","type":"boolean"}]' WHERE handle = 'acme'`);
+    raw.close();
+    const { url } = await boot(ON);
+    expect(await toolNames(url)).toContain('custom_acme');
+  });
+
   it('are picked up by a reload with no restart: a created one appears, a changed script applies, a deleted one goes', async () => {
     const { url, server } = await boot(ON);
     expect(await toolNames(url)).not.toContain('custom_acme');

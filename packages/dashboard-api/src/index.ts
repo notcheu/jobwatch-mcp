@@ -434,6 +434,138 @@ export const customHandleSchema = z
   .string()
   .regex(/^[a-z][a-z0-9]{1,23}$/, '2 to 24 lower-case letters and digits, starting with a letter');
 
+// The filters an operator adds to a custom adapter. The router checks them with its own copy of these rules (`packages/core/src/custom/filters.ts`,
+// core cannot import this package); a test in apps/mcp keeps the two in step. The modal uses this copy to say what is wrong before saving.
+
+export const CUSTOM_FILTER_NAME = /^[a-z][a-z0-9_]{1,31}$/;
+export const MAX_CUSTOM_FILTERS = 12;
+export const MAX_FILTER_OPTIONS = 100;
+export const CUSTOM_FILTER_TYPES = ['select', 'multiselect', 'boolean', 'string', 'number'] as const;
+export type CustomFilterType = (typeof CUSTOM_FILTER_TYPES)[number];
+
+const filterOptionSchema = z
+  .object({ value: z.string().trim().min(1).max(60), label: z.string().trim().min(1).max(80).optional() })
+  .strict();
+const filterBase = {
+  name: z.string().regex(CUSTOM_FILTER_NAME, '2 to 32 lower-case letters, digits or _, starting with a letter'),
+  label: z.string().trim().min(1).max(80).optional(),
+  description: z.string().trim().min(1).max(200),
+};
+const filterOptions = z.array(filterOptionSchema).min(2).max(MAX_FILTER_OPTIONS);
+export const customFilterSchema = z.discriminatedUnion('type', [
+  z.object({ ...filterBase, type: z.literal('select'), options: filterOptions }).strict(),
+  z.object({ ...filterBase, type: z.literal('multiselect'), options: filterOptions }).strict(),
+  z.object({ ...filterBase, type: z.literal('boolean'), default: z.boolean().optional() }).strict(),
+  z.object({ ...filterBase, type: z.literal('string'), maxLength: z.number().int().min(1).max(200).optional() }).strict(),
+  z
+    .object({
+      ...filterBase,
+      type: z.literal('number'),
+      integer: z.boolean().optional(),
+      min: z.number().min(-1_000_000_000).max(1_000_000_000).optional(),
+      max: z.number().min(-1_000_000_000).max(1_000_000_000).optional(),
+    })
+    .strict(),
+]);
+export type CustomFilter = z.infer<typeof customFilterSchema>;
+
+/**
+ * What is wrong with a list of filters, by index (an empty map: nothing). `reserved` is the names the router applies itself (the built-in
+ * filters and `boards`). Same rules as the router, so the modal refuses what the router would.
+ */
+export function filterProblems(filters: readonly unknown[], reserved: readonly string[]): Map<number, string[]> {
+  const problems = new Map<number, string[]>();
+  const add = (index: number, message: string): void => void problems.set(index, [...(problems.get(index) ?? []), message]);
+  if (filters.length > MAX_CUSTOM_FILTERS) add(MAX_CUSTOM_FILTERS, `At most ${MAX_CUSTOM_FILTERS} filters`);
+  const seen = new Set<string>();
+  filters.forEach((filter, index) => {
+    const parsed = customFilterSchema.safeParse(filter);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues.slice(0, 3)) add(index, `${issue.path.join('.') || 'filter'}: ${issue.message}`);
+    }
+    const name = (filter as { name?: unknown }).name;
+    if (typeof name === 'string' && name !== '') {
+      if (reserved.includes(name)) add(index, `"${name}" is a built-in filter`);
+      else if (seen.has(name)) add(index, `"${name}" is used twice`);
+      seen.add(name);
+    }
+    if (parsed.success) {
+      const one = parsed.data;
+      if (
+        (one.type === 'select' || one.type === 'multiselect') &&
+        new Set(one.options.map((option) => option.value)).size < one.options.length
+      )
+        add(index, 'Two options have the same value');
+      if (one.type === 'number' && one.min !== undefined && one.max !== undefined && one.min > one.max) add(index, 'Max is below min');
+    }
+  });
+  return problems;
+}
+
+const quoted = (values: readonly string[]): string => {
+  const shown = values.slice(0, 6).map((value) => `'${value}'`);
+  return values.length > 6 ? `${shown.join(' | ')} | … (${values.length} values)` : shown.join(' | ');
+};
+
+/**
+ * The rows of the Filters table of the script reference for the filters of an adapter, from the definitions alone, so the reference
+ * follows them as they are edited. They are the fields the tool takes and the script finds in its `filters` argument.
+ */
+export function filterDocItems(filters: readonly CustomFilter[]): DocItem[] {
+  return filters.map((filter) => {
+    const what = `${filter.label ?? filter.name}: ${filter.description}`;
+    switch (filter.type) {
+      case 'select': {
+        const values = filter.options.map((option) => option.value);
+        return {
+          name: filter.name,
+          type: 'string',
+          fullType: quoted(values),
+          optional: true,
+          description: `${what} Not set when the caller leaves it out. The router does not apply it: the script sends it to the site.`,
+        };
+      }
+      case 'multiselect': {
+        const values = filter.options.map((option) => option.value);
+        return {
+          name: filter.name,
+          type: 'string[]',
+          fullType: `(${quoted(values)})[]`,
+          optional: true,
+          description: `${what} An empty list when the caller leaves it out. The router does not apply it: the script sends it to the site.`,
+        };
+      }
+      case 'boolean':
+        return {
+          name: filter.name,
+          type: 'boolean',
+          optional: true,
+          description: `${what} ${filter.default === true ? 'True' : 'False'} when the caller leaves it out. The router does not apply it.`,
+        };
+      case 'string':
+        return {
+          name: filter.name,
+          type: 'string',
+          fullType: `string (${filter.maxLength ?? 100} characters at most)`,
+          optional: true,
+          description: `${what} Not set when the caller leaves it out. Free text from the caller: treat it as untrusted.`,
+        };
+      case 'number': {
+        const range = [filter.min !== undefined ? `at least ${filter.min}` : '', filter.max !== undefined ? `at most ${filter.max}` : '']
+          .filter(Boolean)
+          .join(', ');
+        return {
+          name: filter.name,
+          type: 'number',
+          fullType: `${filter.integer === true ? 'integer' : 'number'}${range === '' ? '' : ` (${range})`}`,
+          optional: true,
+          description: `${what} Not set when the caller leaves it out. The router does not apply it.`,
+        };
+      }
+    }
+  });
+}
+
 /** An adapter written on the dashboard. The script is only in the detail, never in the list. */
 export const customAdapterSchema = z
   .object({
@@ -466,6 +598,8 @@ export type CustomAdapters = z.infer<typeof customAdaptersSchema>;
 export const customAdapterDetailSchema = customAdapterSchema
   .extend({
     script: z.string(),
+    /** The filters added to its tool, beyond the built-in ones. */
+    filters: z.array(customFilterSchema),
     /** Who changed it and what they did, newest first. The script itself is never in it, only its hash. */
     events: z.array(z.object({ at: z.string(), actor: z.string(), action: z.string(), sha256: z.string().nullable() }).strict()),
   })
@@ -488,6 +622,65 @@ export const docItemSchema = z
 export const docBlockSchema = z.object({ id: z.string(), title: z.string(), summary: z.string(), items: z.array(docItemSchema) }).strict();
 export type DocBlock = z.infer<typeof docBlockSchema>;
 export type DocItem = z.infer<typeof docItemSchema>;
+
+// ------------------------------------------------------------------------------------------------------ custom adapter files
+
+/**
+ * The file an adapter is exported to, to share it (`<handle>.adapter.json`). It is exactly what a person types in the modal and nothing
+ * else: no id, no date, no history, no budget, nothing about the router it came from. Importing one only fills the form, so what it holds
+ * is read and created by the person who imports it; nothing in a file is run, enabled or trusted.
+ */
+export const CUSTOM_ADAPTER_FILE_FORMAT = 'jobwatch.custom-adapter';
+export const CUSTOM_ADAPTER_FILE_VERSION = 1;
+/** Biggest file an import reads: a script is 60 000 characters at most, and JSON escapes it. */
+export const MAX_ADAPTER_FILE_BYTES = 300_000;
+
+export const customAdapterFileSchema = z
+  .object({
+    format: z.literal(CUSTOM_ADAPTER_FILE_FORMAT),
+    version: z.literal(CUSTOM_ADAPTER_FILE_VERSION),
+    handle: customHandleSchema,
+    name: z.string().trim().min(1).max(60),
+    kind: z.enum(['http', 'browser']),
+    url: z.string().trim().min(8).max(300),
+    script: z.string().min(1).max(60_000),
+    filters: z.array(customFilterSchema).max(MAX_CUSTOM_FILTERS),
+  })
+  .strict();
+export type CustomAdapterFile = z.infer<typeof customAdapterFileSchema>;
+
+/** The name of the file for a handle: `bpce.adapter.json`. */
+export const adapterFileName = (handle: string): string => `${handle}.adapter.json`;
+
+/** The text of the file for an adapter: indented, so that it reads and compares well, and ends with a line break. */
+export function adapterFileText(entry: Omit<CustomAdapterFile, 'format' | 'version'>): string {
+  const file: CustomAdapterFile = { format: CUSTOM_ADAPTER_FILE_FORMAT, version: CUSTOM_ADAPTER_FILE_VERSION, ...entry };
+  return `${JSON.stringify(file, null, 2)}\n`;
+}
+
+/** Reads the text of a file. The error is a sentence for the person who chose the file, never a stack. */
+export function parseAdapterFile(text: string): { file: CustomAdapterFile } | { error: string } {
+  if (text.length > MAX_ADAPTER_FILE_BYTES) return { error: 'That file is too large to be an adapter.' };
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return { error: 'That file is not JSON.' };
+  }
+  if (typeof json !== 'object' || json === null || (json as { format?: unknown }).format !== CUSTOM_ADAPTER_FILE_FORMAT)
+    return { error: 'That file is not an exported custom adapter.' };
+  const version = (json as { version?: unknown }).version;
+  if (version !== CUSTOM_ADAPTER_FILE_VERSION)
+    return { error: `That adapter file is version ${String(version)}; this dashboard reads version ${CUSTOM_ADAPTER_FILE_VERSION}.` };
+  const parsed = customAdapterFileSchema.safeParse(json);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return {
+      error: `That adapter file is not valid (${issue ? `${issue.path.join('.') || 'file'}: ${issue.message}` : 'unknown problem'}).`,
+    };
+  }
+  return { file: parsed.data };
+}
 
 /** What the editor starts from for a kind of context: the script, and the reference to read beside it. */
 export const customAdapterSampleSchema = z
