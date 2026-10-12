@@ -2,6 +2,8 @@ export { RUNNER_SOURCE } from './runner';
 export { SANDBOX_LIMITS, dockerSandboxArgs, dockerSpawner, processSpawner, reapSandboxes, runInSandbox, toBoardRead } from './sandbox';
 export type { SandboxProcess, SandboxRun, SandboxSpawner } from './sandbox';
 export { buildCustomModule, checkTargetUrl, customId, sampleScript } from './module';
+export { RESERVED_FILTER_NAMES, customFilterSchema, customFiltersSchema, filterShape, parseStoredFilters } from './filters';
+export type { CustomFilter } from './filters';
 export type { CustomModuleDeps } from './module';
 export { scriptDocs } from './docs';
 export type { DocBlock, DocItem } from './docs';

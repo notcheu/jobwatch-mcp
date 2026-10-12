@@ -3,6 +3,7 @@ import { chmodSync, closeSync, mkdirSync, openSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { SearchRecord } from '@jobwatch/sdk';
+import { parseStoredFilters, type CustomFilter } from '../custom/filters';
 import { findSalaryRange, slugify } from '@jobwatch/sdk';
 
 /** Milliseconds since the epoch. Injected everywhere time matters, so tests control it. */
@@ -278,6 +279,10 @@ const MIGRATIONS: readonly string[] = [
   ALTER TABLE search_runs ADD COLUMN board TEXT NOT NULL DEFAULT '';
   DROP INDEX search_runs_search;
   CREATE INDEX search_runs_search ON search_runs (platform, board, keywords_key, disallowed_key);
+  `,
+  // 17: the filters an operator adds to a custom adapter (a JSON list, see custom/filters.ts); '[]' for the adapters from before.
+  `
+  ALTER TABLE custom_adapters ADD COLUMN filters TEXT NOT NULL DEFAULT '[]';
   `,
 ];
 
@@ -636,7 +641,7 @@ export class Store {
 
   /** Create or replace an adapter; every change is logged with who made it. Returns false when `create` finds the handle taken. */
   saveCustomAdapter(
-    entry: { handle: string; name: string; kind: 'http' | 'browser'; url: string; script: string },
+    entry: { handle: string; name: string; kind: 'http' | 'browser'; url: string; script: string; filters?: readonly CustomFilter[] },
     options: { create: boolean; actor: string },
     now: number,
   ): boolean {
@@ -646,21 +651,25 @@ export class Store {
     return this.transaction(() => {
       const exists = this.getCustomAdapter(entry.handle) !== null;
       if (options.create === exists) return false;
+      const filters = JSON.stringify(entry.filters ?? []);
       if (exists)
         this.db
-          .prepare('UPDATE custom_adapters SET name = ?, kind = ?, url = ?, script = ?, updated_at = ? WHERE handle = ?')
-          .run(entry.name.trim(), entry.kind, entry.url, entry.script, now, entry.handle);
+          .prepare('UPDATE custom_adapters SET name = ?, kind = ?, url = ?, script = ?, filters = ?, updated_at = ? WHERE handle = ?')
+          .run(entry.name.trim(), entry.kind, entry.url, entry.script, filters, now, entry.handle);
       else
         this.db
           .prepare(
-            'INSERT INTO custom_adapters (handle, name, kind, url, script, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
+            'INSERT INTO custom_adapters (handle, name, kind, url, script, filters, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)',
           )
-          .run(entry.handle, entry.name.trim(), entry.kind, entry.url, entry.script, now, now);
+          .run(entry.handle, entry.name.trim(), entry.kind, entry.url, entry.script, filters, now, now);
+      // the hash of what the adapter runs: the script, and its filters when it has some (so a change of filters alone shows in the history)
       this.logCustomEvent(
         entry.handle,
         options.actor,
         exists ? 'updated' : 'created',
-        createHash('sha256').update(entry.script).digest('hex'),
+        createHash('sha256')
+          .update(filters === '[]' ? entry.script : `${entry.script}\u0000${filters}`)
+          .digest('hex'),
         now,
       );
       return true;
@@ -1323,6 +1332,8 @@ export interface CustomAdapterRow {
   /** The one https address the script may reach; its host is the adapter's allowed host. */
   url: string;
   script: string;
+  /** The filters added to its tool, beyond the built-in ones: what the script is handed as `filters`. */
+  filters: CustomFilter[];
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
@@ -1341,6 +1352,7 @@ const toCustomAdapter = (row: Rows): CustomAdapterRow => ({
   kind: row['kind'] === 'browser' ? 'browser' : 'http',
   url: String(row['url']),
   script: String(row['script']),
+  filters: parseStoredFilters(row['filters']),
   enabled: Number(row['enabled']) === 1,
   createdAt: Number(row['created_at']),
   updatedAt: Number(row['updated_at']),

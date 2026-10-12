@@ -20,7 +20,7 @@ import {
   type SavedPlace,
   type DataCleared,
 } from '@jobwatch/dashboard-api';
-import { BUDGET_MAX, BUDGET_MIN, type EngineLogger } from '@jobwatch/core';
+import { BUDGET_MAX, BUDGET_MIN, customFiltersSchema, type CustomFilter, type EngineLogger } from '@jobwatch/core';
 import express, { type Router } from 'express';
 import { z } from 'zod';
 import { checked } from './api';
@@ -58,7 +58,7 @@ export interface Changes {
    * on create (409 `exists`) or missing on update (404), and when the address or the definition is not valid (400 `invalid`).
    */
   saveCustomAdapter(
-    entry: { handle: string; name: string; kind: 'http' | 'browser'; url: string; script: string },
+    entry: { handle: string; name: string; kind: 'http' | 'browser'; url: string; script: string; filters: CustomFilter[] },
     mode: 'create' | 'update',
     actor: string,
   ): Promise<CustomAdapterDetail>;
@@ -106,6 +106,8 @@ const customBody = z
     kind: z.enum(['http', 'browser']),
     url: z.string().trim().min(8).max(300),
     script: z.string().min(1).max(60_000),
+    // the router's own rules for the filters of an adapter; a bad list is refused with 400 before anything is saved
+    filters: customFiltersSchema.default([]),
   })
   .strict();
 const restartBody = z.object({ force: z.boolean().default(false) }).strict();

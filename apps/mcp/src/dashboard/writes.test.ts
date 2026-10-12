@@ -303,7 +303,30 @@ describe('custom adapters', () => {
     expect(script.length).toBeGreaterThan(50_000);
     const created = await t.send('POST', '/custom-adapters', { ...body, script });
     expect(created.status).toBe(201);
-    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith({ ...body, script }, 'create', 'me@example.com');
+    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith({ ...body, script, filters: [] }, 'create', 'me@example.com');
+  });
+
+  it('passes the filters of an adapter on, and refuses a list that breaks the rules before anything is saved', async () => {
+    const t = await setup();
+    const filters = [
+      { name: 'contract', description: 'The contract.', type: 'multiselect', options: [{ value: 'cdi' }, { value: 'cdd', label: 'CDD' }] },
+      { name: 'remote', description: 'Remote only.', type: 'boolean' },
+    ];
+    expect((await t.send('POST', '/custom-adapters', { ...body, filters })).status).toBe(201);
+    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith({ ...body, filters }, 'create', 'me@example.com');
+    const { handle: _handle, ...rest } = body;
+    expect((await t.send('PUT', '/custom-adapters/acmejobs', { ...rest, filters })).status).toBe(200);
+    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith({ ...body, filters }, 'update', 'me@example.com');
+    const calls = vi.mocked(t.changes.saveCustomAdapter).mock.calls.length;
+    for (const bad of [
+      [{ ...filters[1], name: 'max_results' }], // a built-in name
+      [filters[1], filters[1]], // twice
+      [{ name: 'sector', description: 'x', type: 'select', options: [{ value: 'it' }] }], // one option
+      [{ name: 'when', description: 'x', type: 'date' }], // a type that does not exist
+      Array.from({ length: 13 }, (_, index) => ({ name: `flag${index}`, description: 'x', type: 'boolean' })),
+    ])
+      expect((await t.send('POST', '/custom-adapters', { ...body, filters: bad })).status).toBe(400);
+    expect(vi.mocked(t.changes.saveCustomAdapter).mock.calls.length).toBe(calls);
   });
 
   it('still keeps the other changes to a few kilobytes', async () => {
@@ -318,11 +341,11 @@ describe('custom adapters', () => {
     const created = await t.send('POST', '/custom-adapters', body);
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ handle: 'acmejobs', id: 'custom-acmejobs', kind: 'http' });
-    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith(body, 'create', 'me@example.com');
+    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith({ ...body, filters: [] }, 'create', 'me@example.com');
     const { handle: _handle, ...rest } = body;
     const updated = await t.send('PUT', '/custom-adapters/acmejobs', { ...rest, kind: 'browser' });
     expect(updated.status).toBe(200);
-    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith({ ...body, kind: 'browser' }, 'update', 'me@example.com');
+    expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith({ ...body, kind: 'browser', filters: [] }, 'update', 'me@example.com');
     const logged = t.entries.filter((e) => e.msg.startsWith('dashboard_custom_adapter'));
     expect(logged.map((e) => e.msg)).toEqual(['dashboard_custom_adapter_created', 'dashboard_custom_adapter_updated']);
     expect(JSON.stringify(logged)).not.toContain('async function read');

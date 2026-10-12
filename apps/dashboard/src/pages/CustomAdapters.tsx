@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CustomAdapter } from '@jobwatch/dashboard-api';
-import { AlertTriangle, BookOpen, Maximize2, Minimize2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { customFilterSchema, filterDocItems, filterProblems, type CustomAdapter, type CustomFilter } from '@jobwatch/dashboard-api';
+import { AlertTriangle, BookOpen, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { CodeEditor } from '@/components/CodeEditor';
+import { CustomFilters } from '@/components/CustomFilters';
 import { ScriptDocs } from '@/components/ScriptDocs';
 import { useChangeError } from '@/components/Discovery';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +14,6 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, navigation } from '@/lib/api';
 import { ago } from '@/lib/format';
-import { cn } from '@/lib/utils';
 
 type Kind = 'http' | 'browser';
 
@@ -31,15 +31,11 @@ const HANDLE = /^[a-z][a-z0-9]{1,23}$/;
 /** Dialog content, mounted only while it is open, so every opening starts from what the router says now. */
 function AdapterForm({
   handle,
-  expanded,
-  onToggleExpanded,
   onClose,
   onReauth,
   onNotice,
 }: {
   handle: string | undefined;
-  expanded: boolean;
-  onToggleExpanded: () => void;
   onClose: () => void;
   onReauth: () => void;
   onNotice: (message: string) => void;
@@ -52,6 +48,7 @@ function AdapterForm({
   const [kind, setKind] = useState<Kind>('http');
   const [url, setUrl] = useState('https://');
   const [script, setScript] = useState('');
+  const [filters, setFilters] = useState<CustomFilter[]>([]);
   const untouched = useRef(true); // the script is still a sample: changing the context may swap it for the other sample
   const loaded = useRef(false);
   // the sample gives a new adapter its script; the reference of the context is shown whether the adapter is new or not
@@ -76,6 +73,7 @@ function AdapterForm({
     setKind(found.kind);
     setUrl(found.url);
     setScript(found.script);
+    setFilters(found.filters);
   }, [existing.data]);
   useEffect(() => {
     if (!editing && untouched.current && sample.data !== undefined) setScript(sample.data.script);
@@ -84,12 +82,17 @@ function AdapterForm({
   const save = useMutation({
     mutationFn: () =>
       editing
-        ? api.updateCustomAdapter(handle, { name: name.trim(), kind, url: url.trim(), script })
-        : api.createCustomAdapter({ handle: newHandle.trim(), name: name.trim(), kind, url: url.trim(), script }),
+        ? api.updateCustomAdapter(handle, { name: name.trim(), kind, url: url.trim(), script, filters })
+        : api.createCustomAdapter({ handle: newHandle.trim(), name: name.trim(), kind, url: url.trim(), script, filters }),
     onSuccess: (saved) => {
       onNotice(
         editing
-          ? `${saved.name} saved.${saved.enabled ? ' The new script applies to the next call.' : ''}`
+          ? `${saved.name} saved.${saved.enabled ? ' The new script applies to the next call.' : ''}${
+              // the filters are part of the tool's schema, which the connector lists once: a change of them needs a reconnect
+              saved.enabled && JSON.stringify(saved.filters) !== JSON.stringify(existing.data?.filters ?? [])
+                ? ' Reconnect the Claude connector to see the new tool list.'
+                : ''
+            }`
           : `${saved.name} created. Turn it on to list its tool.`,
       );
       void client.invalidateQueries({ queryKey: ['custom-adapters'] });
@@ -99,8 +102,26 @@ function AdapterForm({
     },
     onError: (failure) => fail(failure, 'The adapter could not be saved.'),
   });
+  // the built-in filters are what the router's reference lists for the Filters table: they are locked here, and their names are taken
+  const builtin = useMemo(() => sample.data?.docs.find((block) => block.id === 'filters')?.items ?? [], [sample.data]);
+  const problems = useMemo(() => filterProblems(filters, ['boards', ...builtin.map((item) => item.name)]), [filters, builtin]);
+  // the reference follows the filters as they are typed: a filter shows in the Filters table as soon as it is complete
+  const docs = useMemo(() => {
+    if (sample.data === undefined) return undefined;
+    const complete = filters.flatMap((filter) => {
+      const parsed = customFilterSchema.safeParse(filter);
+      return parsed.success && !builtin.some((item) => item.name === parsed.data.name) ? [parsed.data] : [];
+    });
+    return sample.data.docs.map((block) =>
+      block.id === 'filters' ? { ...block, items: [...block.items, ...filterDocItems(complete)] } : block,
+    );
+  }, [sample.data, filters, builtin]);
   const valid =
-    name.trim() !== '' && (editing || HANDLE.test(newHandle.trim())) && /^https:\/\/[^\s/]+/.test(url.trim()) && script.trim() !== '';
+    name.trim() !== '' &&
+    (editing || HANDLE.test(newHandle.trim())) &&
+    /^https:\/\/[^\s/]+/.test(url.trim()) &&
+    script.trim() !== '' &&
+    problems.size === 0;
   const kindHint = KINDS.find((entry) => entry.value === kind)?.hint;
 
   return (
@@ -112,26 +133,13 @@ function AdapterForm({
       }}
     >
       <DialogHeader className="shrink-0">
-        <div className="flex items-start justify-between gap-3">
-          <DialogTitle>{editing ? `Edit ${existing.data?.name ?? handle}` : 'Create a custom adapter'}</DialogTitle>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="-mt-1 -mr-2 size-8 shrink-0"
-            aria-label={expanded ? 'Shrink the window' : 'Expand the window'}
-            aria-pressed={expanded}
-            onClick={onToggleExpanded}
-          >
-            {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-          </Button>
-        </div>
+        <DialogTitle>{editing ? `Edit ${existing.data?.name ?? handle}` : 'Create a custom adapter'}</DialogTitle>
         <DialogDescription>
           Its script runs in a sandbox with no network of its own and reads one site: what it finds goes through the same filters and
           storage as the other company-board tools. It never changes anything on a site.
         </DialogDescription>
       </DialogHeader>
-      <div className="grid min-h-0 flex-1 gap-4 overflow-auto md:grid-cols-[minmax(15rem,21rem)_minmax(0,1fr)] md:overflow-hidden">
+      <div className="grid min-h-0 flex-1 gap-4 overflow-auto md:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)_minmax(20rem,28rem)] md:overflow-hidden">
         <div className="min-h-0 space-y-4 md:overflow-auto md:pr-1">
           <div className="space-y-4">
             <div className="space-y-1">
@@ -231,9 +239,7 @@ function AdapterForm({
               <BookOpen className="size-4" />
             </Button>
           </div>
-          {docsOpen && sample.data !== undefined && (
-            <ScriptDocs id={docsId} blocks={sample.data.docs} className="max-h-80 shrink-0 md:max-h-[45%]" />
-          )}
+          {docsOpen && docs !== undefined && <ScriptDocs id={docsId} blocks={docs} className="max-h-80 shrink-0 md:max-h-[45%]" />}
           {docsOpen && sample.data === undefined && (
             <p id={docsId} className="text-xs text-muted-foreground">
               {sample.isError ? 'The documentation could not be loaded.' : 'Loading the documentation…'}
@@ -249,6 +255,7 @@ function AdapterForm({
             }}
           />
         </div>
+        <CustomFilters builtin={builtin} filters={filters} problems={problems} onChange={setFilters} />
       </div>
       {error !== undefined && (
         <p role="alert" className="text-xs text-destructive">
@@ -272,7 +279,6 @@ export function CustomAdapters() {
   const client = useQueryClient();
   const list = useQuery({ queryKey: ['custom-adapters'], queryFn: api.customAdapters, refetchInterval: 10_000 });
   const [form, setForm] = useState<{ handle?: string } | undefined>();
-  const [expanded, setExpanded] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [reauth, setReauth] = useState(false);
   const [removing, setRemoving] = useState<CustomAdapter>();
@@ -342,15 +348,7 @@ export function CustomAdapters() {
         <span className="text-xs text-muted-foreground">
           An adapter is code you write: it runs only in the sandbox, reads one site and changes nothing on it.
         </span>
-        <Button
-          size="sm"
-          className="ml-auto"
-          disabled={!available}
-          onClick={() => {
-            setExpanded(false);
-            setForm({});
-          }}
-        >
+        <Button size="sm" className="ml-auto" disabled={!available} onClick={() => setForm({})}>
           <Plus className="size-4" /> Create adapter
         </Button>
       </div>
@@ -399,10 +397,7 @@ export function CustomAdapters() {
                       size="icon"
                       className="size-7"
                       aria-label={`Edit ${adapter.name}`}
-                      onClick={() => {
-                        setExpanded(false);
-                        setForm({ handle: adapter.handle });
-                      }}
+                      onClick={() => setForm({ handle: adapter.handle })}
                     >
                       <Pencil className="size-4" />
                     </Button>
@@ -430,23 +425,10 @@ export function CustomAdapters() {
         {list.isError && <p className="p-8 text-center text-sm text-destructive">Could not load the custom adapters.</p>}
       </div>
       <Dialog open={form !== undefined} onOpenChange={(next) => !next && setForm(undefined)}>
-        <DialogContent
-          data-expanded={expanded}
-          className={cn(
-            'flex max-w-none flex-col',
-            // the window leaves a margin all round when it is expanded, so it still reads as a window
-            expanded ? 'h-[calc(100vh-2rem)] w-[calc(100vw-2rem)]' : 'h-[min(46rem,92vh)] w-[min(72rem,94vw)]',
-          )}
-        >
+        {/* always the whole window, with a margin all round so it still reads as a window: the settings, the script and the filters side by side */}
+        <DialogContent className="flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col">
           {form !== undefined && (
-            <AdapterForm
-              handle={form.handle}
-              expanded={expanded}
-              onToggleExpanded={() => setExpanded((value) => !value)}
-              onClose={() => setForm(undefined)}
-              onReauth={() => setReauth(true)}
-              onNotice={setNotice}
-            />
+            <AdapterForm handle={form.handle} onClose={() => setForm(undefined)} onReauth={() => setReauth(true)} onNotice={setNotice} />
           )}
         </DialogContent>
       </Dialog>
