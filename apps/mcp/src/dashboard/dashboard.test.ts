@@ -17,7 +17,7 @@ import {
 } from '@jobwatch/core';
 import { exportJWK, generateKeyPair, SignJWT, createLocalJWKSet, type JWK } from 'jose';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SDK_API_VERSION, defineHttpTool, defineUtility, z } from '@jobwatch/sdk';
+import { SDK_API_VERSION, defineAdapter, defineHttpTool, defineUtility, z } from '@jobwatch/sdk';
 import { installedFixtures } from '../harness';
 import { createDashboardApp, type DashboardDeps } from './app';
 import { Oidc } from './oidc';
@@ -441,8 +441,8 @@ describe('the API in local development mode (no sign-in)', () => {
     const list = await json(await t.call('/dashboard/api/v1/custom-adapters'));
     expect(list).toMatchObject({ available: true, sandbox: 'docker' });
     expect(list.items.map((i: any) => [i.handle, i.id, i.tool, i.kind, i.host, i.enabled, i.problem])).toEqual([
-      ['acmejobs', 'custom-acmejobs', 'custom_acmejobs', 'http', 'careers.acme.com', false, null],
-      ['broken', 'custom-broken', 'custom_broken', 'browser', 'broken.example.com', true, 'The address must be https.'],
+      ['acmejobs', 'acmejobs', 'acmejobs', 'http', 'careers.acme.com', false, null], // new ones are named by their handle alone
+      ['broken', 'broken', 'broken', 'browser', 'broken.example.com', true, 'The address must be https.'],
     ]);
     expect(JSON.stringify(list)).not.toContain('async function read');
     const one = await json(await t.call('/dashboard/api/v1/custom-adapters/acmejobs'));
@@ -459,6 +459,38 @@ describe('the API in local development mode (no sign-in)', () => {
     const plain = await json(await t.call('/dashboard/api/v1/custom-adapters/sample/http'));
     expect(plain.docs.map((block: any) => block.id)).not.toContain('session'); // no browser, no session
     expect((await t.call('/dashboard/api/v1/custom-adapters/sample/ftp')).status).toBe(400);
+  });
+
+  it('flags every custom adapter in the tools list, and none of the shipped ones', async () => {
+    const mine = defineAdapter({
+      id: 'bpce-adapter',
+      displayName: 'BPCE careers',
+      description: 'Written on the dashboard.',
+      sdkApi: SDK_API_VERSION,
+      platform: 'bpce-adapter',
+      kind: 'http',
+      custom: true,
+      allowedHosts: ['recrutement.bpce.fr'],
+      tools: [
+        defineHttpTool({
+          name: 'bpce_adapter',
+          title: 'BPCE careers (read-only)',
+          description: 'Lists jobs. Read-only, no side effects.',
+          input: z.object({}).strict(),
+          output: z.object({ ok: z.boolean() }),
+          annotations: { readOnlyHint: true, openWorldHint: true, idempotentHint: true },
+          limits: { timeoutS: 10, cost: 1, outputMaxBytes: 2048 },
+          handler: async () => ({ data: { ok: true }, warnings: [] }),
+        }),
+      ],
+    });
+    const installed = { ...installedFixtures, 'bpce-adapter': async () => mine };
+    const t = await build({ installed });
+    const tools = await json(await t.call('/dashboard/api/v1/tools'));
+    const flagged = Object.fromEntries(tools.adapters.map((a: any) => [a.id, a.custom]));
+    expect(flagged['bpce-adapter']).toBe(true);
+    expect(flagged['probe']).toBe(false);
+    expect(Object.values(flagged).every((value) => typeof value === 'boolean')).toBe(true);
   });
 
   it('keeps a search for each board: one row each in the list, the board in the detail and in the job, and the other board left out', async () => {

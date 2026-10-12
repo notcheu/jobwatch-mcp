@@ -26,6 +26,8 @@ import {
   checkTargetUrl,
   createPlatformMemory,
   customId,
+  nameTakenBy,
+  type NameContext,
   dockerSpawner,
   processSpawner,
   reapSandboxes,
@@ -166,18 +168,41 @@ export async function start(options: StartOptions): Promise<RunningServer> {
     options.sandboxSpawner ?? (config.customAdaptersSandbox === 'docker' ? dockerSpawner(config.customAdaptersImage) : processSpawner());
   /** Why an enabled custom adapter is not loaded, by handle: shown on the dashboard instead of stopping the router. */
   const customProblems = new Map<string, string>();
+  /** The keys of `table` that are custom adapters. Their ids carry no mark any more, so they are remembered rather than recognised. */
+  const customKeys = new Set<string>();
+  /** Everything a new custom adapter's name is checked against: the other custom adapters, and every module and tool of the router. */
+  const nameContext = async (): Promise<NameContext> => {
+    const modules: NameContext['modules'][number][] = [];
+    for (const [key, load] of Object.entries(table)) {
+      if (customKeys.has(key)) continue;
+      try {
+        const module = await load();
+        modules.push({ id: module.id, platform: module.platform, tools: module.tools.map((tool) => tool.name) });
+      } catch {
+        modules.push({ id: key, platform: key, tools: [] }); // one that does not load still has its id
+      }
+    }
+    // the modules that are always there and are not in the table: the ops tools
+    for (const module of holder.current().adapters) {
+      if (!customKeys.has(module.id) && !modules.some((entry) => entry.id === module.id))
+        modules.push({ id: module.id, platform: module.platform, tools: module.tools.map((tool) => tool.name) });
+    }
+    return { custom: store.listCustomAdapters(), modules };
+  };
   const syncCustomAdapters = (): string[] => {
-    for (const key of Object.keys(table)) if (key.startsWith('custom-')) Reflect.deleteProperty(table, key);
+    for (const key of customKeys) Reflect.deleteProperty(table, key);
+    customKeys.clear();
     customProblems.clear();
     if (!config.customAdapters) return [];
     const ids: string[] = [];
     for (const row of store.listCustomAdapters()) {
-      const id = customId(row.handle);
+      const id = customId(row);
       try {
         const module = buildCustomModule(row, { spawner: sandbox });
         const violations = validateAdapter(module);
         if (violations.length > 0) throw new Error(formatViolations(id, violations));
         table[id] = async () => buildCustomModule(row, { spawner: sandbox });
+        customKeys.add(id);
         if (row.enabled) ids.push(id);
       } catch (error) {
         customProblems.set(row.handle, (error instanceof Error ? error.message : 'It could not be built.').slice(0, 400));
@@ -579,10 +604,17 @@ export async function start(options: StartOptions): Promise<RunningServer> {
               requireCustomAdapters();
               const target = checkTargetUrl(entry.url);
               if ('error' in target) throw new ChangeRefused(400, 'invalid', target.error);
-              const candidate = { ...entry, url: target.url, enabled: false, createdAt: 0, updatedAt: 0 };
+              // a new adapter is named by its handle alone; one that is changed keeps the id it has (the older ones are `custom-<handle>`)
+              const moduleId =
+                mode === 'create' ? entry.handle : (store.getCustomAdapter(entry.handle)?.moduleId ?? `custom-${entry.handle}`);
+              if (mode === 'create') {
+                const taken = nameTakenBy(moduleId, await nameContext());
+                if (taken !== undefined) throw new ChangeRefused(409, 'taken', `"${moduleId}" is already ${taken}. Choose another name.`);
+              }
+              const candidate = { ...entry, moduleId, url: target.url, enabled: false, createdAt: 0, updatedAt: 0 };
               try {
                 const violations = validateAdapter(buildCustomModule(candidate, { spawner: sandbox }));
-                if (violations.length > 0) throw new Error(formatViolations(customId(entry.handle), violations));
+                if (violations.length > 0) throw new Error(formatViolations(moduleId, violations));
               } catch (error) {
                 throw new ChangeRefused(
                   400,

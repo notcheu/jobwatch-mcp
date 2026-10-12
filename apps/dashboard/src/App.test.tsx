@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api, navigation } from '@/lib/api';
-import { NOW, badSearchRow, callRow, me, mockApi, renderApp, tools } from './test-utils';
+import { NOW, badSearchRow, callRow, me, mockApi, renderApp, tools, toolsWithCustom } from './test-utils';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -40,6 +40,62 @@ describe('the shell', () => {
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
     ).toEqual(['All', 'linkedin', 'apec']); // wttj is disabled
+  });
+
+  it('floats an icon on the tab of a custom adapter, and on no other tab, on every section that has tabs', async () => {
+    for (const path of ['/runs', '/analytics', '/jobs', '/searches']) {
+      mockApi({
+        '/me': me,
+        '/tools': toolsWithCustom,
+        '/calls': { calls: [], total: 0, next: null },
+        '/jobs': { jobs: [], total: 0, page: 1, pageSize: 25 },
+        '/searches': { searches: [] },
+        '/search-options': { searches: [] },
+      });
+      const { unmount } = renderApp(path);
+      const list = await screen.findByRole('tablist', { name: 'Tool' });
+      await waitFor(() => expect(within(list).getByRole('tab', { name: /bpce-adapter/ })).toBeInTheDocument());
+      const custom = within(list).getByRole('tab', { name: /bpce-adapter/ });
+      const mark = within(custom).getByRole('img', { name: 'Custom adapter' });
+      expect(mark).toHaveAttribute('title', 'Custom adapter: written on this dashboard');
+      expect(mark.className).toContain('absolute'); // floating on the tab, like a notification
+      expect(mark.className).toContain('rounded-full');
+      expect(custom.className).toContain('relative');
+      expect(within(list).getAllByRole('img', { name: 'Custom adapter' })).toHaveLength(1); // linkedin, apec and All have none
+      unmount();
+    }
+  });
+
+  it('puts no icon in the tables: a custom adapter is marked on its tab only', async () => {
+    mockApi({
+      '/me': me,
+      '/tools': toolsWithCustom,
+      '/calls': {
+        calls: [
+          callRow({ tool: 'bpce_adapter', platform: 'bpce-adapter', keywords: null }),
+          callRow({ id: 2, tool: 'custom_deezer', platform: 'custom-deezer', keywords: null }),
+        ],
+        total: 2,
+        next: null,
+      },
+    });
+    renderApp('/runs');
+    const table = (await screen.findByText('bpce_adapter')).closest('table') as HTMLElement;
+    expect(within(table).queryByRole('img', { name: 'Custom adapter' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('img', { name: 'Custom adapter' })).toHaveLength(1); // the tab
+  });
+
+  it('shows the mark on the tab only while the custom adapter is enabled, like the tab itself', async () => {
+    const off = {
+      ...toolsWithCustom,
+      adapters: toolsWithCustom.adapters.map((adapter) => (adapter.id === 'bpce-adapter' ? { ...adapter, enabled: false } : adapter)),
+    };
+    mockApi({ '/me': me, '/tools': off, '/calls': { calls: [], total: 0, next: null } });
+    renderApp('/runs');
+    const list = await screen.findByRole('tablist', { name: 'Tool' });
+    await waitFor(() => expect(within(list).getByRole('tab', { name: 'linkedin' })).toBeInTheDocument());
+    expect(within(list).queryByRole('tab', { name: /bpce-adapter/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Custom adapter' })).not.toBeInTheDocument();
   });
 
   it('puts the pages of the utilities under a Tools menu item that folds and unfolds, open at first', async () => {

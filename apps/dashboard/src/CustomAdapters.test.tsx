@@ -568,6 +568,91 @@ describe('custom adapters page', () => {
     });
   });
 
+  describe('the name of a new adapter', () => {
+    const openNew = async (user: ReturnType<typeof userEvent.setup>) => {
+      mockApi(routes({ '/custom-adapters': list([adapter()]), '/custom-adapters/acmejobs': detail() }));
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+      const dialog = await screen.findByRole('dialog');
+      return { dialog, handle: within(dialog).getByLabelText('Handle') as HTMLInputElement };
+    };
+
+    it('is the whole name: hyphens are allowed, nothing is added in front of or behind it, and the tool follows', async () => {
+      const user = userEvent.setup();
+      const { dialog, handle } = await openNew(user);
+      await user.type(handle, 'Acme-Careers');
+      expect(handle).toHaveValue('acme-careers'); // lower case, and exactly as typed
+      expect(within(dialog).getByText('acme_careers', { selector: 'code' })).toBeInTheDocument(); // hyphens are underscores in a tool name
+      expect(handle.value).not.toMatch(/^custom/);
+      expect(handle.value).not.toMatch(/adapter$/); // the suggestion is never added
+    });
+
+    it('recommends ending the name with -adapter, as a hint only: it is the placeholder and the help, never the value', async () => {
+      const user = userEvent.setup();
+      const { dialog, handle } = await openNew(user);
+      expect(handle).toHaveValue('');
+      expect(handle).toHaveAttribute('placeholder', 'acme-adapter');
+      expect(within(dialog).getByText(/We suggest ending it with -adapter, as in acme-adapter/)).toBeInTheDocument();
+      expect(within(dialog).getByText('name', { selector: 'code' })).toBeInTheDocument(); // no name yet
+    });
+
+    it('is sent as typed, with no prefix and no suffix', async () => {
+      const user = userEvent.setup();
+      const sent: { handle: string }[] = [];
+      const { dialog, handle } = await openNew(user);
+      const real = globalThis.fetch;
+      vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          sent.push(JSON.parse(String(init.body)));
+          return Promise.resolve(new Response(JSON.stringify(detail({ handle: 'bpce', id: 'bpce', tool: 'bpce' })), { status: 201 }));
+        }
+        return real(input, init);
+      });
+      await user.type(within(dialog).getByLabelText('Name'), 'BPCE careers');
+      await user.type(handle, 'bpce');
+      await user.clear(within(dialog).getByLabelText('URL target'));
+      await user.type(within(dialog).getByLabelText('URL target'), 'https://recrutement.bpce.fr');
+      await user.click(within(dialog).getByRole('button', { name: 'Create' }));
+      await waitFor(() => expect(sent).toHaveLength(1));
+      expect(sent[0]?.handle).toBe('bpce');
+    });
+
+    it.each([
+      ['two letters', 'ab'],
+      ['a trailing hyphen', 'acme-'],
+      ['a double hyphen', 'acme--adapter'],
+      ['a leading hyphen', '-acme'],
+      ['a leading digit', '1acme'],
+      ['a space', 'acme adapter'],
+    ])('does not allow %s', async (_what, typed) => {
+      const user = userEvent.setup();
+      const { dialog, handle } = await openNew(user);
+      await user.type(within(dialog).getByLabelText('Name'), 'Acme');
+      await user.clear(within(dialog).getByLabelText('URL target'));
+      await user.type(within(dialog).getByLabelText('URL target'), 'https://careers.acme.com');
+      await user.type(handle, typed);
+      expect(within(dialog).getByRole('button', { name: 'Create' })).toBeDisabled();
+      expect(handle).toHaveAttribute('aria-invalid', 'true');
+    });
+
+    it('allows thirty-two characters and no more', async () => {
+      const user = userEvent.setup();
+      const { handle } = await openNew(user);
+      await user.type(handle, 'a'.repeat(40));
+      expect(handle.value).toHaveLength(32);
+    });
+
+    it('shows the tool an older adapter really has, from the router, when it is edited', async () => {
+      const user = userEvent.setup();
+      mockApi(routes({ '/custom-adapters': list([adapter()]), '/custom-adapters/acmejobs': detail() }));
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: 'Edit Acme jobs' }));
+      const dialog = await screen.findByRole('dialog');
+      expect(await within(dialog).findByText('custom_acmejobs', { selector: 'code' })).toBeInTheDocument(); // unchanged: it keeps its id
+      expect(within(dialog).getByLabelText('Handle')).toBeDisabled();
+    });
+  });
+
   describe('sharing an adapter as a file', () => {
     const exported = {
       format: 'jobwatch.custom-adapter',

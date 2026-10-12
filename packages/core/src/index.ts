@@ -92,6 +92,8 @@ export {
   Store,
   StoreError,
   CUSTOM_HANDLE,
+  NEW_CUSTOM_HANDLE_LENGTH,
+  isNewCustomHandle,
   MAX_CUSTOM_SCRIPT_CHARS,
   USAGE_RETENTION_MS,
   keywordsKey,

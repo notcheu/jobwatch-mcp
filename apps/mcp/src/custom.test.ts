@@ -60,7 +60,7 @@ describe('custom adapters', () => {
   it('are off by default: an adapter in the database is not loaded, and its tool is not listed', async () => {
     seed([row]);
     const { url } = await boot();
-    expect(await toolNames(url)).not.toContain('custom_acme');
+    expect(await toolNames(url)).not.toContain('acme');
   });
 
   it('are loaded when the switch is on and they are enabled, and not when they are off', async () => {
@@ -70,8 +70,8 @@ describe('custom adapters', () => {
     store.close();
     const { url } = await boot(ON);
     const names = await toolNames(url);
-    expect(names).toContain('custom_acme');
-    expect(names).not.toContain('custom_idle');
+    expect(names).toContain('acme');
+    expect(names).not.toContain('idle');
   });
 
   it('answer a call through the same tool surface as the other company boards, running the script in the sandbox', async () => {
@@ -90,14 +90,14 @@ describe('custom adapters', () => {
     );
     const { url } = await boot(ON, http);
     const client = await connectClient(url);
-    const result = await client.callTool({ name: 'custom_acme', arguments: { boards: ['acme'], title_any: ['engineer'], detail: 'full' } });
+    const result = await client.callTool({ name: 'acme', arguments: { boards: ['acme'], title_any: ['engineer'], detail: 'full' } });
     await client.close();
     expect(result.isError).not.toBe(true);
     const data = result.structuredContent as {
       jobs: { id: string; source: string; board: string; description: string }[];
       boards: { status: string }[];
     };
-    expect(data.jobs.map((job) => [job.id, job.source, job.board])).toEqual([['j1', 'custom-acme', 'acme']]);
+    expect(data.jobs.map((job) => [job.id, job.source, job.board])).toEqual([['j1', 'acme', 'acme']]);
     expect(data.jobs[0]?.description).toContain('We use React and TypeScript.');
     expect(http.requests.map((request) => request.url)).toEqual(['https://careers.acme.com/api/acme']);
   }, 30_000);
@@ -134,15 +134,15 @@ describe('custom adapters', () => {
     );
     const { url } = await boot(ON, http);
     const client = await connectClient(url);
-    const listed = (await client.listTools()).tools.find((tool) => tool.name === 'custom_acme');
+    const listed = (await client.listTools()).tools.find((tool) => tool.name === 'acme');
     const properties = (listed?.inputSchema as { properties: Record<string, { items?: { enum?: string[] }; enum?: string[] }> }).properties;
     expect(properties['contract']?.items?.enum).toEqual(['CDI', 'CDD', 'Stage']);
     expect(properties['sector']?.enum).toEqual(['commercial', 'it']);
-    const refused = await client.callTool({ name: 'custom_acme', arguments: { boards: ['acme'], sector: 'finance' } });
+    const refused = await client.callTool({ name: 'acme', arguments: { boards: ['acme'], sector: 'finance' } });
     expect(refused.isError).toBe(true);
     expect(http.requests).toEqual([]); // refused before the script ran
     const result = await client.callTool({
-      name: 'custom_acme',
+      name: 'acme',
       arguments: { boards: ['acme'], contract: ['CDI', 'Stage'], sector: 'it' },
     });
     await client.close();
@@ -150,6 +150,25 @@ describe('custom adapters', () => {
     expect((result.structuredContent as { jobs: { id: string }[] }).jobs.map((job) => job.id)).toEqual(['j1']);
     // the route only answers the full query, so the job proves the script sent the caller's choice; the log keeps no query string
     expect(http.requests.map((request) => request.url)).toEqual(['https://careers.acme.com/api/acme']);
+  }, 30_000);
+
+  it('keep the id, the tool and the job source of an adapter made before ids were stored: custom-<handle>, custom_<handle>', async () => {
+    seed([row]);
+    const raw = new (await import('node:sqlite')).DatabaseSync(join(dir, 'jobwatch.sqlite'));
+    raw.exec("UPDATE custom_adapters SET module_id = 'custom-acme' WHERE handle = 'acme'"); // what the migration gave the first adapters
+    raw.close();
+    const http = new FakeHttpClient(
+      ['careers.acme.com'],
+      [{ url: 'https://careers.acme.com/api/acme', body: [{ id: 'j1', title: 'Data Engineer', text: 'Data.' }] }],
+    );
+    const { url } = await boot(ON, http);
+    const names = await toolNames(url);
+    expect(names).toContain('custom_acme');
+    expect(names).not.toContain('acme');
+    const client = await connectClient(url);
+    const result = await client.callTool({ name: 'custom_acme', arguments: { boards: ['acme'] } });
+    await client.close();
+    expect((result.structuredContent as { jobs: { source: string }[] }).jobs.map((job) => job.source)).toEqual(['custom-acme']);
   }, 30_000);
 
   it('read a stored list that breaks the rules as no filter, so the adapter still loads and no built-in filter is shadowed', async () => {
@@ -161,26 +180,26 @@ describe('custom adapters', () => {
     raw.exec(`UPDATE custom_adapters SET filters = '[{"name":"max_results","description":"x","type":"boolean"}]' WHERE handle = 'acme'`);
     raw.close();
     const { url } = await boot(ON);
-    expect(await toolNames(url)).toContain('custom_acme');
+    expect(await toolNames(url)).toContain('acme');
   });
 
   it('are picked up by a reload with no restart: a created one appears, a changed script applies, a deleted one goes', async () => {
     const { url, server } = await boot(ON);
-    expect(await toolNames(url)).not.toContain('custom_acme');
+    expect(await toolNames(url)).not.toContain('acme');
     server.store.saveCustomAdapter(row, { create: true, actor: 'me' }, 1);
     server.store.setCustomAdapterEnabled('acme', true, 'me', 2);
-    expect(await server.reloadAdapters()).toMatchObject({ addedAdapters: ['custom-acme'], addedTools: ['custom_acme'] });
-    expect(await toolNames(url)).toContain('custom_acme');
+    expect(await server.reloadAdapters()).toMatchObject({ addedAdapters: ['acme'], addedTools: ['acme'] });
+    expect(await toolNames(url)).toContain('acme');
     server.store.deleteCustomAdapter('acme', 'me', 3);
-    expect(await server.reloadAdapters()).toMatchObject({ removedAdapters: ['custom-acme'], removedTools: ['custom_acme'] });
+    expect(await server.reloadAdapters()).toMatchObject({ removedAdapters: ['acme'], removedTools: ['acme'] });
   });
 
   it('cannot stop the router from starting: a bad row is left out and the others load', async () => {
     seed([{ ...row, handle: 'broken', url: 'http://careers.acme.com' }, row]);
     const { url } = await boot(ON);
     const names = await toolNames(url);
-    expect(names).toContain('custom_acme');
-    expect(names).not.toContain('custom_broken');
+    expect(names).toContain('acme');
+    expect(names).not.toContain('broken');
   });
 
   it('refuse to start with the bare-process sandbox on a router that is reachable (AUTH=front)', async () => {

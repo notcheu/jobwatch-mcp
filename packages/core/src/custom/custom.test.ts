@@ -325,6 +325,7 @@ describe('the docker sandbox', () => {
 describe('the module built from a row', () => {
   const row = (over: Partial<CustomAdapterRow> = {}): CustomAdapterRow => ({
     handle: 'acmejobs',
+    moduleId: 'custom-acmejobs',
     name: 'Acme jobs',
     kind: 'http',
     url: 'https://careers.acme.com/api',

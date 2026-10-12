@@ -55,6 +55,7 @@ import {
   type CustomAdapterRow,
   checkTargetUrl,
   customId,
+  customToolName,
   sampleScript,
   scriptDocs,
   type CompanyBoard as CompanyBoardRow,
@@ -507,8 +508,8 @@ export const toCustomAdapter = (data: DashboardData, row: CustomAdapterRow): Cus
   const target = checkTargetUrl(row.url);
   return checked(customAdapterSchema, {
     handle: row.handle,
-    id: customId(row.handle),
-    tool: `custom_${row.handle}`,
+    id: customId(row),
+    tool: customToolName(row.moduleId),
     name: row.name,
     kind: row.kind,
     url: row.url,
@@ -593,6 +594,7 @@ export async function getTools(data: DashboardData): Promise<Tools> {
       enabled: isOn,
       pinned: entry.summary.role === 'utility' ? data.pinned.utilities : data.pinned.adapters,
       managed,
+      custom: entry.summary.custom,
       hosts: [...entry.summary.allowedHosts],
       tools: catalog.map((tool) => ({
         name: tool.name,

@@ -257,6 +257,8 @@ export const toolStateSchema = z
     pinned: z.boolean(),
     /** True for a gateway the engine enables by itself while one of the modules it reads through is: the switch is locked. */
     managed: z.boolean(),
+    /** An adapter written on the dashboard: lists mark its name, because the name itself carries no mark. */
+    custom: z.boolean(),
     hosts: z.array(z.string()),
     tools: z.array(z.object({ name: z.string(), title: z.string(), costMax: z.number(), params: z.array(z.string()) }).strict()),
     rateHour: usageSchema.nullable(),
@@ -429,10 +431,27 @@ export const savedPlaceRemovedSchema = z.object({ alias: z.string() }).strict();
 
 // ------------------------------------------------------------------------------------------------------ custom adapters
 
-/** The handle of a custom adapter: its module id is `custom-<handle>`, its tool `custom_<handle>`. */
+/**
+ * The handle of a custom adapter, as it can be stored and named in a URL. A new adapter is named by its handle alone (its module id, the
+ * source of its jobs), 3 to 32 lower-case letters, digits and single hyphens (`newCustomHandleSchema`); the ones made before that are
+ * 2 to 24 letters and digits and have the id `custom-<handle>`, which is why this accepts both.
+ */
 export const customHandleSchema = z
   .string()
-  .regex(/^[a-z][a-z0-9]{1,23}$/, '2 to 24 lower-case letters and digits, starting with a letter');
+  .regex(/^[a-z][a-z0-9-]{1,31}$/, '2 to 32 lower-case letters, digits and hyphens, starting with a letter');
+
+/** What a new adapter may be called. The router checks it again, and also that no adapter or tool already has the name. */
+export const NEW_CUSTOM_HANDLE_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+export const NEW_CUSTOM_HANDLE_LENGTH = { min: 3, max: 32 } as const;
+export const isNewCustomHandle = (handle: string): boolean =>
+  NEW_CUSTOM_HANDLE_PATTERN.test(handle) && handle.length >= NEW_CUSTOM_HANDLE_LENGTH.min && handle.length <= NEW_CUSTOM_HANDLE_LENGTH.max;
+export const newCustomHandleSchema = z
+  .string()
+  .refine(isNewCustomHandle, '3 to 32 lower-case letters, digits and single hyphens, starting with a letter, not ending with a hyphen');
+/** What the form recommends a name to end with. It is only a suggestion: it is never added. */
+export const SUGGESTED_HANDLE_SUFFIX = '-adapter';
+/** The tool of an adapter, from its id: the hyphens become underscores (`bpce-adapter` is `bpce_adapter`, `custom-deezer` is `custom_deezer`). */
+export const customToolName = (id: string): string => id.replaceAll('-', '_');
 
 // The filters an operator adds to a custom adapter. The router checks them with its own copy of these rules (`packages/core/src/custom/filters.ts`,
 // core cannot import this package); a test in apps/mcp keeps the two in step. The modal uses this copy to say what is wrong before saving.

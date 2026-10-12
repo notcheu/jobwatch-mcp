@@ -32,6 +32,7 @@ const toolOf = (module: ReturnType<typeof buildCustomModule>) => {
 
 const row = (filters: CustomFilter[], script = 'async function read() { return { postings: [] }; }'): CustomAdapterRow => ({
   handle: 'acmejobs',
+  moduleId: 'custom-acmejobs',
   name: 'Acme jobs',
   kind: 'http',
   url: 'https://careers.acme.com',

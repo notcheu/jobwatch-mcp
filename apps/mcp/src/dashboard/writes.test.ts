@@ -33,8 +33,8 @@ async function setup(over: Partial<Changes> = {}) {
     forgetPlace: vi.fn(async () => true),
     saveCustomAdapter: vi.fn(async (entry, mode) => ({
       ...entry,
-      id: `custom-${entry.handle}`,
-      tool: `custom_${entry.handle}`,
+      id: entry.handle,
+      tool: entry.handle.replaceAll('-', '_'),
       host: 'careers.acme.com',
       enabled: mode === 'update',
       problem: null,
@@ -46,8 +46,8 @@ async function setup(over: Partial<Changes> = {}) {
     })),
     setCustomAdapterEnabled: vi.fn(async (handle, enabled) => ({
       handle,
-      id: `custom-${handle}`,
-      tool: `custom_${handle}`,
+      id: handle,
+      tool: handle.replaceAll('-', '_'),
       name: 'Acme jobs',
       kind: 'http' as const,
       url: 'https://careers.acme.com',
@@ -329,6 +329,21 @@ describe('custom adapters', () => {
     expect(vi.mocked(t.changes.saveCustomAdapter).mock.calls.length).toBe(calls);
   });
 
+  it('creates under the whole name it is given, and refuses a name that is not one; the older, shorter handles still work to change', async () => {
+    const t = await setup();
+    for (const handle of ['acme-adapter', 'bpce', 'a1-b2-c3', 'a'.repeat(32)])
+      expect((await t.send('POST', '/custom-adapters', { ...body, handle })).status, handle).toBe(201);
+    const created = vi.mocked(t.changes.saveCustomAdapter).mock.calls.map((call) => call[0].handle);
+    expect(created).toEqual(['acme-adapter', 'bpce', 'a1-b2-c3', 'a'.repeat(32)]); // as typed: nothing added
+    for (const handle of ['ab', 'a'.repeat(33), 'acme-', '-acme', 'acme--adapter', 'Acme', '1acme', 'acme_adapter'])
+      expect((await t.send('POST', '/custom-adapters', { ...body, handle })).status, handle).toBe(400);
+    // an adapter made before the new rules has a handle of 2 to 24 letters and digits: it can still be changed, switched and deleted
+    const { handle: _handle, ...rest } = body;
+    expect((await t.send('PUT', '/custom-adapters/ab', rest)).status).toBe(200);
+    expect((await t.send('PUT', '/custom-adapters/ab/enabled', { enabled: true })).status).toBe(200);
+    expect((await t.send('DELETE', '/custom-adapters/ab')).status).toBe(200);
+  });
+
   it('still keeps the other changes to a few kilobytes', async () => {
     const t = await setup();
     const answer = await t.send('PUT', '/adapters/apec', { enabled: true, filler: 'x'.repeat(5000) });
@@ -340,7 +355,7 @@ describe('custom adapters', () => {
     const t = await setup();
     const created = await t.send('POST', '/custom-adapters', body);
     expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({ handle: 'acmejobs', id: 'custom-acmejobs', kind: 'http' });
+    expect(created.body).toMatchObject({ handle: 'acmejobs', id: 'acmejobs', kind: 'http' });
     expect(t.changes.saveCustomAdapter).toHaveBeenLastCalledWith({ ...body, filters: [] }, 'create', 'me@example.com');
     const { handle: _handle, ...rest } = body;
     const updated = await t.send('PUT', '/custom-adapters/acmejobs', { ...rest, kind: 'browser' });
