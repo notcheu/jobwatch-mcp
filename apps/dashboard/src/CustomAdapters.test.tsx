@@ -350,22 +350,109 @@ describe('custom adapters page', () => {
       expect(within(column).getByText(/None yet/)).toBeInTheDocument(); // and none of its own yet
     });
 
-    it('shows the key of each custom filter with a caption, and what the script and the caller use it as', async () => {
+    it('shows the key of each custom filter with a caption, and the type under it', async () => {
       const user = userEvent.setup();
       const { column } = await open(user);
       await user.click(within(column).getByRole('button', { name: 'Add filter' }));
       const row = within(column).getByRole('group', { name: 'Filter 1' });
-      expect(within(row).getByText('Key')).toBeVisible(); // the caption over the field, not only its accessible name
-      expect(within(row).getByText('Type')).toBeVisible();
-      expect(within(row).getByText('Description')).toBeVisible();
-      expect(row).toHaveTextContent('The script reads it as filters.key');
+      for (const caption of ['Key', 'Type', 'Label (optional)', 'Description']) expect(within(row).getByText(caption)).toBeVisible();
+      expect(row).not.toHaveTextContent('The script reads it as'); // no explanation under the key any more
       await user.type(within(row).getByLabelText('Key of filter 1'), 'contract');
       expect(within(row).getByLabelText('Key of filter 1')).toHaveValue('contract');
-      expect(row).toHaveTextContent('The script reads it as filters.contract, and a caller names it contract.');
+      // the type is under the key, not beside it: after the key in the document, and not in the same line of fields
+      const key = within(row).getByLabelText('Key of filter 1');
+      const type = within(row).getByLabelText('Type of filter 1');
+      expect(key.compareDocumentPosition(type) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(key.parentElement?.parentElement?.contains(type)).toBe(false); // the header line holds the key, not the type
       // the built-in filters show their key the same way
       const builtin = within(column).getByRole('group', { name: 'Built-in filter title_any' });
       expect(within(builtin).getByText('Key')).toBeVisible();
       expect(within(builtin).getByLabelText('Key of built-in filter title_any')).toHaveValue('title_any');
+    });
+
+    it('has a description box that scrolls, for the filters of the adapter and the built-in ones', async () => {
+      const user = userEvent.setup();
+      const { column } = await open(user);
+      await user.click(within(column).getByRole('button', { name: 'Add filter' }));
+      const own = within(column).getByLabelText('Description of filter 1');
+      expect(own.tagName).toBe('TEXTAREA');
+      expect(own.className).toContain('overflow-y-auto');
+      expect(own).toHaveAttribute('rows', '2');
+      const long = 'A long description of what the filter asks the site for. '.repeat(3).trim();
+      await user.type(own, long);
+      expect(own).toHaveValue(long);
+      const builtin = within(column).getByLabelText('Description of built-in filter title_any');
+      expect(builtin.tagName).toBe('TEXTAREA');
+      expect(builtin).toHaveAttribute('readonly');
+      expect(builtin.className).toContain('overflow-y-auto');
+    });
+
+    it('collapses a filter to the preview the built-in ones have, and expands it again with what was typed', async () => {
+      const user = userEvent.setup();
+      const { column } = await open(user);
+      await user.click(within(column).getByRole('button', { name: 'Add filter' }));
+      const row = () => within(column).getByRole('group', { name: 'Filter 1' });
+      await user.selectOptions(within(row()).getByLabelText('Type of filter 1'), 'multiselect');
+      await user.type(within(row()).getByLabelText('Key of filter 1'), 'contract');
+      await user.type(within(row()).getByLabelText('Description of filter 1'), 'The contract type.');
+      await user.type(within(row()).getByLabelText('Value of option 1 of filter 1'), 'CDI');
+      const toggle = within(row()).getByRole('button', { name: 'Collapse filter 1' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      // the button is at the top of the box, in the line of the key
+      expect(toggle.parentElement).toBe(within(row()).getByLabelText('Key of filter 1').parentElement?.parentElement);
+
+      await user.click(toggle);
+      expect(within(row()).getByRole('button', { name: 'Expand filter 1' })).toHaveAttribute('aria-expanded', 'false');
+      // the preview: the key, the type and the description, read only, like a built-in filter; the editing controls are gone
+      expect(within(row()).getByLabelText('Key of filter 1')).toHaveAttribute('readonly');
+      expect(within(row()).getByLabelText('Key of filter 1')).toHaveValue('contract');
+      expect(within(row()).getByText('multiselect')).toBeInTheDocument();
+      expect(within(row()).getByLabelText('Description of filter 1')).toHaveAttribute('readonly');
+      expect(within(row()).getByLabelText('Description of filter 1')).toHaveValue('The contract type.');
+      for (const gone of ['Type of filter 1', 'Label of filter 1', 'Value of option 1 of filter 1'])
+        expect(within(row()).queryByLabelText(gone)).not.toBeInTheDocument();
+      expect(within(row()).queryByRole('button', { name: 'Add an option to filter 1' })).not.toBeInTheDocument();
+      expect(within(row()).getByRole('button', { name: 'Remove filter 1' })).toBeInTheDocument(); // it can still be removed
+
+      await user.click(within(row()).getByRole('button', { name: 'Expand filter 1' }));
+      expect(within(row()).getByLabelText('Key of filter 1')).not.toHaveAttribute('readonly');
+      expect(within(row()).getByLabelText('Type of filter 1')).toHaveValue('multiselect');
+      expect(within(row()).getByLabelText('Value of option 1 of filter 1')).toHaveValue('CDI'); // nothing was lost
+    });
+
+    it('keeps a collapsed filter showing what is wrong with it, and keeps Save off', async () => {
+      const user = userEvent.setup();
+      const { dialog, column } = await open(user);
+      await user.type(within(dialog).getByLabelText('Name'), 'Acme jobs');
+      await user.type(within(dialog).getByLabelText('Handle'), 'acmejobs');
+      await user.clear(within(dialog).getByLabelText('URL target'));
+      await user.type(within(dialog).getByLabelText('URL target'), 'https://careers.acme.com');
+      await user.click(within(column).getByRole('button', { name: 'Add filter' }));
+      await user.type(within(column).getByLabelText('Key of filter 1'), 'max_results');
+      await user.type(within(column).getByLabelText('Description of filter 1'), 'x');
+      await user.click(within(column).getByRole('button', { name: 'Collapse filter 1' }));
+      expect(within(column).getByText('"max_results" is a built-in filter')).toBeInTheDocument();
+      expect(within(dialog).getByRole('button', { name: 'Create' })).toBeDisabled();
+    });
+
+    it('folds each filter on its own, and removing one does not fold or open another', async () => {
+      const user = userEvent.setup();
+      const { column } = await open(user);
+      const add = within(column).getByRole('button', { name: 'Add filter' });
+      for (const key of ['one', 'two', 'three']) {
+        await user.click(add);
+        const n = within(column).getAllByRole('group', { name: /^Filter \d$/ }).length;
+        await user.type(within(column).getByLabelText(`Key of filter ${n}`), key);
+      }
+      await user.click(within(column).getByRole('button', { name: 'Collapse filter 2' }));
+      await user.click(within(column).getByRole('button', { name: 'Collapse filter 3' }));
+      expect(within(column).getByRole('button', { name: 'Collapse filter 1' })).toBeInTheDocument(); // the first stays open
+      await user.click(within(column).getByRole('button', { name: 'Remove filter 1' }));
+      // "two" and "three" are now the first two, and are still folded
+      expect(within(column).getByLabelText('Key of filter 1')).toHaveValue('two');
+      expect(within(column).getByRole('button', { name: 'Expand filter 1' })).toBeInTheDocument();
+      expect(within(column).getByLabelText('Key of filter 2')).toHaveValue('three');
+      expect(within(column).getByRole('button', { name: 'Expand filter 2' })).toBeInTheDocument();
     });
 
     it('adds a select filter with its options, refuses it until it is complete, and sends it with the adapter', async () => {
