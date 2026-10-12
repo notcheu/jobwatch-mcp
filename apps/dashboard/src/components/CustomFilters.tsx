@@ -37,6 +37,15 @@ function omit<T extends object>(value: T, key: keyof T): T {
   return rest as T;
 }
 
+/** A visible caption over a field. The input keeps its own accessible name (aria-label), so the caption is only for the eye. */
+function Caption({ children }: { children: React.ReactNode }) {
+  return (
+    <span aria-hidden className="mb-0.5 block text-xs font-medium text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
 function CustomFilterRow({
   index,
   filter,
@@ -55,50 +64,70 @@ function CustomFilterRow({
   const unset = (key: string): void => onChange(omit(filter, key as never));
   return (
     <fieldset className="space-y-2 rounded-md border p-3" aria-label={`Filter ${n}`}>
-      <div className="flex items-center gap-2">
-        <Input
-          aria-label={`Name of filter ${n}`}
-          value={filter.name}
-          maxLength={32}
-          placeholder="contract"
-          className="font-mono"
-          onChange={(event) => set({ name: event.target.value.toLowerCase() })}
-        />
-        <select
-          aria-label={`Type of filter ${n}`}
-          className={`${field} w-36 shrink-0`}
-          value={filter.type}
-          title={TYPES.find((entry) => entry.value === filter.type)?.hint}
-          onChange={(event) => onChange(filterOfType(event.target.value as CustomFilterType, filter))}
-        >
-          {TYPES.map((entry) => (
-            <option key={entry.value} value={entry.value}>
-              {entry.label}
-            </option>
-          ))}
-        </select>
+      <div className="flex items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <Caption>Key</Caption>
+          <Input
+            aria-label={`Key of filter ${n}`}
+            value={filter.name}
+            maxLength={32}
+            placeholder="contract"
+            className="font-mono"
+            onChange={(event) => set({ name: event.target.value.toLowerCase() })}
+          />
+        </div>
+        <div className="shrink-0">
+          <Caption>Type</Caption>
+          <select
+            aria-label={`Type of filter ${n}`}
+            className={`${field} w-36`}
+            value={filter.type}
+            title={TYPES.find((entry) => entry.value === filter.type)?.hint}
+            onChange={(event) => onChange(filterOfType(event.target.value as CustomFilterType, filter))}
+          >
+            {TYPES.map((entry) => (
+              <option key={entry.value} value={entry.value}>
+                {entry.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0" aria-label={`Remove filter ${n}`} onClick={onRemove}>
           <Trash2 className="size-4" />
         </Button>
       </div>
-      <Input
-        aria-label={`Label of filter ${n}`}
-        value={filter.label ?? ''}
-        maxLength={80}
-        placeholder="Label (optional): Contract type"
-        onChange={(event) => (event.target.value === '' ? unset('label') : set({ label: event.target.value }))}
-      />
-      <Input
-        aria-label={`Description of filter ${n}`}
-        value={filter.description}
-        maxLength={200}
-        placeholder="What it asks the site for"
-        onChange={(event) => set({ description: event.target.value })}
-      />
+      <p className="text-xs text-muted-foreground">
+        The script reads it as <code>filters.{filter.name === '' ? 'key' : filter.name}</code>, and a caller names it{' '}
+        <code>{filter.name === '' ? 'key' : filter.name}</code>.
+      </p>
+      <div>
+        <Caption>Label (optional)</Caption>
+        <Input
+          aria-label={`Label of filter ${n}`}
+          value={filter.label ?? ''}
+          maxLength={80}
+          placeholder="Contract type"
+          onChange={(event) => (event.target.value === '' ? unset('label') : set({ label: event.target.value }))}
+        />
+      </div>
+      <div>
+        <Caption>Description</Caption>
+        <Input
+          aria-label={`Description of filter ${n}`}
+          value={filter.description}
+          maxLength={200}
+          placeholder="What it asks the site for"
+          onChange={(event) => set({ description: event.target.value })}
+        />
+      </div>
 
       {(filter.type === 'select' || filter.type === 'multiselect') && (
         <div className="space-y-1.5">
-          <div className="text-xs font-medium text-muted-foreground">Options: the value is what the script receives</div>
+          <div className="text-xs font-medium text-muted-foreground">Options (the value is what the script receives)</div>
+          <div className="flex gap-1.5 pr-9 text-xs font-medium text-muted-foreground" aria-hidden>
+            <span className="flex-1">Value</span>
+            <span className="flex-1">Label (optional)</span>
+          </div>
           {filter.options.map((option, at) => (
             <div key={at} className="flex items-center gap-1.5">
               <Input
@@ -279,13 +308,19 @@ export function CustomFilters({
               className="space-y-1.5 rounded-md border bg-muted/30 p-2"
               aria-label={`Built-in filter ${item.name}`}
             >
-              <div className="flex items-center gap-2">
-                <Input aria-label={`Name of built-in filter ${item.name}`} value={item.name} readOnly className="font-mono" />
+              <div className="flex items-end gap-2">
+                <div className="min-w-0 flex-1">
+                  <Caption>Key</Caption>
+                  <Input aria-label={`Key of built-in filter ${item.name}`} value={item.name} readOnly className="font-mono" />
+                </div>
                 <Badge variant="secondary" className="shrink-0" title={item.fullType ?? item.type}>
                   {item.type}
                 </Badge>
               </div>
-              <Input aria-label={`Description of built-in filter ${item.name}`} value={item.description} readOnly />
+              <div>
+                <Caption>Description</Caption>
+                <Input aria-label={`Description of built-in filter ${item.name}`} value={item.description} readOnly />
+              </div>
             </fieldset>
           ))}
         </div>

@@ -332,7 +332,7 @@ describe('custom adapters page', () => {
       await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
       const dialog = await screen.findByRole('dialog');
       const column = within(dialog).getByRole('region', { name: 'Filters' });
-      await within(column).findByLabelText('Name of built-in filter title_any');
+      await within(column).findByLabelText('Key of built-in filter title_any');
       return { dialog, column };
     };
 
@@ -343,11 +343,29 @@ describe('custom adapters page', () => {
       for (const name of ['title_any', 'max_results']) {
         const row = within(builtin).getByRole('group', { name: `Built-in filter ${name}` });
         expect(row).toBeDisabled();
-        expect(within(row).getByLabelText(`Name of built-in filter ${name}`)).toBeDisabled();
+        expect(within(row).getByLabelText(`Key of built-in filter ${name}`)).toBeDisabled();
         expect(within(row).getByLabelText(`Description of built-in filter ${name}`)).toBeDisabled();
       }
       expect(within(builtin).getByText('string[]')).toBeInTheDocument(); // their type, as the router documents it
       expect(within(column).getByText(/None yet/)).toBeInTheDocument(); // and none of its own yet
+    });
+
+    it('shows the key of each custom filter with a caption, and what the script and the caller use it as', async () => {
+      const user = userEvent.setup();
+      const { column } = await open(user);
+      await user.click(within(column).getByRole('button', { name: 'Add filter' }));
+      const row = within(column).getByRole('group', { name: 'Filter 1' });
+      expect(within(row).getByText('Key')).toBeVisible(); // the caption over the field, not only its accessible name
+      expect(within(row).getByText('Type')).toBeVisible();
+      expect(within(row).getByText('Description')).toBeVisible();
+      expect(row).toHaveTextContent('The script reads it as filters.key');
+      await user.type(within(row).getByLabelText('Key of filter 1'), 'contract');
+      expect(within(row).getByLabelText('Key of filter 1')).toHaveValue('contract');
+      expect(row).toHaveTextContent('The script reads it as filters.contract, and a caller names it contract.');
+      // the built-in filters show their key the same way
+      const builtin = within(column).getByRole('group', { name: 'Built-in filter title_any' });
+      expect(within(builtin).getByText('Key')).toBeVisible();
+      expect(within(builtin).getByLabelText('Key of built-in filter title_any')).toHaveValue('title_any');
     });
 
     it('adds a select filter with its options, refuses it until it is complete, and sends it with the adapter', async () => {
@@ -372,7 +390,7 @@ describe('custom adapters page', () => {
       await user.click(within(column).getByRole('button', { name: 'Add filter' }));
       expect(create).toBeDisabled(); // a new filter has no name or description yet
       await user.selectOptions(within(column).getByLabelText('Type of filter 1'), 'select');
-      await user.type(within(column).getByLabelText('Name of filter 1'), 'sector');
+      await user.type(within(column).getByLabelText('Key of filter 1'), 'sector');
       await user.type(within(column).getByLabelText('Description of filter 1'), 'The job sector.');
       expect(create).toBeDisabled(); // a select needs options with a value
       await user.type(within(column).getByLabelText('Value of option 1 of filter 1'), 'commercial');
@@ -406,12 +424,12 @@ describe('custom adapters page', () => {
           .getAllByRole('option')
           .map((entry) => entry.textContent),
       ).toEqual(['Select', 'Multiselect', 'Boolean', 'String', 'Number']);
-      await user.type(within(column).getByLabelText('Name of filter 1'), 'remote');
+      await user.type(within(column).getByLabelText('Key of filter 1'), 'remote');
       await user.type(within(column).getByLabelText('Description of filter 1'), 'Remote jobs only.');
       await user.selectOptions(type, 'multiselect');
       expect(within(column).getByLabelText('Value of option 2 of filter 1')).toBeInTheDocument();
       await user.selectOptions(type, 'boolean');
-      expect(within(column).getByLabelText('Name of filter 1')).toHaveValue('remote'); // kept
+      expect(within(column).getByLabelText('Key of filter 1')).toHaveValue('remote'); // kept
       expect(within(column).getByLabelText('Description of filter 1')).toHaveValue('Remote jobs only.');
       expect(within(column).queryByLabelText('Value of option 1 of filter 1')).not.toBeInTheDocument();
       expect(within(column).getByLabelText('On when the caller leaves it out')).toBeInTheDocument();
@@ -427,23 +445,23 @@ describe('custom adapters page', () => {
       const { column } = await open(user);
       const add = within(column).getByRole('button', { name: 'Add filter' });
       await user.click(add);
-      await user.type(within(column).getByLabelText('Name of filter 1'), 'max_results');
+      await user.type(within(column).getByLabelText('Key of filter 1'), 'max_results');
       await user.type(within(column).getByLabelText('Description of filter 1'), 'x');
       expect(await within(column).findByText('"max_results" is a built-in filter')).toBeInTheDocument();
-      await user.clear(within(column).getByLabelText('Name of filter 1'));
-      await user.type(within(column).getByLabelText('Name of filter 1'), 'pay');
+      await user.clear(within(column).getByLabelText('Key of filter 1'));
+      await user.type(within(column).getByLabelText('Key of filter 1'), 'pay');
       await user.click(add);
-      await user.type(within(column).getByLabelText('Name of filter 2'), 'pay');
+      await user.type(within(column).getByLabelText('Key of filter 2'), 'pay');
       await user.type(within(column).getByLabelText('Description of filter 2'), 'x');
       expect(await within(column).findByText('"pay" is used twice')).toBeInTheDocument();
       await user.selectOptions(within(column).getByLabelText('Type of filter 2'), 'number');
-      await user.clear(within(column).getByLabelText('Name of filter 2'));
-      await user.type(within(column).getByLabelText('Name of filter 2'), 'rate');
+      await user.clear(within(column).getByLabelText('Key of filter 2'));
+      await user.type(within(column).getByLabelText('Key of filter 2'), 'rate');
       await user.type(within(column).getByLabelText('Min of filter 2'), '9');
       await user.type(within(column).getByLabelText('Max of filter 2'), '1');
       expect(await within(column).findByText('Max is below min')).toBeInTheDocument();
       await user.click(within(column).getByRole('button', { name: 'Remove filter 2' }));
-      expect(within(column).queryByLabelText('Name of filter 2')).not.toBeInTheDocument();
+      expect(within(column).queryByLabelText('Key of filter 2')).not.toBeInTheDocument();
     });
 
     it('updates the reference as filters are typed, with the right type, and drops a filter that is not complete', async () => {
@@ -454,7 +472,7 @@ describe('custom adapters page', () => {
       const table = () => within(region).getByRole('table', { name: 'Filters' });
       expect(within(table()).getAllByRole('row')).toHaveLength(3); // the header and the two built-in filters
       await user.click(within(column).getByRole('button', { name: 'Add filter' }));
-      await user.type(within(column).getByLabelText('Name of filter 1'), 'contract');
+      await user.type(within(column).getByLabelText('Key of filter 1'), 'contract');
       expect(within(table()).queryByText('contract')).not.toBeInTheDocument(); // no description yet: not a filter
       await user.type(within(column).getByLabelText('Description of filter 1'), 'The contract type.');
       await user.selectOptions(within(column).getByLabelText('Type of filter 1'), 'multiselect');
@@ -493,10 +511,10 @@ describe('custom adapters page', () => {
       await user.click(await screen.findByRole('button', { name: 'Edit Acme jobs' }));
       const dialog = await screen.findByRole('dialog');
       const column = within(dialog).getByRole('region', { name: 'Filters' });
-      expect(await within(column).findByLabelText('Name of filter 1')).toHaveValue('contract');
+      expect(await within(column).findByLabelText('Key of filter 1')).toHaveValue('contract');
       expect(within(column).getByLabelText('Type of filter 1')).toHaveValue('multiselect');
       expect(within(column).getByLabelText('Value of option 2 of filter 1')).toHaveValue('CDD');
-      expect(within(column).getByLabelText('Name of filter 2')).toHaveValue('remote');
+      expect(within(column).getByLabelText('Key of filter 2')).toHaveValue('remote');
       await user.click(within(column).getByRole('button', { name: 'Remove filter 2' }));
       await user.click(within(dialog).getByRole('button', { name: 'Save' }));
       await waitFor(() => expect(sent).toHaveLength(1));
@@ -520,7 +538,7 @@ describe('custom adapters page', () => {
       renderApp('/custom-adapters');
       await user.click(await screen.findByRole('button', { name: 'Edit Acme jobs' }));
       let dialog = await screen.findByRole('dialog');
-      await within(dialog).findByLabelText('Name of filter 1');
+      await within(dialog).findByLabelText('Key of filter 1');
       await user.click(within(dialog).getByRole('button', { name: 'Save' })); // nothing changed in the filters
       expect(await screen.findByRole('status')).not.toHaveTextContent('Reconnect');
       await user.click(await screen.findByRole('button', { name: 'Edit Acme jobs' }));
