@@ -568,6 +568,259 @@ describe('custom adapters page', () => {
     });
   });
 
+  describe('sharing an adapter as a file', () => {
+    const exported = {
+      format: 'jobwatch.custom-adapter',
+      version: 1,
+      handle: 'bpce',
+      name: 'BPCE careers',
+      kind: 'http',
+      url: 'https://recrutement.bpce.fr',
+      script: 'async function read(board, filters) {\n  return { postings: [] };\n}',
+      filters: [{ name: 'contract', description: 'The contract.', type: 'multiselect', options: [{ value: 'cdi' }, { value: 'cdd' }] }],
+    };
+    const fileOf = (content: unknown, name = 'bpce.adapter.json') =>
+      new File([typeof content === 'string' ? content : JSON.stringify(content)], name, { type: 'application/json' });
+
+    /** Catch what the browser is asked to save: the name and the text of each file. */
+    const saved: { name: string; text: Promise<string> }[] = [];
+    const trapDownloads = () => {
+      saved.length = 0;
+      vi.stubGlobal(
+        'URL',
+        Object.assign(URL, {
+          createObjectURL: (blob: Blob) => (saved.push({ name: '', text: blob.text() }), 'blob:test'),
+          revokeObjectURL: () => undefined,
+        }),
+      );
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        const last = saved.at(-1);
+        if (last) last.name = this.download;
+      });
+    };
+    afterEach(() => vi.restoreAllMocks());
+
+    it('has Import and Export at the top right of the modal, in the line of the title', async () => {
+      const user = userEvent.setup();
+      mockApi(routes({ '/custom-adapters': list([]) }));
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+      const dialog = await screen.findByRole('dialog');
+      const title = within(dialog).getByText('Create a custom adapter');
+      const exportButton = within(dialog).getByRole('button', { name: /Export/ });
+      const importButton = within(dialog).getByRole('button', { name: /Import/ });
+      expect(title.parentElement).toBe(exportButton.parentElement?.parentElement); // one line: the title, then the buttons
+      expect(title.compareDocumentPosition(importButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(importButton.compareDocumentPosition(exportButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('keeps Export off until the form would make a valid adapter, then saves <handle>.adapter.json with what is in the form', async () => {
+      const user = userEvent.setup();
+      trapDownloads();
+      mockApi(routes({ '/custom-adapters': list([]) }));
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+      const dialog = await screen.findByRole('dialog');
+      const exportButton = within(dialog).getByRole('button', { name: /Export/ });
+      expect(exportButton).toBeDisabled(); // no name, no handle
+      await user.type(within(dialog).getByLabelText('Name'), '  BPCE careers ');
+      await user.type(within(dialog).getByLabelText('Handle'), 'bpce');
+      await user.clear(within(dialog).getByLabelText('URL target'));
+      await user.type(within(dialog).getByLabelText('URL target'), 'https://recrutement.bpce.fr');
+      await waitFor(() => expect(exportButton).toBeEnabled());
+      await user.click(within(dialog).getByRole('button', { name: 'Add filter' }));
+      await user.type(within(dialog).getByLabelText('Key of filter 1'), 'remote');
+      expect(exportButton).toBeDisabled(); // the filter has no description yet: the file would not read back
+      await user.type(within(dialog).getByLabelText('Description of filter 1'), 'Remote jobs only.');
+      await waitFor(() => expect(exportButton).toBeEnabled());
+      await user.click(exportButton);
+      expect(saved).toHaveLength(1);
+      expect(saved[0]?.name).toBe('bpce.adapter.json');
+      const file = JSON.parse(await (saved[0]?.text ?? Promise.resolve('{}')));
+      expect(file).toMatchObject({
+        format: 'jobwatch.custom-adapter',
+        version: 1,
+        handle: 'bpce',
+        name: 'BPCE careers', // trimmed
+        kind: 'http',
+        url: 'https://recrutement.bpce.fr',
+        filters: [{ name: 'remote', description: 'Remote jobs only.', type: 'string' }], // a new filter starts as a string
+      });
+      expect(file.script).toContain('sample for http'); // what is in the editor
+      expect(Object.keys(file)).toEqual(['format', 'version', 'handle', 'name', 'kind', 'url', 'script', 'filters']);
+    });
+
+    it('exports the adapter that is being edited under its own handle, with the changes not yet saved', async () => {
+      const user = userEvent.setup();
+      trapDownloads();
+      mockApi(routes({ '/custom-adapters': list([adapter()]), '/custom-adapters/acmejobs': detail({ filters: exported.filters }) }));
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: 'Edit Acme jobs' }));
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() => expect(within(dialog).getByRole('button', { name: /Export/ })).toBeEnabled());
+      await user.type(within(dialog).getByRole('textbox', { name: 'Script' }), '\n// not saved yet');
+      await user.click(within(dialog).getByRole('button', { name: /Export/ }));
+      expect(saved[0]?.name).toBe('acmejobs.adapter.json');
+      const file = JSON.parse(await (saved[0]?.text ?? Promise.resolve('{}')));
+      expect(file).toMatchObject({ handle: 'acmejobs', name: 'Acme jobs', filters: exported.filters });
+      expect(file.script).toContain('// not saved yet');
+      expect(JSON.stringify(file)).not.toMatch(/events|enabled|sha256|createdAt/); // nothing of the router comes with it
+    });
+
+    it('imports a file into the form without saving anything, and says to read the script first', async () => {
+      const user = userEvent.setup();
+      const sent: unknown[] = [];
+      mockApi(routes({ '/custom-adapters': list([]) }));
+      const real = globalThis.fetch;
+      vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method) sent.push(init.method);
+        return real(input, init);
+      });
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+      const dialog = await screen.findByRole('dialog');
+      await user.upload(within(dialog).getByLabelText('Adapter file to import'), fileOf(exported));
+      await waitFor(() => expect(within(dialog).getByLabelText('Name')).toHaveValue('BPCE careers'));
+      expect(within(dialog).getByLabelText('Handle')).toHaveValue('bpce');
+      expect(within(dialog).getByLabelText('URL target')).toHaveValue('https://recrutement.bpce.fr');
+      expect((within(dialog).getByRole('textbox', { name: 'Script' }) as HTMLTextAreaElement).value).toBe(exported.script);
+      expect(within(dialog).getByLabelText('Key of filter 1')).toHaveValue('contract');
+      expect(within(dialog).getByLabelText('Value of option 2 of filter 1')).toHaveValue('cdd');
+      expect(within(dialog).getByRole('status')).toHaveTextContent(
+        'Filled in from bpce.adapter.json. Nothing is saved yet. Read the script before you create it',
+      );
+      expect(sent.filter((method) => method !== 'GET')).toEqual([]); // nothing was created, enabled or sent
+      expect(within(dialog).getByRole('button', { name: 'Create' })).toBeEnabled();
+    });
+
+    it('does not swap an imported script for the sample when the context changes', async () => {
+      const user = userEvent.setup();
+      mockApi(routes({ '/custom-adapters': list([]) }));
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+      const dialog = await screen.findByRole('dialog');
+      await user.upload(within(dialog).getByLabelText('Adapter file to import'), fileOf(exported));
+      await waitFor(() => expect(within(dialog).getByLabelText('Name')).toHaveValue('BPCE careers'));
+      await user.selectOptions(within(dialog).getByLabelText('Context'), 'browser');
+      await waitFor(() => expect(within(dialog).getByLabelText('Context')).toHaveValue('browser'));
+      expect((within(dialog).getByRole('textbox', { name: 'Script' }) as HTMLTextAreaElement).value).toBe(exported.script);
+    });
+
+    it.each([
+      ['a file that is not JSON', 'nope', /not JSON/],
+      ['JSON that is not an adapter', '{"a":1}', /not an exported custom adapter/],
+      ['a version it does not know', { ...exported, version: 7 }, /version 7/],
+      ['an adapter with a bad handle', { ...exported, handle: 'Bad-Handle' }, /not valid \(handle/],
+      ['a field it does not know', { ...exported, enabled: true }, /not valid/],
+    ])('refuses %s with a sentence and leaves the form as it was', async (_what, content, message) => {
+      const user = userEvent.setup();
+      mockApi(routes({ '/custom-adapters': list([]) }));
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+      const dialog = await screen.findByRole('dialog');
+      await user.type(within(dialog).getByLabelText('Name'), 'Mine');
+      await user.upload(within(dialog).getByLabelText('Adapter file to import'), fileOf(content));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
+      expect(within(dialog).getByLabelText('Name')).toHaveValue('Mine');
+      expect(within(dialog).queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('refuses a file that is too large before it reads it', async () => {
+      const user = userEvent.setup();
+      mockApi(routes({ '/custom-adapters': list([]) }));
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+      const dialog = await screen.findByRole('dialog');
+      const big = fileOf('x', 'big.adapter.json');
+      Object.defineProperty(big, 'size', { value: 5_000_000 });
+      const read = vi.spyOn(big, 'text');
+      await user.upload(within(dialog).getByLabelText('Adapter file to import'), big);
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('too large');
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('keeps its own handle when it imports into an adapter that is edited, and says it replaces the script', async () => {
+      const user = userEvent.setup();
+      mockApi(routes({ '/custom-adapters': list([adapter()]), '/custom-adapters/acmejobs': detail() }));
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: 'Edit Acme jobs' }));
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() => expect(within(dialog).getByRole('button', { name: /Import/ })).toBeEnabled());
+      await user.upload(within(dialog).getByLabelText('Adapter file to import'), fileOf(exported));
+      await waitFor(() => expect(within(dialog).getByLabelText('Name')).toHaveValue('BPCE careers'));
+      expect(within(dialog).getByLabelText('Handle')).toHaveValue('acmejobs'); // not bpce
+      expect(within(dialog).getByLabelText('Handle')).toBeDisabled();
+      expect(within(dialog).getByRole('status')).toHaveTextContent('it replaces the script of this adapter');
+    });
+
+    it('opens the form already filled in from a file chosen on the page, and creates it only when asked', async () => {
+      const user = userEvent.setup();
+      const sent: { handle: string; filters: unknown[]; script: string }[] = [];
+      mockApi(routes({ '/custom-adapters': list([]) }));
+      const real = globalThis.fetch;
+      vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          sent.push(JSON.parse(String(init.body)));
+          return Promise.resolve(new Response(JSON.stringify(detail({ handle: 'bpce', name: 'BPCE careers' })), { status: 201 }));
+        }
+        return real(input, init);
+      });
+      renderApp('/custom-adapters');
+      await screen.findByRole('button', { name: /Create adapter/ });
+      await user.upload(screen.getByLabelText('Adapter file to open'), fileOf(exported));
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() => expect(within(dialog).getByLabelText('Name')).toHaveValue('BPCE careers'));
+      expect(within(dialog).getByLabelText('Handle')).toHaveValue('bpce');
+      expect(within(dialog).getByRole('status')).toHaveTextContent('bpce.adapter.json');
+      expect(sent).toEqual([]);
+      await user.click(within(dialog).getByRole('button', { name: 'Create' }));
+      await waitFor(() => expect(sent).toHaveLength(1));
+      expect(sent[0]).toMatchObject({ handle: 'bpce', script: exported.script, filters: exported.filters });
+    });
+
+    it('says why a file chosen on the page cannot be opened', async () => {
+      const user = userEvent.setup();
+      mockApi(routes({ '/custom-adapters': list([]) }));
+      renderApp('/custom-adapters');
+      await screen.findByRole('button', { name: /Create adapter/ });
+      await user.upload(screen.getByLabelText('Adapter file to open'), fileOf('nope'));
+      expect(await screen.findByRole('alert')).toHaveTextContent('not JSON');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('gives back the same adapter after an export and an import: nothing is lost on the way', async () => {
+      const user = userEvent.setup();
+      trapDownloads();
+      const filters = [
+        {
+          name: 'sector',
+          label: 'Sector',
+          description: 'The sector.',
+          type: 'select',
+          options: [{ value: 'it', label: 'IT' }, { value: 'sales' }],
+        },
+        { name: 'remote', description: 'Remote only.', type: 'boolean', default: true },
+        { name: 'city', description: 'A city.', type: 'string', maxLength: 40 },
+        { name: 'pay', description: 'Monthly pay.', type: 'number', integer: true, min: 0, max: 9000 },
+      ];
+      mockApi(routes({ '/custom-adapters': list([adapter()]), '/custom-adapters/acmejobs': detail({ filters }) }));
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: 'Edit Acme jobs' }));
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() => expect(within(dialog).getByRole('button', { name: /Export/ })).toBeEnabled());
+      await user.click(within(dialog).getByRole('button', { name: /Export/ }));
+      const text = await (saved[0]?.text ?? Promise.resolve(''));
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      // open the form on that file from the page, as the person who receives it would
+      await user.upload(screen.getByLabelText('Adapter file to open'), fileOf(text, 'acmejobs.adapter.json'));
+      const next = await screen.findByRole('dialog');
+      await waitFor(() => expect(within(next).getByLabelText('Handle')).toHaveValue('acmejobs'));
+      await user.click(within(next).getByRole('button', { name: /Export/ }));
+      expect(await (saved[1]?.text ?? Promise.resolve(''))).toBe(text); // exported again: the same file, byte for byte
+      expect(JSON.parse(text).filters).toEqual(filters);
+    });
+  });
+
   it('turns one on, and asks before it deletes one', async () => {
     const user = userEvent.setup();
     const calls: string[] = [];

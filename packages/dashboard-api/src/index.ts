@@ -623,6 +623,65 @@ export const docBlockSchema = z.object({ id: z.string(), title: z.string(), summ
 export type DocBlock = z.infer<typeof docBlockSchema>;
 export type DocItem = z.infer<typeof docItemSchema>;
 
+// ------------------------------------------------------------------------------------------------------ custom adapter files
+
+/**
+ * The file an adapter is exported to, to share it (`<handle>.adapter.json`). It is exactly what a person types in the modal and nothing
+ * else: no id, no date, no history, no budget, nothing about the router it came from. Importing one only fills the form, so what it holds
+ * is read and created by the person who imports it; nothing in a file is run, enabled or trusted.
+ */
+export const CUSTOM_ADAPTER_FILE_FORMAT = 'jobwatch.custom-adapter';
+export const CUSTOM_ADAPTER_FILE_VERSION = 1;
+/** Biggest file an import reads: a script is 60 000 characters at most, and JSON escapes it. */
+export const MAX_ADAPTER_FILE_BYTES = 300_000;
+
+export const customAdapterFileSchema = z
+  .object({
+    format: z.literal(CUSTOM_ADAPTER_FILE_FORMAT),
+    version: z.literal(CUSTOM_ADAPTER_FILE_VERSION),
+    handle: customHandleSchema,
+    name: z.string().trim().min(1).max(60),
+    kind: z.enum(['http', 'browser']),
+    url: z.string().trim().min(8).max(300),
+    script: z.string().min(1).max(60_000),
+    filters: z.array(customFilterSchema).max(MAX_CUSTOM_FILTERS),
+  })
+  .strict();
+export type CustomAdapterFile = z.infer<typeof customAdapterFileSchema>;
+
+/** The name of the file for a handle: `bpce.adapter.json`. */
+export const adapterFileName = (handle: string): string => `${handle}.adapter.json`;
+
+/** The text of the file for an adapter: indented, so that it reads and compares well, and ends with a line break. */
+export function adapterFileText(entry: Omit<CustomAdapterFile, 'format' | 'version'>): string {
+  const file: CustomAdapterFile = { format: CUSTOM_ADAPTER_FILE_FORMAT, version: CUSTOM_ADAPTER_FILE_VERSION, ...entry };
+  return `${JSON.stringify(file, null, 2)}\n`;
+}
+
+/** Reads the text of a file. The error is a sentence for the person who chose the file, never a stack. */
+export function parseAdapterFile(text: string): { file: CustomAdapterFile } | { error: string } {
+  if (text.length > MAX_ADAPTER_FILE_BYTES) return { error: 'That file is too large to be an adapter.' };
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return { error: 'That file is not JSON.' };
+  }
+  if (typeof json !== 'object' || json === null || (json as { format?: unknown }).format !== CUSTOM_ADAPTER_FILE_FORMAT)
+    return { error: 'That file is not an exported custom adapter.' };
+  const version = (json as { version?: unknown }).version;
+  if (version !== CUSTOM_ADAPTER_FILE_VERSION)
+    return { error: `That adapter file is version ${String(version)}; this dashboard reads version ${CUSTOM_ADAPTER_FILE_VERSION}.` };
+  const parsed = customAdapterFileSchema.safeParse(json);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return {
+      error: `That adapter file is not valid (${issue ? `${issue.path.join('.') || 'file'}: ${issue.message}` : 'unknown problem'}).`,
+    };
+  }
+  return { file: parsed.data };
+}
+
 /** What the editor starts from for a kind of context: the script, and the reference to read beside it. */
 export const customAdapterSampleSchema = z
   .object({ kind: z.enum(['http', 'browser']), script: z.string(), docs: z.array(docBlockSchema) })

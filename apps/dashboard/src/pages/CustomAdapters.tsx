@@ -1,6 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { customFilterSchema, filterDocItems, filterProblems, type CustomAdapter, type CustomFilter } from '@jobwatch/dashboard-api';
-import { AlertTriangle, BookOpen, Pencil, Plus, Trash2 } from 'lucide-react';
+import {
+  MAX_ADAPTER_FILE_BYTES,
+  adapterFileName,
+  adapterFileText,
+  customFilterSchema,
+  filterDocItems,
+  filterProblems,
+  parseAdapterFile,
+  type CustomAdapter,
+  type CustomAdapterFile,
+  type CustomFilter,
+} from '@jobwatch/dashboard-api';
+import { AlertTriangle, BookOpen, Download, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { CodeEditor } from '@/components/CodeEditor';
 import { CustomFilters } from '@/components/CustomFilters';
@@ -13,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, navigation } from '@/lib/api';
+import { downloadText, readTextFile } from '@/lib/download';
 import { ago } from '@/lib/format';
 
 type Kind = 'http' | 'browser';
@@ -31,11 +43,14 @@ const HANDLE = /^[a-z][a-z0-9]{1,23}$/;
 /** Dialog content, mounted only while it is open, so every opening starts from what the router says now. */
 function AdapterForm({
   handle,
+  initial,
   onClose,
   onReauth,
   onNotice,
 }: {
   handle: string | undefined;
+  /** An adapter read from a file on the page: it fills the form of a new adapter when it opens. */
+  initial?: { file: CustomAdapterFile; fileName: string };
   onClose: () => void;
   onReauth: () => void;
   onNotice: (message: string) => void;
@@ -49,7 +64,10 @@ function AdapterForm({
   const [url, setUrl] = useState('https://');
   const [script, setScript] = useState('');
   const [filters, setFilters] = useState<CustomFilter[]>([]);
-  const untouched = useRef(true); // the script is still a sample: changing the context may swap it for the other sample
+  const untouched = useRef(initial === undefined); // the script is still a sample: changing the context may swap it for the other sample
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [imported, setImported] = useState<string | undefined>(initial?.fileName);
+  const [importError, setImportError] = useState<string>();
   const loaded = useRef(false);
   // the sample gives a new adapter its script; the reference of the context is shown whether the adapter is new or not
   const sample = useQuery({
@@ -78,6 +96,31 @@ function AdapterForm({
   useEffect(() => {
     if (!editing && untouched.current && sample.data !== undefined) setScript(sample.data.script);
   }, [editing, sample.data]);
+
+  /** Puts an adapter read from a file into the form. Nothing is saved: the person reads it and presses Create or Save. */
+  const apply = (file: CustomAdapterFile, fileName: string): void => {
+    untouched.current = false;
+    if (!editing) setNewHandle(file.handle); // an adapter that is edited keeps its own handle, which cannot change
+    setName(file.name);
+    setKind(file.kind);
+    setUrl(file.url);
+    setScript(file.script);
+    setFilters(file.filters);
+    setImported(fileName);
+    setImportError(undefined);
+  };
+  useEffect(() => {
+    if (initial !== undefined) apply(initial.file, initial.fileName);
+    // once, when the form opens on a file
+  }, []);
+  const importFile = async (file: File | undefined): Promise<void> => {
+    if (file === undefined) return;
+    const read = await readTextFile(file, MAX_ADAPTER_FILE_BYTES);
+    if ('error' in read) return setImportError(read.error);
+    const parsed = parseAdapterFile(read.text);
+    if ('error' in parsed) return setImportError(parsed.error);
+    apply(parsed.file, file.name);
+  };
 
   const save = useMutation({
     mutationFn: () =>
@@ -123,6 +166,12 @@ function AdapterForm({
     script.trim() !== '' &&
     problems.size === 0;
   const kindHint = KINDS.find((entry) => entry.value === kind)?.hint;
+  // the file for what is in the form now (saved or not), only when it would be read back as a valid adapter
+  const exportHandle = editing ? handle : newHandle.trim();
+  const exportText = useMemo(() => {
+    const text = adapterFileText({ handle: exportHandle, name: name.trim(), kind, url: url.trim(), script, filters });
+    return 'file' in parseAdapterFile(text) ? text : undefined;
+  }, [exportHandle, name, kind, url, script, filters]);
 
   return (
     <form
@@ -133,12 +182,63 @@ function AdapterForm({
       }}
     >
       <DialogHeader className="shrink-0">
-        <DialogTitle>{editing ? `Edit ${existing.data?.name ?? handle}` : 'Create a custom adapter'}</DialogTitle>
+        <div className="flex items-start justify-between gap-3">
+          <DialogTitle>{editing ? `Edit ${existing.data?.name ?? handle}` : 'Create a custom adapter'}</DialogTitle>
+          <div className="-mt-1 flex shrink-0 items-center gap-2">
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".json,application/json"
+              aria-label="Adapter file to import"
+              className="hidden"
+              onChange={(event) => {
+                void importFile(event.target.files?.[0]);
+                event.target.value = ''; // the same file can be chosen again
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={editing && existing.data === undefined}
+              title="Fill the form from an exported adapter file. Nothing is created until you press Create."
+              onClick={() => fileInput.current?.click()}
+            >
+              <Upload className="size-4" /> Import
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={exportText === undefined}
+              title={
+                exportText === undefined
+                  ? 'Fill in the name, the handle, the address and the script first.'
+                  : `Save ${adapterFileName(exportHandle)}, to share this adapter. It holds what is in the form now.`
+              }
+              onClick={() => exportText !== undefined && downloadText(adapterFileName(exportHandle), exportText)}
+            >
+              <Download className="size-4" /> Export
+            </Button>
+          </div>
+        </div>
         <DialogDescription>
           Its script runs in a sandbox with no network of its own and reads one site: what it finds goes through the same filters and
           storage as the other company-board tools. It never changes anything on a site.
         </DialogDescription>
       </DialogHeader>
+      {importError !== undefined && (
+        <p role="alert" className="shrink-0 text-xs text-destructive">
+          {importError}
+        </p>
+      )}
+      {imported !== undefined && importError === undefined && (
+        <p role="status" className="shrink-0 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
+          Filled in from <code>{imported}</code>. Nothing is saved yet. Read the script before you {editing ? 'save' : 'create'} it: it will
+          run on this router, in the sandbox
+          {editing ? ', and it replaces the script of this adapter' : ''}.
+        </p>
+      )}
       <div className="grid min-h-0 flex-1 gap-4 overflow-auto md:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)_minmax(20rem,28rem)] md:overflow-hidden">
         <div className="min-h-0 space-y-4 md:overflow-auto md:pr-1">
           <div className="space-y-4">
@@ -278,7 +378,9 @@ function AdapterForm({
 export function CustomAdapters() {
   const client = useQueryClient();
   const list = useQuery({ queryKey: ['custom-adapters'], queryFn: api.customAdapters, refetchInterval: 10_000 });
-  const [form, setForm] = useState<{ handle?: string } | undefined>();
+  const [form, setForm] = useState<{ handle?: string; initial?: { file: CustomAdapterFile; fileName: string } } | undefined>();
+  const pageFile = useRef<HTMLInputElement>(null);
+  const [pageImportError, setPageImportError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [reauth, setReauth] = useState(false);
   const [removing, setRemoving] = useState<CustomAdapter>();
@@ -344,11 +446,44 @@ export function CustomAdapters() {
           {error}
         </p>
       )}
+      {pageImportError !== undefined && (
+        <p role="alert" className="border-b px-5 py-2 text-sm text-destructive">
+          {pageImportError}
+        </p>
+      )}
       <div className="flex items-center gap-2 border-b px-5 py-2">
         <span className="text-xs text-muted-foreground">
           An adapter is code you write: it runs only in the sandbox, reads one site and changes nothing on it.
         </span>
-        <Button size="sm" className="ml-auto" disabled={!available} onClick={() => setForm({})}>
+        <input
+          ref={pageFile}
+          type="file"
+          accept=".json,application/json"
+          aria-label="Adapter file to open"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file === undefined) return;
+            void readTextFile(file, MAX_ADAPTER_FILE_BYTES).then((read) => {
+              const parsed = 'error' in read ? read : parseAdapterFile(read.text);
+              if ('error' in parsed) return setPageImportError(parsed.error);
+              setPageImportError(undefined);
+              setForm({ initial: { file: parsed.file, fileName: file.name } });
+            });
+          }}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          disabled={!available}
+          title="Open the form filled in from an exported adapter file"
+          onClick={() => pageFile.current?.click()}
+        >
+          <Upload className="size-4" /> Import adapter
+        </Button>
+        <Button size="sm" disabled={!available} onClick={() => setForm({})}>
           <Plus className="size-4" /> Create adapter
         </Button>
       </div>
@@ -428,7 +563,13 @@ export function CustomAdapters() {
         {/* always the whole window, with a margin all round so it still reads as a window: the settings, the script and the filters side by side */}
         <DialogContent className="flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col">
           {form !== undefined && (
-            <AdapterForm handle={form.handle} onClose={() => setForm(undefined)} onReauth={() => setReauth(true)} onNotice={setNotice} />
+            <AdapterForm
+              handle={form.handle}
+              {...(form.initial ? { initial: form.initial } : {})}
+              onClose={() => setForm(undefined)}
+              onReauth={() => setReauth(true)}
+              onNotice={setNotice}
+            />
           )}
         </DialogContent>
       </Dialog>
