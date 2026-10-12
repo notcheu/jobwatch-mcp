@@ -1,6 +1,5 @@
 import type { CustomFilter, CustomFilterType, DocItem } from '@jobwatch/dashboard-api';
-import { ChevronDown, ChevronRight, Lock, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { Lock, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,17 +76,12 @@ function CustomFilterRow({
   index,
   filter,
   problems,
-  collapsed,
-  onToggle,
   onChange,
   onRemove,
 }: {
   index: number;
   filter: CustomFilter;
   problems: readonly string[];
-  /** Folded to the preview the locked filters have: the key, the type and the description, read only. */
-  collapsed: boolean;
-  onToggle: () => void;
   onChange: (next: CustomFilter) => void;
   onRemove: () => void;
 }) {
@@ -95,197 +89,167 @@ function CustomFilterRow({
   const set = (patch: Record<string, unknown>): void => onChange({ ...filter, ...patch } as CustomFilter);
   const unset = (key: string): void => onChange(omit(filter, key as never));
   return (
-    <fieldset className={`space-y-2 rounded-md border ${collapsed ? 'space-y-1.5 bg-muted/30 p-2' : 'p-3'}`} aria-label={`Filter ${n}`}>
+    <fieldset className="space-y-2 rounded-md border p-3" aria-label={`Filter ${n}`}>
       <div className="flex items-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-8 shrink-0"
-          aria-label={`${collapsed ? 'Expand' : 'Collapse'} filter ${n}`}
-          aria-expanded={!collapsed}
-          onClick={onToggle}
-        >
-          {collapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
-        </Button>
         <div className="min-w-0 flex-1">
           <Caption>Key</Caption>
           <Input
             aria-label={`Key of filter ${n}`}
             value={filter.name}
-            readOnly={collapsed}
             maxLength={32}
             placeholder="contract"
             className="font-mono"
             onChange={(event) => set({ name: event.target.value.toLowerCase() })}
           />
         </div>
-        {collapsed && (
-          <Badge variant="secondary" className="mb-2 shrink-0" title={TYPES.find((entry) => entry.value === filter.type)?.hint}>
-            {filter.type}
-          </Badge>
-        )}
         <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0" aria-label={`Remove filter ${n}`} onClick={onRemove}>
           <Trash2 className="size-4" />
         </Button>
       </div>
-      {!collapsed && (
-        <>
-          <div>
-            <Caption>Type</Caption>
-            <select
-              aria-label={`Type of filter ${n}`}
-              className={field}
-              value={filter.type}
-              title={TYPES.find((entry) => entry.value === filter.type)?.hint}
-              onChange={(event) => onChange(filterOfType(event.target.value as CustomFilterType, filter))}
-            >
-              {TYPES.map((entry) => (
-                <option key={entry.value} value={entry.value}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Caption>Label (optional)</Caption>
-            <Input
-              aria-label={`Label of filter ${n}`}
-              value={filter.label ?? ''}
-              maxLength={80}
-              placeholder="Contract type"
-              onChange={(event) => (event.target.value === '' ? unset('label') : set({ label: event.target.value }))}
-            />
-          </div>
-        </>
-      )}
       <div>
-        <Caption>Description</Caption>
-        <DescriptionBox
-          label={`Description of filter ${n}`}
-          value={filter.description}
-          readOnly={collapsed}
-          onChange={(next) => set({ description: next })}
+        <Caption>Type</Caption>
+        <select
+          aria-label={`Type of filter ${n}`}
+          className={field}
+          value={filter.type}
+          title={TYPES.find((entry) => entry.value === filter.type)?.hint}
+          onChange={(event) => onChange(filterOfType(event.target.value as CustomFilterType, filter))}
+        >
+          {TYPES.map((entry) => (
+            <option key={entry.value} value={entry.value}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <Caption>Label (optional)</Caption>
+        <Input
+          aria-label={`Label of filter ${n}`}
+          value={filter.label ?? ''}
+          maxLength={80}
+          placeholder="Contract type"
+          onChange={(event) => (event.target.value === '' ? unset('label') : set({ label: event.target.value }))}
         />
       </div>
+      <div>
+        <Caption>Description</Caption>
+        <DescriptionBox label={`Description of filter ${n}`} value={filter.description} onChange={(next) => set({ description: next })} />
+      </div>
 
-      {!collapsed && (
-        <>
-          {(filter.type === 'select' || filter.type === 'multiselect') && (
-            <div className="space-y-1.5">
-              <div className="text-xs font-medium text-muted-foreground">Options (the value is what the script receives)</div>
-              <div className="flex gap-1.5 pr-9 text-xs font-medium text-muted-foreground" aria-hidden>
-                <span className="flex-1">Value</span>
-                <span className="flex-1">Label (optional)</span>
-              </div>
-              {filter.options.map((option, at) => (
-                <div key={at} className="flex items-center gap-1.5">
-                  <Input
-                    aria-label={`Value of option ${at + 1} of filter ${n}`}
-                    value={option.value}
-                    maxLength={60}
-                    placeholder="Value"
-                    className="font-mono"
-                    onChange={(event) =>
-                      set({ options: filter.options.map((entry, i) => (i === at ? { ...entry, value: event.target.value } : entry)) })
-                    }
-                  />
-                  <Input
-                    aria-label={`Label of option ${at + 1} of filter ${n}`}
-                    value={option.label ?? ''}
-                    maxLength={80}
-                    placeholder="Label (optional)"
-                    onChange={(event) =>
-                      set({
-                        options: filter.options.map((entry, i) =>
-                          i === at ? (event.target.value === '' ? omit(entry, 'label') : { ...entry, label: event.target.value }) : entry,
-                        ),
-                      })
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 shrink-0"
-                    aria-label={`Remove option ${at + 1} of filter ${n}`}
-                    disabled={filter.options.length <= 2}
-                    onClick={() => set({ options: filter.options.filter((_, i) => i !== at) })}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              ))}
+      {(filter.type === 'select' || filter.type === 'multiselect') && (
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium text-muted-foreground">Options (the value is what the script receives)</div>
+          <div className="flex gap-1.5 pr-9 text-xs font-medium text-muted-foreground" aria-hidden>
+            <span className="flex-1">Value</span>
+            <span className="flex-1">Label (optional)</span>
+          </div>
+          {filter.options.map((option, at) => (
+            <div key={at} className="flex items-center gap-1.5">
+              <Input
+                aria-label={`Value of option ${at + 1} of filter ${n}`}
+                value={option.value}
+                maxLength={60}
+                placeholder="Value"
+                className="font-mono"
+                onChange={(event) =>
+                  set({ options: filter.options.map((entry, i) => (i === at ? { ...entry, value: event.target.value } : entry)) })
+                }
+              />
+              <Input
+                aria-label={`Label of option ${at + 1} of filter ${n}`}
+                value={option.label ?? ''}
+                maxLength={80}
+                placeholder="Label (optional)"
+                onChange={(event) =>
+                  set({
+                    options: filter.options.map((entry, i) =>
+                      i === at ? (event.target.value === '' ? omit(entry, 'label') : { ...entry, label: event.target.value }) : entry,
+                    ),
+                  })
+                }
+              />
               <Button
                 type="button"
-                variant="outline"
-                size="sm"
-                aria-label={`Add an option to filter ${n}`}
-                disabled={filter.options.length >= 100}
-                onClick={() => set({ options: [...filter.options, { value: '' }] })}
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0"
+                aria-label={`Remove option ${at + 1} of filter ${n}`}
+                disabled={filter.options.length <= 2}
+                onClick={() => set({ options: filter.options.filter((_, i) => i !== at) })}
               >
-                <Plus className="size-3.5" /> Add option
+                <Trash2 className="size-3.5" />
               </Button>
             </div>
-          )}
-          {filter.type === 'boolean' && (
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={filter.default === true}
-                onChange={(event) => (event.target.checked ? set({ default: true }) : unset('default'))}
-              />
-              On when the caller leaves it out
-            </label>
-          )}
-          {filter.type === 'string' && (
-            <label className="flex items-center gap-2 text-sm">
-              Longest text
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label={`Add an option to filter ${n}`}
+            disabled={filter.options.length >= 100}
+            onClick={() => set({ options: [...filter.options, { value: '' }] })}
+          >
+            <Plus className="size-3.5" /> Add option
+          </Button>
+        </div>
+      )}
+      {filter.type === 'boolean' && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={filter.default === true}
+            onChange={(event) => (event.target.checked ? set({ default: true }) : unset('default'))}
+          />
+          On when the caller leaves it out
+        </label>
+      )}
+      {filter.type === 'string' && (
+        <label className="flex items-center gap-2 text-sm">
+          Longest text
+          <Input
+            type="number"
+            aria-label={`Longest text of filter ${n}`}
+            className="w-24"
+            min={1}
+            max={200}
+            value={filter.maxLength ?? ''}
+            placeholder="100"
+            onChange={(event) => {
+              const value = numberOf(event.target.value);
+              if (value === undefined) unset('maxLength');
+              else set({ maxLength: value });
+            }}
+          />
+        </label>
+      )}
+      {filter.type === 'number' && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={filter.integer === true}
+              onChange={(event) => (event.target.checked ? set({ integer: true }) : unset('integer'))}
+            />
+            Whole numbers
+          </label>
+          {(['min', 'max'] as const).map((bound) => (
+            <label key={bound} className="flex items-center gap-2">
+              {bound === 'min' ? 'Min' : 'Max'}
               <Input
                 type="number"
-                aria-label={`Longest text of filter ${n}`}
+                aria-label={`${bound === 'min' ? 'Min' : 'Max'} of filter ${n}`}
                 className="w-24"
-                min={1}
-                max={200}
-                value={filter.maxLength ?? ''}
-                placeholder="100"
+                value={filter[bound] ?? ''}
                 onChange={(event) => {
                   const value = numberOf(event.target.value);
-                  if (value === undefined) unset('maxLength');
-                  else set({ maxLength: value });
+                  if (value === undefined) unset(bound);
+                  else set({ [bound]: value });
                 }}
               />
             </label>
-          )}
-          {filter.type === 'number' && (
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={filter.integer === true}
-                  onChange={(event) => (event.target.checked ? set({ integer: true }) : unset('integer'))}
-                />
-                Whole numbers
-              </label>
-              {(['min', 'max'] as const).map((bound) => (
-                <label key={bound} className="flex items-center gap-2">
-                  {bound === 'min' ? 'Min' : 'Max'}
-                  <Input
-                    type="number"
-                    aria-label={`${bound === 'min' ? 'Min' : 'Max'} of filter ${n}`}
-                    className="w-24"
-                    value={filter[bound] ?? ''}
-                    onChange={(event) => {
-                      const value = numberOf(event.target.value);
-                      if (value === undefined) unset(bound);
-                      else set({ [bound]: value });
-                    }}
-                  />
-                </label>
-              ))}
-            </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
       {problems.length > 0 && (
         <ul className="space-y-0.5 text-xs text-destructive" aria-label={`Problems with filter ${n}`}>
@@ -315,13 +279,6 @@ export function CustomFilters({
   onChange: (next: CustomFilter[]) => void;
 }) {
   const tooMany = problems.get(12) ?? [];
-  // the rows folded to their preview, by position; a new filter is open, and removing one moves the ones after it up
-  const [folded, setFolded] = useState<number[]>([]);
-  const toggle = (index: number): void => setFolded((now) => (now.includes(index) ? now.filter((at) => at !== index) : [...now, index]));
-  const removeAt = (index: number): void => {
-    setFolded((now) => now.filter((at) => at !== index).map((at) => (at > index ? at - 1 : at)));
-    onChange(filters.filter((_, i) => i !== index));
-  };
   return (
     <section aria-label="Filters" className="flex min-h-80 min-w-0 flex-col gap-2 md:min-h-0">
       <div className="flex items-center justify-between gap-2">
@@ -349,10 +306,8 @@ export function CustomFilters({
               index={index}
               filter={filter}
               problems={problems.get(index) ?? []}
-              collapsed={folded.includes(index)}
-              onToggle={() => toggle(index)}
               onChange={(next) => onChange(filters.map((entry, i) => (i === index ? next : entry)))}
-              onRemove={() => removeAt(index)}
+              onRemove={() => onChange(filters.filter((_, i) => i !== index))}
             />
           ))}
           {tooMany.length > 0 && <p className="text-xs text-destructive">{tooMany.join(' ')}</p>}
