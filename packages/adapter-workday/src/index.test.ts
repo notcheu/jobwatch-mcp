@@ -1,5 +1,5 @@
 import { createHttpTestContext, describeAdapterContract, type FakeHttpRoute } from '@jobwatch/sdk/testkit';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import adapter from './index';
 import { labelOf, resolveBoard, siteOf } from './board';
 import { MAX_SEARCHES, postedAt } from './feed';
@@ -141,6 +141,14 @@ describe('the date Workday gives', () => {
 });
 
 describe('workday_jobs', () => {
+  // The postings are dated around 5 October 2026 and "past_week" is counted from the clock: freeze it, or the test rots a week later.
+  beforeEach(() => {
+    vi.useFakeTimers({ now: Date.parse('2026-10-07T12:00:00Z'), toFake: ['Date'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('searches the site, then reads the text of the postings that pass the filters only, newest first', async () => {
     const c = context();
     const result = await run(c.ctx, { posted_within: 'past_week', location_any: ['paris', 'lyon'], detail: 'full' });
