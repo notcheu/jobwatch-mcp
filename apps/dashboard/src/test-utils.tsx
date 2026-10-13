@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { vi } from 'vitest';
 import { AppRoutes } from '@/App';
 
@@ -189,12 +189,24 @@ export function mockApi(routes: Routes) {
   return seen;
 }
 
+/** The address the app is at, as text, for tests of what a link or a closed modal leaves in the URL. Hidden, and with no role. */
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <span hidden data-testid="location">
+      {location.pathname}
+      {location.search}
+    </span>
+  );
+}
+
 export function renderApp(path: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchInterval: false } } });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <AppRoutes />
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
   );

@@ -17,6 +17,7 @@ import {
 } from '@jobwatch/dashboard-api';
 import { AlertTriangle, BookOpen, Download, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { CodeEditor } from '@/components/CodeEditor';
 import { CustomFilters } from '@/components/CustomFilters';
 import { ScriptDocs } from '@/components/ScriptDocs';
@@ -382,7 +383,33 @@ function AdapterForm({
 export function CustomAdapters() {
   const client = useQueryClient();
   const list = useQuery({ queryKey: ['custom-adapters'], queryFn: api.customAdapters, refetchInterval: 10_000 });
-  const [form, setForm] = useState<{ handle?: string; initial?: { file: CustomAdapterFile; fileName: string } } | undefined>();
+  // The edit form is driven by the address, `?edit=<id of the adapter>`, so that a link opens it (the "See adapter" item of Tools & status),
+  // a reload keeps it, and Back closes it. A new adapter, or one read from a file, is a form the address does not carry.
+  const [params, setParams] = useSearchParams();
+  const editId = params.get('edit');
+  const [created, setCreated] = useState<{ initial?: { file: CustomAdapterFile; fileName: string } } | undefined>();
+  const items = list.data?.items ?? [];
+  const editTarget =
+    editId === null ? undefined : (items.find((entry) => entry.id === editId) ?? items.find((entry) => entry.handle === editId));
+  const form: { handle?: string; initial?: { file: CustomAdapterFile; fileName: string } } | undefined =
+    editTarget !== undefined ? { handle: editTarget.handle } : created;
+  const openEdit = (entry: CustomAdapter): void => {
+    setCreated(undefined);
+    setParams({ edit: entry.id });
+  };
+  const closeForm = (): void => {
+    setCreated(undefined);
+    if (editId !== null) setParams({}, { replace: true });
+  };
+  // a link to an adapter that is not there (deleted, or mistyped): say so once the list is known, and drop the parameter
+  const unknownEdit = editId !== null && list.isSuccess && editTarget === undefined;
+  useEffect(() => {
+    if (unknownEdit) setParams({}, { replace: true });
+  }, [unknownEdit, setParams]);
+  const [unknownNote, setUnknownNote] = useState<string>();
+  useEffect(() => {
+    if (unknownEdit) setUnknownNote(`No custom adapter is called "${editId}".`);
+  }, [unknownEdit, editId]);
   const pageFile = useRef<HTMLInputElement>(null);
   const [pageImportError, setPageImportError] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -412,7 +439,6 @@ export function CustomAdapters() {
       fail(failure, 'The adapter could not be deleted.');
     },
   });
-  const items = list.data?.items ?? [];
   const available = list.data?.available ?? false;
 
   return (
@@ -450,6 +476,11 @@ export function CustomAdapters() {
           {error}
         </p>
       )}
+      {unknownNote !== undefined && (
+        <p role="alert" className="border-b px-5 py-2 text-sm text-destructive">
+          {unknownNote}
+        </p>
+      )}
       {pageImportError !== undefined && (
         <p role="alert" className="border-b px-5 py-2 text-sm text-destructive">
           {pageImportError}
@@ -473,7 +504,7 @@ export function CustomAdapters() {
               const parsed = 'error' in read ? read : parseAdapterFile(read.text);
               if ('error' in parsed) return setPageImportError(parsed.error);
               setPageImportError(undefined);
-              setForm({ initial: { file: parsed.file, fileName: file.name } });
+              setCreated({ initial: { file: parsed.file, fileName: file.name } });
             });
           }}
         />
@@ -487,7 +518,7 @@ export function CustomAdapters() {
         >
           <Upload className="size-4" /> Import adapter
         </Button>
-        <Button size="sm" disabled={!available} onClick={() => setForm({})}>
+        <Button size="sm" disabled={!available} onClick={() => setCreated({})}>
           <Plus className="size-4" /> Create adapter
         </Button>
       </div>
@@ -536,7 +567,7 @@ export function CustomAdapters() {
                       size="icon"
                       className="size-7"
                       aria-label={`Edit ${adapter.name}`}
-                      onClick={() => setForm({ handle: adapter.handle })}
+                      onClick={() => openEdit(adapter)}
                     >
                       <Pencil className="size-4" />
                     </Button>
@@ -563,14 +594,14 @@ export function CustomAdapters() {
         )}
         {list.isError && <p className="p-8 text-center text-sm text-destructive">Could not load the custom adapters.</p>}
       </div>
-      <Dialog open={form !== undefined} onOpenChange={(next) => !next && setForm(undefined)}>
+      <Dialog open={form !== undefined} onOpenChange={(next) => !next && closeForm()}>
         {/* always the whole window, with a margin all round so it still reads as a window: the settings, the script and the filters side by side */}
         <DialogContent className="flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col">
           {form !== undefined && (
             <AdapterForm
               handle={form.handle}
               {...(form.initial ? { initial: form.initial } : {})}
-              onClose={() => setForm(undefined)}
+              onClose={closeForm}
               onReauth={() => setReauth(true)}
               onNotice={setNotice}
             />

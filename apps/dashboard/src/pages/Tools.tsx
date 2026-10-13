@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ToolState } from '@jobwatch/dashboard-api';
-import { AlertTriangle, Gauge, Power, RotateCcw, Settings as SettingsIcon, Trash2 } from 'lucide-react';
+import { AlertTriangle, Eye, Gauge, Power, RotateCcw, Settings as SettingsIcon, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { BudgetDialog } from '@/components/BudgetDialog';
 import { ActionsMenu } from '@/components/ui/actions-menu';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +45,7 @@ function Usage({ label, used, limit }: { label: string; used: number; limit: num
 
 function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onChanged: (message: string) => void; onReauth: () => void }) {
   const client = useQueryClient();
+  const navigate = useNavigate();
   const [error, setError] = useState<string>();
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => api.setAdapter(adapter.id, enabled),
@@ -100,15 +102,27 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
           label={`Settings of ${adapter.displayName}`}
           icon={<SettingsIcon className="size-4" />}
           actions={[
-            {
-              id: 'toggle',
-              label: adapter.enabled ? 'Disable' : 'Enable',
-              icon: <Power className="size-4" />,
-              // ADAPTERS or UTILITIES sets the list: the page already says so at the top
-              disabled: adapter.pinned || toggle.isPending,
-              hint: adapter.pinned ? `Set by ${adapter.role === 'adapter' ? 'ADAPTERS' : 'UTILITIES'}` : undefined,
-              onSelect: () => toggle.mutate(!adapter.enabled),
-            },
+            // A custom adapter is switched, edited and deleted on its own page: this opens its edit form there (`?edit=<id>`); it is never listed in ADAPTERS
+            ...(adapter.custom
+              ? [
+                  {
+                    id: 'see',
+                    label: 'See adapter',
+                    icon: <Eye className="size-4" />,
+                    onSelect: () => void navigate(`/custom-adapters?edit=${encodeURIComponent(adapter.id)}`),
+                  },
+                ]
+              : [
+                  {
+                    id: 'toggle',
+                    label: adapter.enabled ? 'Disable' : 'Enable',
+                    icon: <Power className="size-4" />,
+                    // ADAPTERS or UTILITIES sets the list: the page already says so at the top
+                    disabled: adapter.pinned || toggle.isPending,
+                    hint: adapter.pinned ? `Set by ${adapter.role === 'adapter' ? 'ADAPTERS' : 'UTILITIES'}` : undefined,
+                    onSelect: () => toggle.mutate(!adapter.enabled),
+                  },
+                ]),
             { id: 'budget', label: 'Budget…', icon: <Gauge className="size-4" />, onSelect: () => setBudgetOpen(true) },
             ...(adapter.role === 'adapter'
               ? [
@@ -255,8 +269,10 @@ export function Tools() {
 
   const adapters = tools.data?.adapters ?? [];
   const aggregated = adapters.filter((adapter) => adapter.managed);
-  const on = adapters.filter((adapter) => adapter.role === 'adapter' && !adapter.managed && adapter.enabled);
-  const off = adapters.filter((adapter) => adapter.role === 'adapter' && !adapter.managed && !adapter.enabled);
+  const shipped = (adapter: ToolState): boolean => adapter.role === 'adapter' && !adapter.managed && !adapter.custom;
+  const on = adapters.filter((adapter) => shipped(adapter) && adapter.enabled);
+  const off = adapters.filter((adapter) => shipped(adapter) && !adapter.enabled);
+  const custom = adapters.filter((adapter) => adapter.role === 'adapter' && adapter.custom);
   const utilities = adapters.filter((adapter) => adapter.role === 'utility');
   const runtime = tools.data?.runtime;
   // ADAPTERS and UTILITIES each pin one list: say which, once, at the top, instead of on every card
@@ -360,6 +376,22 @@ export function Tools() {
         <h2 className="text-sm font-semibold">Adapters disabled ({off.length})</h2>
         <div className="grid gap-4 xl:grid-cols-2">
           {off.map((adapter) => (
+            <AdapterCard key={adapter.id} adapter={adapter} onChanged={setNotice} onReauth={() => setReauth(true)} />
+          ))}
+        </div>
+      </section>
+      <section aria-label="Custom adapters" className="space-y-3">
+        <h2 className="text-sm font-semibold">Custom adapters ({custom.length})</h2>
+        <p className="text-xs text-muted-foreground">
+          Written on this dashboard. Turn them on or off, edit and delete them on the{' '}
+          <Link to="/custom-adapters" className="text-primary hover:underline">
+            Custom adapters
+          </Link>{' '}
+          page.
+        </p>
+        {custom.length === 0 && <p className="text-sm text-muted-foreground">No custom adapter yet.</p>}
+        <div className="grid gap-4 xl:grid-cols-2">
+          {custom.map((adapter) => (
             <AdapterCard key={adapter.id} adapter={adapter} onChanged={setNotice} onReauth={() => setReauth(true)} />
           ))}
         </div>
