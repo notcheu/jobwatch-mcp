@@ -325,6 +325,102 @@ describe('custom adapters page', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('The new script applies to the next call');
   });
 
+  describe('a link to the edit form of an adapter', () => {
+    const older = adapter({ handle: 'deezer', id: 'custom-deezer', tool: 'custom_deezer', name: 'Deezer' });
+    const two = () =>
+      mockApi(
+        routes({
+          '/custom-adapters': list([adapter(), older]),
+          '/custom-adapters/acmejobs': detail(),
+          '/custom-adapters/deezer': detail({ handle: 'deezer', id: 'custom-deezer', tool: 'custom_deezer', name: 'Deezer' }),
+        }),
+      );
+
+    it('opens the edit form of the adapter the address names, by its id or by its handle', async () => {
+      two();
+      renderApp('/custom-adapters?edit=custom-acmejobs');
+      expect(await screen.findByText('Edit Acme jobs')).toBeInTheDocument();
+      expect(screen.getByLabelText('Handle')).toHaveValue('acmejobs');
+    });
+
+    it('finds an older adapter by the id its link carries, and any adapter by its handle', async () => {
+      two();
+      const { unmount } = renderApp('/custom-adapters?edit=custom-deezer');
+      expect(await screen.findByText('Edit Deezer')).toBeInTheDocument();
+      unmount();
+      two();
+      renderApp('/custom-adapters?edit=acmejobs');
+      expect(await screen.findByText('Edit Acme jobs')).toBeInTheDocument();
+    });
+
+    it('opens nothing without the parameter, and shows the table', async () => {
+      two();
+      renderApp('/custom-adapters');
+      expect(await screen.findByText('Deezer')).toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('puts the id in the address when the Edit button is used, so that the form can be linked and reloaded', async () => {
+      const user = userEvent.setup();
+      two();
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: 'Edit Deezer' }));
+      expect(await screen.findByText('Edit Deezer')).toBeInTheDocument();
+      expect(screen.getByTestId('location')).toHaveTextContent('/custom-adapters?edit=custom-deezer');
+    });
+
+    it('takes the parameter out of the address when the form is closed, by Cancel or by Escape', async () => {
+      const user = userEvent.setup();
+      two();
+      renderApp('/custom-adapters?edit=acmejobs');
+      await screen.findByText('Edit Acme jobs');
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/custom-adapters$/);
+      await user.click(screen.getByRole('button', { name: 'Edit Acme jobs' }));
+      await screen.findByText('Edit Acme jobs');
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/custom-adapters$/);
+    });
+
+    it('does not open the form again after it was closed, nor on the next refresh of the list', async () => {
+      const user = userEvent.setup();
+      two();
+      renderApp('/custom-adapters?edit=acmejobs');
+      await screen.findByText('Edit Acme jobs');
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('says so, once the list is known, when the address names an adapter that is not there, and drops the parameter', async () => {
+      two();
+      renderApp('/custom-adapters?edit=ghost');
+      expect(await screen.findByRole('alert')).toHaveTextContent('No custom adapter is called "ghost".');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/custom-adapters$/));
+      expect(screen.getByText('Acme jobs')).toBeInTheDocument(); // the table is there
+    });
+
+    it('does not say an adapter is missing while the list is still loading', async () => {
+      two();
+      renderApp('/custom-adapters?edit=acmejobs');
+      expect(screen.queryByText(/No custom adapter is called/)).not.toBeInTheDocument();
+      await screen.findByText('Edit Acme jobs');
+      expect(screen.queryByText(/No custom adapter is called/)).not.toBeInTheDocument();
+    });
+
+    it('still creates an adapter with no parameter in the address', async () => {
+      const user = userEvent.setup();
+      two();
+      renderApp('/custom-adapters');
+      await user.click(await screen.findByRole('button', { name: /Create adapter/ }));
+      expect(await screen.findByText('Create a custom adapter')).toBeInTheDocument();
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/custom-adapters$/);
+    });
+  });
+
   describe('the filters column', () => {
     const open = async (user: ReturnType<typeof userEvent.setup>, extra: Record<string, unknown> = {}) => {
       mockApi(routes({ '/custom-adapters': list([adapter()]), '/custom-adapters/acmejobs': detail(), ...extra }));

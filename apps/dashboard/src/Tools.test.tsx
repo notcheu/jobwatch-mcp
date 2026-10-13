@@ -169,6 +169,25 @@ describe('tools and status', () => {
         boards: [],
         ...over,
       });
+    const customItem = (handle: string, id: string, name: string) => ({
+      handle,
+      id,
+      tool: id.replaceAll('-', '_'),
+      name,
+      kind: 'http',
+      url: 'https://recrutement.bpce.fr',
+      host: 'recrutement.bpce.fr',
+      enabled: true,
+      problem: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const customDetail = (handle: string, id: string, name: string) => ({
+      ...customItem(handle, id, name),
+      script: 'async function read() {\n  return { postings: [] };\n}',
+      filters: [],
+      events: [],
+    });
     const open = async (...cards: unknown[]) => {
       mockApi({ '/me': me, '/tools': tools(...cards), '/custom-adapters': { available: true, sandbox: 'docker', items: [] } });
       renderApp('/settings?view=tools');
@@ -229,13 +248,46 @@ describe('tools and status', () => {
       expect(screen.queryByRole('menuitem', { name: 'See adapter' })).not.toBeInTheDocument(); // only a custom adapter has it
     });
 
-    it('takes See adapter to the table of custom adapters', async () => {
-      const user = await open(bpce());
+    it('takes See adapter straight to the edit form of that adapter, in the table of custom adapters', async () => {
+      mockApi({
+        '/me': me,
+        '/tools': tools(bpce(), bpce({ id: 'other-adapter', displayName: 'Other', platform: 'other-adapter' })),
+        '/custom-adapters': {
+          available: true,
+          sandbox: 'docker',
+          items: [customItem('bpce-adapter', 'bpce-adapter', 'BPCE careers'), customItem('other-adapter', 'other-adapter', 'Other')],
+        },
+        '/custom-adapters/bpce-adapter': customDetail('bpce-adapter', 'bpce-adapter', 'BPCE careers'),
+      });
+      renderApp('/settings?view=tools');
+      const user = userEvent.setup();
       const card = await screen.findByLabelText('BPCE careers');
       await user.click(within(card).getByRole('button', { name: /^Settings of / }));
       await user.click(within(card).getByRole('menuitem', { name: 'See adapter' }));
-      expect(await screen.findByRole('button', { name: /Create adapter/ })).toBeInTheDocument(); // the custom adapters page
-      expect(screen.queryByRole('region', { name: 'Custom adapters' })).not.toBeInTheDocument();
+      const dialog = await screen.findByRole('dialog');
+      expect(await within(dialog).findByText('Edit BPCE careers')).toBeInTheDocument(); // that adapter, not the other one
+      expect(within(dialog).getByLabelText('Handle')).toHaveValue('bpce-adapter');
+      expect(within(dialog).getByLabelText('Handle')).toBeDisabled(); // an edit, not a creation
+      expect(screen.getByTestId('location')).toHaveTextContent('/custom-adapters?edit=bpce-adapter');
+      expect(screen.getByRole('button', { name: /Create adapter/, hidden: true })).toBeInTheDocument(); // behind the dialog, the table
+    });
+
+    it('uses the id of the adapter in the link, which for an older adapter is custom-<handle>', async () => {
+      mockApi({
+        '/me': me,
+        '/tools': tools(bpce({ id: 'custom-deezer', displayName: 'Deezer', platform: 'custom-deezer' })),
+        '/custom-adapters': { available: true, sandbox: 'docker', items: [customItem('deezer', 'custom-deezer', 'Deezer')] },
+        '/custom-adapters/deezer': customDetail('deezer', 'custom-deezer', 'Deezer'),
+      });
+      renderApp('/settings?view=tools');
+      const user = userEvent.setup();
+      const card = await screen.findByLabelText('Deezer');
+      await user.click(within(card).getByRole('button', { name: /^Settings of / }));
+      await user.click(within(card).getByRole('menuitem', { name: 'See adapter' }));
+      const dialog = await screen.findByRole('dialog');
+      expect(await within(dialog).findByText('Edit Deezer')).toBeInTheDocument();
+      expect(within(dialog).getByLabelText('Handle')).toHaveValue('deezer'); // the handle, found from the id
+      expect(screen.getByTestId('location')).toHaveTextContent('/custom-adapters?edit=custom-deezer');
     });
 
     it('does not switch it from here: the Disable item is gone, so nothing calls the adapters endpoint', async () => {

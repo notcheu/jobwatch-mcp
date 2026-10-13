@@ -102,9 +102,16 @@ function AdapterCard({ adapter, onChanged, onReauth }: { adapter: ToolState; onC
           label={`Settings of ${adapter.displayName}`}
           icon={<SettingsIcon className="size-4" />}
           actions={[
-            // A custom adapter is switched, edited and deleted on its own page, which is where this leads; it is never listed in ADAPTERS
+            // A custom adapter is switched, edited and deleted on its own page: this opens its edit form there (`?edit=<id>`); it is never listed in ADAPTERS
             ...(adapter.custom
-              ? [{ id: 'see', label: 'See adapter', icon: <Eye className="size-4" />, onSelect: () => void navigate('/custom-adapters') }]
+              ? [
+                  {
+                    id: 'see',
+                    label: 'See adapter',
+                    icon: <Eye className="size-4" />,
+                    onSelect: () => void navigate(`/custom-adapters?edit=${encodeURIComponent(adapter.id)}`),
+                  },
+                ]
               : [
                   {
                     id: 'toggle',
