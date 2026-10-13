@@ -198,7 +198,14 @@ export function createDashboardApp(deps: DashboardDeps): Express {
           secure,
         }),
       ]);
-      res.redirect(identity.next);
+      // Not a 302: the redirect chain began at the provider, so the browser treats it as cross-site and would not send the Strict
+      // cookie to the next page, which would then bounce to the sign-in page. A page of ours that moves on is a same-site navigation.
+      const to = escapeHtml(identity.next);
+      res
+        .type('html')
+        .send(
+          `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${to}"><title>jobwatch dashboard</title></head><body><a href="${to}">Continue to the dashboard</a></body></html>`,
+        );
     } catch (error) {
       deps.logger.warn({ reason: error instanceof Error ? error.message : 'failed' }, 'dashboard_signin_refused');
       res.setHeader('Set-Cookie', clear);
@@ -252,7 +259,7 @@ export function createDashboardApp(deps: DashboardDeps): Express {
   });
   api.get(
     '/overview',
-    wrap(() => getOverview(deps)),
+    wrap((req) => getOverview(deps, req.query)),
   );
   api.get(
     '/calls',

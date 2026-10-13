@@ -853,8 +853,8 @@ describe('sign-in with Google', () => {
     const { t, provider } = await withProvider();
     const { callback } = await signIn(t, provider, '/dashboard/');
     const done = await callback();
-    expect(done.status).toBe(302);
-    expect(done.headers.get('location')).toBe('/dashboard/');
+    expect(done.status).toBe(200);
+    expect(await done.clone().text()).toContain('http-equiv="refresh" content="0;url=/dashboard/"');
     const setCookie = done.headers.getSetCookie().find((line) => line.startsWith('jw_dash='));
     expect(setCookie).toMatch(/HttpOnly/);
     expect(setCookie).toMatch(/SameSite=Strict/);
@@ -874,7 +874,7 @@ describe('sign-in with Google', () => {
     expect((await callback('jw_dash_state=other')).headers.get('location')).toContain('error=1');
     const second = await signIn(t, provider);
     const first = await second.callback();
-    expect(first.headers.get('location')).toBe('/dashboard/');
+    expect(await first.text()).toContain('content="0;url=/dashboard/"');
     expect((await second.callback()).headers.get('location')).toContain('error=1'); // the state is single use
   });
 
@@ -904,7 +904,7 @@ describe('sign-in with Google', () => {
     const { t, provider } = await withProvider();
     for (const next of ['https://evil.example/', '//evil.example', '/other', '/dashboard\\evil']) {
       const { callback } = await signIn(t, provider, next);
-      expect((await callback()).headers.get('location')).toBe('/dashboard/');
+      expect(await (await callback()).text()).toContain('content="0;url=/dashboard/"');
     }
   });
 

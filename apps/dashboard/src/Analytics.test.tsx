@@ -154,6 +154,8 @@ describe('analytics', () => {
     await waitFor(() => expect(seen.some((url) => url.startsWith('/dashboard/api/v1/usage?') && url.includes('role=utility'))).toBe(true));
     expect(seen.some((url) => url.includes('platform='))).toBe(false);
     expect(seen.some((url) => url.startsWith('/dashboard/api/v1/searches'))).toBe(false);
+    expect(seen.some((url) => url.startsWith('/dashboard/api/v1/overview?') && url.includes('role=utility'))).toBe(true);
+    expect(screen.queryByText('Live activity')).not.toBeInTheDocument();
   });
 
   it('says since when the session counts, and that the token counts are estimates', async () => {
