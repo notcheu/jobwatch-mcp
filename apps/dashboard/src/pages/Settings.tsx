@@ -2,11 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
-import { useTheme } from '@/lib/theme';
 import { Tools } from '@/pages/Tools';
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
@@ -48,26 +46,12 @@ export function Settings() {
   );
 }
 
-/** The theme is the only thing to set here; the rest are the limits in force, read from the router and shown as they are. */
+/** The limits in force, read from the router and shown as they are. */
 function DashboardSettings() {
-  const [dark, toggle] = useTheme();
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const s = settings.data;
   return (
     <div className="min-h-0 w-full max-w-3xl flex-1 space-y-4 overflow-auto p-5">
-      <Card>
-        <CardHeader>
-          <CardTitle>Appearance</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Row label="Theme" hint="Kept in this browser only">
-            <Button variant="outline" size="sm" onClick={toggle}>
-              {dark ? 'Dark: switch to light' : 'Light: switch to dark'}
-            </Button>
-          </Row>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle>Limits in force (read only)</CardTitle>

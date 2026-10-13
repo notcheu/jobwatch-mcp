@@ -66,14 +66,11 @@ describe('settings', () => {
     expect(screen.getByText('pinned')).toBeInTheDocument();
   });
 
-  it('switches the theme and remembers it in this browser', async () => {
+  it('has no appearance section: the theme is toggled from the navbar', async () => {
     mockApi({ '/me': me, '/tools': tools, '/settings': settings });
     renderApp('/settings');
-    const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: /Dark: switch to light/ }));
-    expect(document.documentElement.classList.contains('dark')).toBe(false);
-    expect(localStorage.getItem('jw-theme')).toBe('light');
-    expect(screen.getByRole('button', { name: /Light: switch to dark/ })).toBeInTheDocument();
+    expect(await screen.findByText('Limits in force (read only)')).toBeInTheDocument();
+    expect(screen.queryByText('Appearance')).not.toBeInTheDocument();
   });
 
   it('shows an error when the settings cannot be loaded', async () => {

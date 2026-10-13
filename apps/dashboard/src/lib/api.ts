@@ -119,7 +119,8 @@ const query = (params: Record<string, string | number | readonly string[] | unde
 
 export const api = {
   me: (): Promise<Me> => request(meSchema, '/me'),
-  overview: (): Promise<Overview> => request(overviewSchema, '/overview'),
+  overview: (params: { platform?: string; role?: 'utility' } = {}): Promise<Overview> =>
+    request(overviewSchema, `/overview${query(params)}`),
   calls: (params: {
     tool?: string;
     platform?: string;

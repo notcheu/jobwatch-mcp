@@ -681,8 +681,20 @@ function badSearches(data: DashboardData): { count: number; items: ReturnType<ty
   return { count: bad.length, items: bad.slice(0, 5) };
 }
 
-export function getOverview(data: DashboardData): Overview {
-  const calls = data.callLog.all();
+const overviewQuery = z.object({
+  platform: z.string().max(32).optional(),
+  /** `utility`: every utility together (the Utility tab). */
+  role: z.enum(['utility']).optional(),
+});
+
+/** The health counts follow the tab asked for (`platform` or `role`); without a filter they cover every call. */
+export async function getOverview(data: DashboardData, query: unknown = {}): Promise<Overview> {
+  const q = overviewQuery.parse(query);
+  const platforms = q.role === 'utility' ? await utilityPlatforms(data) : undefined;
+  const everything = data.callLog.all();
+  const calls = everything.filter(
+    (call) => (q.platform === undefined || call.platform === q.platform) && (platforms === undefined || platforms.includes(call.platform)),
+  );
   const done = calls.filter((call) => call.state === 'done');
   const runtime = data.runtime()?.status();
   return checked(overviewSchema, {
@@ -694,8 +706,8 @@ export function getOverview(data: DashboardData): Overview {
       rateLimited: done.filter((call) => call.code === 'rate_limited').length,
       active: calls.length - done.length,
     },
-    tokensReturned: calls.reduce((sum, call) => sum + call.estimatedTokens, 0),
-    callsInMemory: calls.length,
+    tokensReturned: everything.reduce((sum, call) => sum + call.estimatedTokens, 0),
+    callsInMemory: everything.length,
     callBufferSize: data.callLog.capacity,
     storedJobs: data.store.countJobs(),
     runtimeState: runtime?.current?.state ?? 'cold',

@@ -9,7 +9,7 @@ import { compact, searchDetailLink } from '@/lib/format';
 import { HealthBadge } from '@/components/SearchHealth';
 
 export function Overview() {
-  const overview = useQuery({ queryKey: ['overview'], queryFn: api.overview, refetchInterval: 5000 });
+  const overview = useQuery({ queryKey: ['overview'], queryFn: () => api.overview(), refetchInterval: 5000 });
   const o = overview.data;
   if (overview.isError) return <p className="p-6 text-sm text-destructive">Could not load the overview.</p>;
   if (o === undefined) return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;

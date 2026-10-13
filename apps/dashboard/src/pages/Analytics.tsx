@@ -61,7 +61,7 @@ export function Analytics() {
   ]
     .filter((part) => part !== undefined && part !== '')
     .join(' · ');
-  const overview = useQuery({ queryKey: ['overview'], queryFn: api.overview, refetchInterval: 5000 });
+  const overview = useQuery({ queryKey: ['overview', filter], queryFn: () => api.overview(filter), refetchInterval: 5000 });
   const tools = useQuery({ queryKey: ['tools'], queryFn: api.tools, refetchInterval: 15_000 });
 
   return (
@@ -104,7 +104,7 @@ export function Analytics() {
         </p>
       )}
 
-      {overview.data !== undefined && <HealthCards overview={overview.data} />}
+      {overview.data !== undefined && <HealthCards overview={overview.data} all={platform === undefined && !utilities} />}
       {usage.data !== undefined && usage.data.totals.calls > 0 && <UsagePanels usage={usage.data} />}
       {tools.data !== undefined && (
         <Budgets
@@ -119,10 +119,11 @@ export function Analytics() {
   );
 }
 
-function HealthCards({ overview }: { overview: Overview }) {
+/** The live activity is the router as a whole, so only the All tab shows it. */
+function HealthCards({ overview, all }: { overview: Overview; all: boolean }) {
   const health = overview.health;
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className={cn('grid gap-4', all && 'md:grid-cols-2')}>
       <Card>
         <CardHeader>
           <CardTitle>Request health</CardTitle>
@@ -150,29 +151,31 @@ function HealthCards({ overview }: { overview: Overview }) {
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Live activity</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-4 gap-2 text-sm">
-          <div>
-            <div className="text-xs text-muted-foreground">Browser</div>
-            <div className="text-base font-medium">{overview.runtimeState}</div>
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground">Adapters</div>
-            <div className="text-xl font-semibold tabular-nums">{overview.enabledAdapters}</div>
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground">Calls kept</div>
-            <div className="text-xl font-semibold tabular-nums">{compact(overview.callsInMemory)}</div>
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground">Stored jobs</div>
-            <div className="text-xl font-semibold tabular-nums">{compact(overview.storedJobs)}</div>
-          </div>
-        </CardContent>
-      </Card>
+      {all && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Live activity</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-4 gap-2 text-sm">
+            <div>
+              <div className="text-xs text-muted-foreground">Browser</div>
+              <div className="text-base font-medium">{overview.runtimeState}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Adapters</div>
+              <div className="text-xl font-semibold tabular-nums">{overview.enabledAdapters}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Calls kept</div>
+              <div className="text-xl font-semibold tabular-nums">{compact(overview.callsInMemory)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Stored jobs</div>
+              <div className="text-xl font-semibold tabular-nums">{compact(overview.storedJobs)}</div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
