@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.3.0...jobwatch-router-v0.4.0) (2026-10-28)
+
+
+### Features
+
+* **ats:** add the ats_jobs tool to read the jobs of any company on its own ATS ([#112](https://github.com/notcheu/jobwatch-mcp/issues/112)) ([9d78325](https://github.com/notcheu/jobwatch-mcp/commit/9d783251e1b4b16936899bad767d6588da12ff3a))
+* **custom:** add filters, a full screen modal and export/import to custom adapters ([#114](https://github.com/notcheu/jobwatch-mcp/issues/114)) ([78f0ca2](https://github.com/notcheu/jobwatch-mcp/commit/78f0ca2809837058f45fdb9dd4dd9d1d756d476e))
+* **custom:** name a custom adapter by its whole handle and mark custom adapters on the tabs ([#115](https://github.com/notcheu/jobwatch-mcp/issues/115)) ([5efc050](https://github.com/notcheu/jobwatch-mcp/commit/5efc050c0d3d602cf2d5069c000937d864c4026d))
+* **dashboard:** give custom adapters a section on Tools & status and link to their edit form ([#116](https://github.com/notcheu/jobwatch-mcp/issues/116)) ([60a0965](https://github.com/notcheu/jobwatch-mcp/commit/60a0965ec92fbef26f255ed60440a4c16f0cf890))
+* **dashboard:** record and show one search for each board of a company-board tool ([#111](https://github.com/notcheu/jobwatch-mcp/issues/111)) ([41faadd](https://github.com/notcheu/jobwatch-mcp/commit/41faadd186a5163b668dd48bb798afa18f88de06))
+* **dashboard:** rework searches, runs and jobs filters and show the ATS gateway apart ([#113](https://github.com/notcheu/jobwatch-mcp/issues/113)) ([a9749ae](https://github.com/notcheu/jobwatch-mcp/commit/a9749aee9ff13ddb692f7a85eba23eb5ed710d0d))
+
+
+### Bug fixes
+
+* **dashboard:** keep the sign-in redirect, scope request health to the tab and trim settings ([#117](https://github.com/notcheu/jobwatch-mcp/issues/117)) ([edbe20e](https://github.com/notcheu/jobwatch-mcp/commit/edbe20e907b95c32c7299b767289eadbd2d57871))
+* **deps:** bump nx and patch the undici nx pulls in ([#120](https://github.com/notcheu/jobwatch-mcp/issues/120)) ([ef8d926](https://github.com/notcheu/jobwatch-mcp/commit/ef8d926b4e364a449b230b372a427622c3350260))
+* **deps:** bump runtime dependencies with known vulnerabilities ([#119](https://github.com/notcheu/jobwatch-mcp/issues/119)) ([21044f1](https://github.com/notcheu/jobwatch-mcp/commit/21044f18b4691519e3867d81fcd577692d4a569f))
+
 ## [0.3.0](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.2.0...jobwatch-router-v0.3.0) (2026-10-07)
 
 
