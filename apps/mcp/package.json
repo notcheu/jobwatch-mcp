@@ -9,7 +9,7 @@
     "@jobwatch/core": "*",
     "@jobwatch/dashboard-api": "*",
     "@jobwatch/sdk": "*",
-    "@modelcontextprotocol/sdk": "1.31.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "express": "5.2.1",
     "jose": "6.2.12"
   },
