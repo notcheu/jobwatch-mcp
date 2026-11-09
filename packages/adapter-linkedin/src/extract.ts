@@ -86,7 +86,15 @@ export const EXTRACT_JOB = `async () => {
     '.jobs-box__html-content',
     '.show-more-less-html__markup',
   ];
+  // The current markup has no stable key: the text box sits next to the "About the job" heading (class names are hashed).
+  const aboutTheJob = () => {
+    const heading = [...document.querySelectorAll('h2')].find((h) => /^(about the job|à propos de l.offre)/i.test(norm(h.textContent)));
+    const box = heading && heading.parentElement && heading.parentElement.parentElement && heading.parentElement.parentElement.querySelector('[data-testid=expandable-text-box]');
+    return box ? norm(box.textContent) : '';
+  };
   const read = () => {
+    const current = aboutTheJob();
+    if (current) return current;
     for (const selector of selectors) {
       const el = document.querySelector(selector);
       const text = el ? norm(el.textContent).replace(/^About the job\\s*/i, '') : '';
