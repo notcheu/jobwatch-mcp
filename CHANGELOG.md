@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.4.0...jobwatch-router-v0.4.1) (2026-11-09)
+
+
+### Bug fixes
+
+* **adapter-linkedin:** read the job description next to the About the job heading ([#122](https://github.com/notcheu/jobwatch-mcp/issues/122)) ([c8c7d12](https://github.com/notcheu/jobwatch-mcp/commit/c8c7d12dc8f2092a44779ff921298047a21ef2fa))
+
 ## [0.4.0](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.3.0...jobwatch-router-v0.4.0) (2026-10-28)
 
 
