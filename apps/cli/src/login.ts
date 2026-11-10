@@ -8,6 +8,8 @@ const EXIT_OK = 0;
 const EXIT_USAGE = 1;
 const EXIT_FAILED = 2;
 const DOCKER_TIMEOUT_MS = 60_000;
+/** How long Chrome gets to write its cookies and exit by itself once the script has asked it to quit. */
+const CHROME_EXIT_TIMEOUT_MS = 30_000;
 
 /** x11vnc only reads the first 8 characters of a password, so make exactly 8 and make them random. */
 export function randomVncPassword(): string {
@@ -67,6 +69,8 @@ export async function login(deps: Deps, args: string[]): Promise<number> {
       } else {
         deps.io.out(`Gave ${count} session cookie(s) a 30 day expiry.\n`);
       }
+      // `docker stop` would send SIGTERM to a Chrome that is still writing its cookies and can lose them: let it finish.
+      if (count !== undefined) await docker(['wait', name], { timeoutMs: CHROME_EXIT_TIMEOUT_MS }).catch(() => undefined);
     }
     await docker(['stop', '-t', '20', name], { timeoutMs: DOCKER_TIMEOUT_MS });
     await docker(['rm', '-f', name], { timeoutMs: DOCKER_TIMEOUT_MS });
