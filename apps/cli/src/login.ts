@@ -8,6 +8,8 @@ const EXIT_OK = 0;
 const EXIT_USAGE = 1;
 const EXIT_FAILED = 2;
 const DOCKER_TIMEOUT_MS = 60_000;
+/** How long Chrome gets to write its cookies and exit by itself once the script has asked it to quit. */
+const CHROME_EXIT_TIMEOUT_MS = 30_000;
 
 /** x11vnc only reads the first 8 characters of a password, so make exactly 8 and make them random. */
 export function randomVncPassword(): string {
@@ -54,9 +56,21 @@ export async function login(deps: Deps, args: string[]): Promise<number> {
     // Chrome drops the cookies that have no expiry when it quits: give them one first, as the router does after each call.
     if (adapter.keepSessionCookies) {
       const kept = await docker(['exec', name, 'keep-session-cookies.py', ...adapter.allowedHosts], { timeoutMs: DOCKER_TIMEOUT_MS });
-      if (kept.code !== 0) {
-        deps.io.err(`Could not keep the session cookies, the login may be lost: ${kept.stderr.trim().slice(0, 500)}\n`);
+      // Chrome quits at the end of the script and the container goes with it, so the exit code says nothing: the printed count does.
+      const count = /^\d+$/.test(kept.stdout.trim()) ? Number(kept.stdout.trim()) : undefined;
+      if (count === undefined) {
+        deps.io.err(
+          `Could not keep the session cookies, the login may be lost: ${(kept.stderr || kept.stdout).trim().slice(0, 500) || `exit code ${kept.code}`}\n`,
+        );
+      } else if (count === 0) {
+        deps.io.err(
+          `No session cookie of ${adapter.allowedHosts.join(', ')} needed a longer expiry: either you are not signed in, or the site's own cookies already last.\n`,
+        );
+      } else {
+        deps.io.out(`Gave ${count} session cookie(s) a 30 day expiry.\n`);
       }
+      // `docker stop` would send SIGTERM to a Chrome that is still writing its cookies and can lose them: let it finish.
+      if (count !== undefined) await docker(['wait', name], { timeoutMs: CHROME_EXIT_TIMEOUT_MS }).catch(() => undefined);
     }
     await docker(['stop', '-t', '20', name], { timeoutMs: DOCKER_TIMEOUT_MS });
     await docker(['rm', '-f', name], { timeoutMs: DOCKER_TIMEOUT_MS });
