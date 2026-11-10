@@ -231,6 +231,10 @@ describe('bot protection', () => {
     await expect(runJob(context({ offer: () => blocked }).ctx)).rejects.toBeInstanceOf(Checkpoint);
   });
 
+  it('keeps the session cookies so a manual login survives the browser stopping', () => {
+    expect(adapter.kind === 'browser' && adapter.keepSessionCookies).toBe(true);
+  });
+
   it('is not a login problem: no SessionInvalid', async () => {
     await expect(runSearch(context({ search: () => blocked }).ctx)).rejects.not.toBeInstanceOf(SessionInvalid);
   });

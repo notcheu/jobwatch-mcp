@@ -343,5 +343,6 @@ export default defineAdapter({
   kind: 'browser',
   allowedHosts: ['www.apec.fr'],
   sessionCheck: checkSession,
+  keepSessionCookies: true,
   tools: [search, job],
 });

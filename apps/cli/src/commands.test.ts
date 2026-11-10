@@ -27,7 +27,14 @@ const linkedin = defineAdapter({
     }),
   ],
 });
-const table: InstalledAdapters = { linkedin: async () => linkedin };
+const wttj = defineAdapter({
+  ...linkedin,
+  id: 'wttj',
+  platform: 'wttj',
+  allowedHosts: ['www.welcometothejungle.com'],
+  keepSessionCookies: true,
+});
+const table: InstalledAdapters = { linkedin: async () => linkedin, wttj: async () => wttj };
 
 let dataDir: string;
 let out: string;
@@ -118,6 +125,17 @@ describe('login', () => {
       ['rm', 'jw-login-linkedin'],
     ]);
     expect(out).toContain('session_status');
+  });
+
+  it('stop first extends the session cookies of an adapter that keeps them, and stops anyway if that fails', async () => {
+    expect(await cli(['login', 'stop', 'wttj'])).toBe(0);
+    expect(calls[0]).toEqual(['exec', 'jw-login-wttj', 'keep-session-cookies.py', 'www.welcometothejungle.com']);
+    expect(calls.map((args) => args[0])).toEqual(['exec', 'stop', 'rm']);
+    calls = [];
+    const docker = fakeDocker({ exec: { code: 1, stderr: 'no devtools' } });
+    expect(await cli(['login', 'stop', 'wttj'], { docker })).toBe(0);
+    expect(err).toContain('no devtools');
+    expect(calls.map((args) => args[0])).toEqual(['exec', 'stop', 'rm']);
   });
 });
 

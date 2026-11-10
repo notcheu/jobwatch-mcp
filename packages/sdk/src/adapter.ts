@@ -130,6 +130,8 @@ interface SummaryBase {
   kind: AdapterKind;
   allowedHosts: readonly string[];
   openHttps: boolean;
+  /** `BrowserAdapter.keepSessionCookies`; always false for an HTTP module. */
+  keepSessionCookies: boolean;
   /** An adapter written on the dashboard (`ModuleBase.custom`). */
   custom: boolean;
   tools: readonly { name: string; title: string }[];
@@ -157,6 +159,7 @@ const summaryOf = (module: McpModule): SummaryBase => ({
   kind: module.kind,
   allowedHosts: module.allowedHosts,
   openHttps: module.kind === 'http' && module.openHttps === true,
+  keepSessionCookies: module.kind === 'browser' && module.keepSessionCookies === true,
   custom: module.custom === true,
   tools: module.tools.map((tool) => ({ name: tool.name, title: tool.title })),
 });
