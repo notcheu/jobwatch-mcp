@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.4.2...jobwatch-router-v0.4.3) (2026-11-10)
+
+
+### Bug fixes
+
+* **login:** report the session cookies kept by login stop ([#127](https://github.com/notcheu/jobwatch-mcp/issues/127)) ([bab710e](https://github.com/notcheu/jobwatch-mcp/commit/bab710e8e687058eed7c3cd1e983007c4e18602f))
+
 ## [0.4.2](https://github.com/notcheu/jobwatch-mcp/compare/jobwatch-router-v0.4.1...jobwatch-router-v0.4.2) (2026-11-10)
 
 
