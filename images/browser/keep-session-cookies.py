@@ -48,7 +48,7 @@ async def main(hosts):
         ]
         if copies:
             await send("Storage.setCookies", {"cookies": copies})
-        print(len(copies))
+        print(len(copies), flush=True)  # before Chrome quits: the container stops with it and takes this process along
         # A graceful quit flushes the cookie database to the profile; Chrome exits before it can answer.
         try:
             await send("Browser.close")

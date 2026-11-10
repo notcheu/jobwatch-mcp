@@ -128,6 +128,16 @@ describe('login', () => {
   });
 
   it('stop first extends the session cookies of an adapter that keeps them, and stops anyway if that fails', async () => {
+    // Chrome quits at the end of the script and takes the container along: a non-zero exit with the count printed is a success.
+    expect(await cli(['login', 'stop', 'wttj'], { docker: fakeDocker({ exec: { code: 137, stdout: '2\n' } }) })).toBe(0);
+    expect(out).toContain('Gave 2 session cookie(s)');
+    expect(err).toBe('');
+    calls = [];
+    out = '';
+    expect(await cli(['login', 'stop', 'wttj'], { docker: fakeDocker({ exec: { stdout: '0\n' } }) })).toBe(0);
+    expect(err).toContain('No session cookie');
+    calls = [];
+    err = '';
     expect(await cli(['login', 'stop', 'wttj'])).toBe(0);
     expect(calls[0]).toEqual(['exec', 'jw-login-wttj', 'keep-session-cookies.py', 'www.welcometothejungle.com']);
     expect(calls.map((args) => args[0])).toEqual(['exec', 'stop', 'rm']);
@@ -135,6 +145,11 @@ describe('login', () => {
     const docker = fakeDocker({ exec: { code: 1, stderr: 'no devtools' } });
     expect(await cli(['login', 'stop', 'wttj'], { docker })).toBe(0);
     expect(err).toContain('no devtools');
+    err = '';
+    expect(await cli(['login', 'stop', 'wttj'], { docker: fakeDocker({ exec: { code: 137 } }) })).toBe(0);
+    expect(err).toContain('exit code 137');
+    calls = [];
+    await cli(['login', 'stop', 'wttj'], { docker: fakeDocker({ exec: { code: 1, stderr: 'no devtools' } }) });
     expect(calls.map((args) => args[0])).toEqual(['exec', 'stop', 'rm']);
   });
 });
