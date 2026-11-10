@@ -51,6 +51,13 @@ export async function login(deps: Deps, args: string[]): Promise<number> {
   const name = loginContainerName(platform);
 
   if (action === 'stop') {
+    // Chrome drops the cookies that have no expiry when it quits: give them one first, as the router does after each call.
+    if (adapter.keepSessionCookies) {
+      const kept = await docker(['exec', name, 'keep-session-cookies.py', ...adapter.allowedHosts], { timeoutMs: DOCKER_TIMEOUT_MS });
+      if (kept.code !== 0) {
+        deps.io.err(`Could not keep the session cookies, the login may be lost: ${kept.stderr.trim().slice(0, 500)}\n`);
+      }
+    }
     await docker(['stop', '-t', '20', name], { timeoutMs: DOCKER_TIMEOUT_MS });
     await docker(['rm', '-f', name], { timeoutMs: DOCKER_TIMEOUT_MS });
     deps.io.out(

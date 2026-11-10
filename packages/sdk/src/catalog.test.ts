@@ -63,6 +63,7 @@ describe('catalogFileName and summarizeAdapter', () => {
       kind: 'browser',
       allowedHosts: ['www.example.com'],
       openHttps: false,
+      keepSessionCookies: false,
       custom: false,
       tools: [{ name: 'page_title', title: 'Page title (read-only)' }],
     });

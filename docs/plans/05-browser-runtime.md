@@ -98,7 +98,7 @@ After a runtime becomes ready, on `about:blank` evaluate and compare to a baseli
 ## Login procedure (MODE=login)
 1. `docker compose exec router jobwatch login start linkedin` starts a `jw-login-linkedin` container in `login` mode on the platform profile, with a random 8-character VNC password (x11vnc reads only 8), on Docker's default `bridge` network (an internal network cannot publish ports and the person signing in needs the internet), noVNC published on the host's `127.0.0.1:6080` only (`--port` changes it), label `jobwatch.login` so the orphan reaper leaves it alone. It refuses while the router's own browser is running on the same profile. It prints the SSH-tunnel command, the URL and the password.
 2. From the laptop: `ssh -L 6080:localhost:6080 <home-host>`, open `http://localhost:6080/vnc.html`, log in to LinkedIn manually (handle captcha/phone confirmation), browse once to a jobs page.
-3. `jobwatch login stop linkedin` stops it gracefully; the router runs `session_status` in `run` mode to confirm.
+3. `jobwatch login stop linkedin` stops it gracefully. For an adapter with `keepSessionCookies` (WTTJ) it first runs `keep-session-cookies.py` in the container: the no-expiry cookies of the adapter's `allowedHosts` get a 30 day expiry over local DevTools and Chrome quits (G4); without it the login is lost when the login browser stops. If that step fails, `stop` warns and stops anyway; the router runs `session_status` in `run` mode to confirm.
 The login viewer is never exposed publicly and never started by a tool call.
 
 ## Image and profile maintenance
