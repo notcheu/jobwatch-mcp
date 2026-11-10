@@ -74,10 +74,10 @@ To use it from Claude on the web or desktop you also need a domain name with TLS
 mkdir -p data
 ```
 
-4. Pull the browser image. The router spawns it on the first browser call but never pulls it, so without this step `linkedin`, `apec` and `wttj` fail to start their browser. Pull the tag set as `BROWSER_IMAGE` in `.env` (`notcheu/jobwatch-browser:0.1.0` by default):
+4. Pull the browser image. The router spawns it on the first browser call but never pulls it, so without this step `linkedin`, `apec` and `wttj` fail to start their browser. Pull the tag set as `BROWSER_IMAGE` in `.env` (`notcheu/jobwatch-browser:0.1.1` by default):
 
 ```bash
-docker pull notcheu/jobwatch-browser:0.1.0
+docker pull notcheu/jobwatch-browser:0.1.1
 ```
 
 Not using the Docker image? Point the server at your own Chrome instead: [Browser: the Docker image or your own Chrome](#browser-the-docker-image-or-your-own-chrome).
@@ -299,7 +299,7 @@ The browser modules (`linkedin`, `apec`, `wttj`) get their Chrome from one of th
 
 1. **Attach to your own running Chrome** (`BROWSER_CDP_URL`): development.
 2. **Let the server open its own Chrome** (`BROWSER_LOCAL_CHROME=true`): development. `npm run dev` and `npm run start` do this by default (`.env.local`).
-3. **The Docker browser image** (`BROWSER_IMAGE`, default `notcheu/jobwatch-browser:0.1.0` in `.env.example`): the default of the Docker Compose deployment, and the only one for a server. Pull it first: `docker pull notcheu/jobwatch-browser:0.1.0`.
+3. **The Docker browser image** (`BROWSER_IMAGE`, default `notcheu/jobwatch-browser:0.1.1` in `.env.example`): the default of the Docker Compose deployment, and the only one for a server. Pull it first: `docker pull notcheu/jobwatch-browser:0.1.1`.
 
 For development on your own machine you can skip Docker for the browser, in one of two ways:
 
